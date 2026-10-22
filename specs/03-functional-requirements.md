@@ -43,7 +43,9 @@ Every requirement has a stable ID, a priority and an acceptance check. Unless ma
 | `PERMISSION_DENIED` | `NOPERM` during handshake (e.g. `SELECT`, `INFO`) | The command the ACL user can't run |
 | `TUNNEL_FAILED` | ssh exited, forward failed, host key declined | ssh exit status and sanitized last stderr line |
 | `PROTOCOL_ERROR` | The port doesn't speak RESP | "This port doesn't look like a Redis server" |
-| `DB_OUT_OF_RANGE` | `SELECT` fails | The index and the server's database count |
+| `DB_OUT_OF_RANGE` | `SELECT` fails | The index and the server's database count (from `CONFIG GET databases`, when permitted) |
+| `CONNECTION_FAILED` | The connection dropped during the handshake, or another OS error | Host and port, the handshake step; suggests TLS when the server may require it |
+| `SERVER_ERROR` | Any other error reply during the handshake | The step and the server's error code (scrubbed text in details) |
 
 ## 2. Key browser
 

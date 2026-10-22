@@ -21,3 +21,7 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - `RedisConnection`: one pipelined connection per socket over TCP or a Unix socket, with connect and per-command
   timeouts; a timed-out command closes its connection, and a write interrupted by a drop, timeout or close reports
   `OUTCOME_UNKNOWN` and is never re-sent (KEEL-005).
+- Connection handshake: `HELLO 3 AUTH … SETNAME keel`, falling back to `AUTH` and `CLIENT SETNAME` on servers without
+  `HELLO`, then `SELECT`; `CLIENT SETNAME` can be turned off. Failures map to the FR-CN10 categories (`DNS_FAILED`,
+  `CONNECTION_REFUSED`, `TIMEOUT` with its phase, `AUTH_FAILED`, `PERMISSION_DENIED`, `PROTOCOL_ERROR`,
+  `DB_OUT_OF_RANGE`) with a message and a suggested fix that name the user, never the password (KEEL-006).
