@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build-test:
+    name: Lint, build and test
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      # Actions are pinned to commit SHAs (NFR-SC07); Dependabot keeps them current.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Select Xcode 26
+        run: |
+          xcode=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)
+          sudo xcode-select -s "$xcode"
+          swift --version
+
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .build
+          key: spm-${{ runner.os }}-${{ hashFiles('Package.swift', 'Package.resolved') }}-${{ github.sha }}
+          restore-keys: spm-${{ runner.os }}-${{ hashFiles('Package.swift', 'Package.resolved') }}-
+
+      - name: Lint
+        run: |
+          # `bash -e` would exit on the failing assignment before printing the findings, so capture the status.
+          status=0; out=$(swift format lint --strict -r Sources Tests 2>&1) || status=$?
+          if [ "$status" -ne 0 ] || [ -n "$out" ]; then echo "$out"; echo "::error::swift format lint reported issues; run 'swift format -i -r Sources Tests'"; exit 1; fi
+
+      - name: Build
+        run: |
+          set -o pipefail
+          swift build 2>&1 | tee build.log
+          # Project sources must stay warning-free (NFR-QA01); vendored code under ThirdParty/ is excluded.
+          if grep -E '/Sources/[^ ]*: warning:' build.log | grep -v '/ThirdParty/'; then
+            echo "::error::Build produced warnings in project sources"; exit 1
+          fi
+
+      - name: Test
+        run: swift test

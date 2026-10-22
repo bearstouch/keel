@@ -10,8 +10,9 @@ safety (read-only connections, typed confirmations, bulk delete in batches) and 
 can control connections and data under the same rules as the UI. It supports Redis 6.0+, Valkey and Dragonfly.
 It is a completely independent app: code is vendored from Trellis at build time, nothing is shared at run time.
 
-Status: **specification phase.** No app code exists yet; implementation starts with
-[`KEEL-001`](specs/stories/KEEL-001-package-scaffold-toolchain-and-ci.md).
+Status: **early development.** The package scaffold ([KEEL-001](specs/stories/KEEL-001-package-scaffold-toolchain-and-ci.md))
+is in place: every target builds, the app opens an empty Keel window, and feature modules hold scaffold markers
+(`<Module>Module.swift`) that the first real type in each module replaces. Continue with the next story in sprint order.
 
 - Behavior contract: `specs/` — overview, architecture, functional and non-functional requirements, agent API,
   integrations, macOS support and design. The specs win over assumptions; if a page is ambiguous, resolve it in
@@ -25,7 +26,7 @@ Status: **specification phase.** No app code exists yet; implementation starts w
 ## Toolchain and commands
 
 Requires Xcode 26 / Swift 6.2 (Swift 6 language mode, strict concurrency), macOS 14+. The app is a Swift
-package (`Package.swift`); there is no `.xcodeproj`. Commands below are the target set created by KEEL-001.
+package (`Package.swift`); there is no `.xcodeproj`. Scripts marked *(later)* arrive with the story named beside them.
 
 ```sh
 swift build                                    # build (must be warning-free)
@@ -34,17 +35,19 @@ swift test --filter KeelCoreTests.SafetyPolicyTests   # one test class
 swift format -i -r Sources Tests               # format (config: .swift-format)
 swift format lint --strict -r Sources Tests    # lint: must print nothing
 swift run Keel                                 # run the app (state: com.bearstouch.keel.dev)
-swift run Keel --fixture                       # isolated demo state, never listens for MCP
+swift run Keel --fixture                       # fresh temporary state folder, never listens for MCP
 swift run Keel --state-directory /abs/path     # separate dev state directory
 swift run Keel --no-mcp                        # never start the MCP listener
-KEEL_INTEGRATION=1 swift test --filter KeelIntegrationTests   # container matrix (Redis/Valkey/Dragonfly/sshd)
-python3 scripts/bench-browser.py [--quick]     # 1M/10M-key benchmarks (NFR-PF); evidence in .build/
-scripts/package-release.sh                     # Universal 2 DMG; ad-hoc unless KEEL_SIGN_IDENTITY / KEEL_NOTARY_PROFILE
+KEEL_INTEGRATION=1 swift test --filter KeelIntegrationTests   # container matrix; real cases land with KEEL-053
+python3 scripts/bench-browser.py [--quick]     # (later, KEEL-052) 1M/10M-key benchmarks; evidence in .build/
+scripts/package-release.sh                     # (later, KEEL-057) Universal 2 DMG; ad-hoc unless KEEL_SIGN_IDENTITY / KEEL_NOTARY_PROFILE
 ```
 
 There is no SwiftLint/SwiftFormat binary; use the toolchain's `swift format` with the repo `.swift-format`
 (copied from Trellis: 4-space indent, 220 columns, semicolons and multi-variable `let` allowed).
-Always run format + lint + build + test before committing.
+Always run format + lint + build + test before committing. CI (`.github/workflows/ci.yml`, `macos-26`) runs the same three steps
+and fails on any warning in `Sources/`. Unknown `--` launch flags exit with status 64; an unusable state folder
+(a file, a symlink or another user's folder) exits with 73.
 
 ## Package layout (`Package.swift`)
 

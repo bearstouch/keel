@@ -22,11 +22,11 @@ As a Keel developer, I want the Swift package, targets, formatter and CI in plac
 
 ## Acceptance criteria
 
-- [ ] **AC1.** `swift build` succeeds with zero warnings; `swift format lint --strict -r Sources Tests` prints nothing.
-- [ ] **AC2.** `swift test` runs at least one test per test target and passes.
-- [ ] **AC3.** `swift run Keel` opens a native window titled Keel; `swift run Keel --state-directory /tmp/x` uses that folder for state.
+- [x] **AC1.** `swift build` succeeds with zero warnings; `swift format lint --strict -r Sources Tests` prints nothing.
+- [x] **AC2.** `swift test` runs at least one test per test target and passes.
+- [x] **AC3.** `swift run Keel` opens a native window titled Keel; `swift run Keel --state-directory /tmp/x` uses that folder for state.
 - [ ] **AC4.** CI runs the same three steps on every push and fails on any warning in `Sources/`.
-- [ ] **AC5.** `CLAUDE.md` documents commands, the module table and the spec-first workflow, mirroring Trellis.
+- [x] **AC5.** `CLAUDE.md` documents commands, the module table and the spec-first workflow, mirroring Trellis.
 
 ## Unit tests
 
@@ -38,6 +38,12 @@ Test target: `KeelCoreTests, KeelReleaseTests`.
 | `LaunchArgumentsTests.testRejectsRelativeStateDirectory` | relative paths are refused |
 | `ReleaseManifestTests.testManifestMatchesPackagePlatform` | manifest minimum macOS equals `Package.swift` |
 | `AppIdentityTests.testDevBuildsUseDevBundleIdentity` | unbundled runs resolve to `com.bearstouch.keel.dev` |
+
+## Verification notes
+
+- AC1/AC2: clean build with 0 warnings, empty `swift format lint --strict`, 19 tests across all 8 test targets.
+- AC3: `Keel --state-directory <dir> --no-mcp` ran with an on-screen 1200×792 window owned by the Keel process and created `<dir>` with mode 0700; the title "Keel" is asserted by `MainWindowTests` (the window-list API hides titles without Screen Recording permission, which wasn't requested).
+- AC4: pending until the workflow runs on GitHub.
 
 ## Definition of done
 
