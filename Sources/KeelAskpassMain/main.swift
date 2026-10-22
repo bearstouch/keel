@@ -1,7 +1,7 @@
+import Darwin
 import Foundation
 import KeelAskpass
 
-// Until the askpass broker exists (KEEL-010) the helper answers nothing: exiting non-zero makes ssh treat the prompt
-// as declined, which is the safe outcome. It never prints a guess on stdout, because ssh would send it as a password.
-_ = KeelAskpassModule.name
-exit(1)
+// Run by /usr/bin/ssh as SSH_ASKPASS for tunnels of hosts with a saved password. A prompt it cannot answer from the
+// broker exits non-zero (no terminal), which ssh treats as declined: it never prints a guess, since ssh would send it.
+exit(AskpassHelper(arguments: CommandLine.arguments, environment: ProcessInfo.processInfo.environment).run())

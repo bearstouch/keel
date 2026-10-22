@@ -41,15 +41,15 @@ jobs:
       - name: Lint
         run: |
           # `bash -e` would exit on the failing assignment before printing the findings, so capture the status.
-          status=0; out=$(swift format lint --strict -r Sources Tests 2>&1) || status=$?
-          if [ "$status" -ne 0 ] || [ -n "$out" ]; then echo "$out"; echo "::error::swift format lint reported issues; run 'swift format -i -r Sources Tests'"; exit 1; fi
+          status=0; out=$(swift format lint --strict -r Sources Tests ThirdParty 2>&1) || status=$?
+          if [ "$status" -ne 0 ] || [ -n "$out" ]; then echo "$out"; echo "::error::swift format lint reported issues; run 'swift format -i -r Sources Tests ThirdParty'"; exit 1; fi
 
       - name: Build
         run: |
           set -o pipefail
           swift build 2>&1 | tee build.log
-          # Project sources must stay warning-free (NFR-QA01); vendored code under ThirdParty/ is excluded.
-          if grep -E '/Sources/[^ ]*: warning:' build.log | grep -v '/ThirdParty/'; then
+          # Sources must stay warning-free (NFR-QA01). Vendored code compiles through Sources/<Target>/TrellisShared, so it is checked too.
+          if grep -E '/Sources/[^ ]*: warning:' build.log; then
             echo "::error::Build produced warnings in project sources"; exit 1
           fi
 

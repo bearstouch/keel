@@ -208,3 +208,5 @@ Copied at build time into `ThirdParty/TrellisShared` with `PROVENANCE.md` (Trell
 | Trellis's default terminal colors (`#151719` background, ANSI palette) | Console; the rest of the palette is Keel's own ([08 Design](08-design.md)) |
 
 Identifiers are renamed (`Keel…`, Keychain services above, env prefix `KEEL_`). Any change to the copied code is recorded in `PROVENANCE.md`.
+
+Each vendored file sits in `ThirdParty/TrellisShared/<Target>` and is compiled into that Keel target through the symlink `Sources/<Target>/TrellisShared`. KEEL-002 vendors the SSH host library, discovery, askpass, owner-only storage, shortcut bindings and the MCP HTTP parser, listener and transport checks (Host/Origin, bearer, token hash). The rows that need Keel's own control layer are copied by the story that builds it: the MCP endpoint's sessions and JSON-RPC handling with KEEL-045, the grant store and authorizer with KEEL-043, the terminal colors with KEEL-041.

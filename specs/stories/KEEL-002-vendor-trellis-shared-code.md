@@ -20,10 +20,10 @@ As a Keel developer, I want Trellis's SSH host library, askpass helper, owner-on
 
 ## Acceptance criteria
 
-- [ ] **AC1.** The vendored code builds inside Keel's targets and its ported tests pass.
-- [ ] **AC2.** `PROVENANCE.md` names the Trellis commit and lists each file and each local change.
-- [ ] **AC3.** A grep of `Sources/` and `ThirdParty/TrellisShared/` finds no `Trellis` Keychain service, `com.bearstouch.trellis` path or `TRELLIS_` variable.
-- [ ] **AC4.** Keel and Trellis can run at the same time without sharing state (manual check).
+- [x] **AC1.** The vendored code builds inside Keel's targets and its ported tests pass.
+- [x] **AC2.** `PROVENANCE.md` names the Trellis commit and lists each file and each local change.
+- [x] **AC3.** A grep of `Sources/` and `ThirdParty/TrellisShared/` finds no `Trellis` Keychain service, `com.bearstouch.trellis` path or `TRELLIS_` variable.
+- [ ] **AC4.** Keel and Trellis can run at the same time without sharing state (manual check). **Pending:** not observed yet.
 
 ## Unit tests
 
