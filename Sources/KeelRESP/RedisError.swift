@@ -13,8 +13,9 @@ public enum TransportError: Error, Equatable, Sendable {
     case other
 }
 
-/// Which step ran out of time. Handshake phases (TLS, AUTH, tunnel) join with the handshake stories.
-public enum TimeoutPhase: String, Sendable { case connect, command }
+/// Which step ran out of time: `connect` is TCP (or the Unix socket), `auth` any handshake command. TLS and tunnel
+/// phases join with their stories.
+public enum TimeoutPhase: String, Sendable { case connect, auth, command }
 
 /// A `RedisConnection` failure. Server error replies (`-ERR …`) are not errors here: they come back as
 /// `RESPValue.error` and are interpreted above the protocol layer.

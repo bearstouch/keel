@@ -18,11 +18,11 @@ As a user, I want Keel to authenticate and select my database correctly and tell
 
 ## Acceptance criteria
 
-- [ ] **AC1.** Wrong password → `AUTH_FAILED` naming the username, never the password.
-- [ ] **AC2.** No password on a protected server → `AUTH_FAILED` saying a password is required (`NOAUTH`).
-- [ ] **AC3.** Connecting to a non-Redis port (e.g. HTTP) → `PROTOCOL_ERROR` "This port doesn't look like a Redis server".
-- [ ] **AC4.** `SELECT 20` on a 16-db server → `DB_OUT_OF_RANGE` with the db count.
-- [ ] **AC5.** With SETNAME off, no `CLIENT SETNAME` is sent.
+- [x] **AC1.** Wrong password → `AUTH_FAILED` naming the username, never the password. *(Observed: `ConnectionErrorMappingTests.testMapsServerErrorsToCategories`, `testMessagesNeverContainPassword` (server text echoing the password, a username containing it); `HandshakeIntegrationTests.testWrongPasswordIsAuthFailed` against local Redis 7.2.1.)*
+- [x] **AC2.** No password on a protected server → `AUTH_FAILED` saying a password is required (`NOAUTH`). *(Observed: `HandshakeTests.testNoPasswordOnProtectedServer`, `HandshakeReviewTests.testEmptyPasswordSendsNoAuth`, mapping in `testMapsServerErrorsToCategories`.)*
+- [x] **AC3.** Connecting to a non-Redis port (e.g. HTTP) → `PROTOCOL_ERROR` "This port doesn't look like a Redis server". *(Observed with fakes: `HandshakeTests.testHttpPortIsProtocolError`, `HandshakeReviewTests.testBannerBeforeHelloIsReportedAsCodecError`, `ConnectionErrorMappingTests.testMapsHandshakeTransportFailures`. Not yet observed against a real HTTP port.)*
+- [x] **AC4.** `SELECT 20` on a 16-db server → `DB_OUT_OF_RANGE` with the db count. *(Observed: `HandshakeTests.testDatabaseOutOfRangeReportsCount` and `HandshakeIntegrationTests.testSelectOutOfRangeNamesDatabaseCount` against local Redis 7.2.1.)*
+- [x] **AC5.** With SETNAME off, no `CLIENT SETNAME` is sent. *(Observed: `HandshakeTests.testSetNameCanBeDisabled` on both HELLO and AUTH paths; `HandshakeIntegrationTests.testSetNameOffSendsNoName` (`CLIENT GETNAME` is nil).)*
 
 ## Unit tests
 
@@ -38,7 +38,7 @@ Test target: `KeelRESPTests, KeelCoreTests`.
 
 ## Integration and manual checks
 
-- ACL fixture user with `-select` gets `PERMISSION_DENIED` naming `SELECT`.
+- ACL fixture user with `-select` gets `PERMISSION_DENIED` naming `SELECT`. *(Observed against a disposable local `redis-server` 7.2.1, not the KEEL-053 container fixture: `KEEL_INTEGRATION=1 KEEL_INTEGRATION_REDIS_PORT=<port> swift test --filter HandshakeIntegrationTests` — the test creates and removes its ACL users. **Pending:** Redis 6.0/6.2, Valkey 8 and Dragonfly matrix.)*
 
 ## Definition of done
 
