@@ -115,7 +115,7 @@ Trellis Keychain service, state path, `TRELLIS_` variable, helper name or port 7
   Review-driven extras go in `*ReviewTests.swift`.
 - Assert observable behavior and failure safety (previous state retained on error; blocked commands send nothing).
 - Protocol code is tested against in-memory fake servers first; `KeelIntegrationTests` run pinned containers
-  (Redis 6.0/6.2/7.4/8.x, Valkey 8, Dragonfly, TLS and ACL fixtures, sshd). Never test against a user's servers.
+  (Redis 6.0/6.2/7.4/8.x, Valkey 7.2/8.x/9.x, Dragonfly, TLS and ACL fixtures, sshd). Never test against a user's servers.
 - Golden fixtures in `Tests/Fixtures/` (INFO per server, redis-cli outputs, RESP frames).
 
 ## Change workflow
@@ -144,6 +144,8 @@ performed here (VoiceOver, notarization on a clean Mac, Intel hardware, managed 
   state, instance locks and MCP settings, so both can run at once.
 - Minimum server is Redis 6.0; older servers are refused with `UNSUPPORTED_SERVER`. Cluster and KeyDB support are
   later versions — don't add partial support without updating the specs.
+- Valkey (7.2 – 9.x) is first-class and release-blocking (INT-01, FR-CN20): never depend on a Redis-only command
+  (7.4+/8.x) without a capability probe, and keep the Valkey cases in `KeelIntegrationTests` green.
 - macOS 15+ shows the Local Network prompt for LAN servers; keep `NSLocalNetworkUsageDescription` in `Info.plist`
   and surface a denied permission as such, not as a timeout.
 - `scripts/package-release.sh` must copy and sign `keel-askpass` and Sparkle's helpers; a new helper goes there,

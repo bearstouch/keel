@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Keel is a focused native macOS client for Redis and Redis-compatible servers (Valkey, Dragonfly), Redis 6.0 or later. It makes it easy to connect to many servers, browse and edit their data safely, run commands in a redis-cli-style console, and read server health. It is built to be **safe on production servers by default**, and it lets authorized agents control connections and data through an optional MCP server that applies exactly the same rules as the UI.
+Keel is a focused native macOS client for Redis 6.0 or later and Valkey 7.2 or later, both first-class targets, plus the Redis-compatible Dragonfly. It makes it easy to connect to many servers, browse and edit their data safely, run commands in a redis-cli-style console, and read server health. It is built to be **safe on production servers by default**, and it lets authorized agents control connections and data through an optional MCP server that applies exactly the same rules as the UI.
 
 Keel follows the Bearstouch quality bar set by Trellis and PostWoman: native SwiftUI and AppKit, keyboard-first, accessible, no telemetry, signed and notarized.
 

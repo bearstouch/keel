@@ -12,7 +12,7 @@ As the team, I want every supported server tested in CI, so that compatibility c
 
 ## Scope
 
-- `KeelIntegrationTests` with pinned container digests: Redis 6.0, 6.2, 7.4, 8.x, Valkey 8, Dragonfly 1.x; TLS (custom CA, client cert), ACL restricted users, sshd tunnel
+- `KeelIntegrationTests` with pinned container digests: Redis 6.0, 6.2, 7.4, 8.x, Valkey 7.2, 8.x, 9.x, Dragonfly 1.x; TLS (custom CA, client cert), ACL restricted users, sshd tunnel
 - Opt-in locally via env flag; required in CI
 
 ## Acceptance criteria

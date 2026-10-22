@@ -9,9 +9,11 @@ Keel relies on the system and on existing tools rather than reimplementing them.
 | Server | Versions | Level | Notes |
 | --- | --- | --- | --- |
 | Redis | 6.0 – 8.x | Full | Minimum supported version is 6.0; older servers are refused with `UNSUPPORTED_SERVER` |
-| Valkey | 7.2 – 8.x | Full | Treated as Redis 7.2-compatible plus Valkey-specific INFO fields |
+| Valkey | 7.2 – 9.x | Full, first-class (release-blocking) | Treated as Redis 7.2-compatible plus Valkey-specific INFO fields; parity rules below |
 | Dragonfly | 1.x | Full for the common command set | Some `OBJECT`/`MEMORY`/`DEBUG` subcommands differ; capability probes decide |
 | Managed services (AWS ElastiCache/MemoryDB, Azure Cache, GCP Memorystore, Upstash, Redis Cloud) | — | Best effort | Commonly rename or disable `CONFIG`, `INFO` sections or `COMMAND`; Keel degrades to "unavailable" per feature |
+
+**Valkey parity.** Valkey is a first-class target, not best effort. Every P0 and P1 feature works on Valkey with the same behavior as on Redis 7.2+, or degrades through capability probes (FR-CN12) exactly as it would on a Redis server lacking that feature. Commands added only in Redis 7.4+ or 8.x (for example hash-field TTL or Redis 8 data types) are never assumed; they are probed and shown as "unavailable" when missing. A Valkey failure in the integration matrix blocks a release exactly like a Redis failure ([FR-CN20](03-functional-requirements.md)).
 
 The CI integration matrix is in [NFR-QA03](04-non-functional-requirements.md#quality-and-maintainability). Never test against a user's production servers during development.
 
@@ -37,7 +39,7 @@ Mode: `redis_mode` (`standalone`, `cluster`, `sentinel`) and `role` from `INFO r
 - RESP2 and RESP3. Browser and agent connections use RESP3 when `HELLO 3` succeeds (typed maps, doubles, booleans), else RESP2. The console uses RESP2 by default for redis-cli-identical output.
 - Authentication: `HELLO 3 AUTH <user> <pass>`, or `AUTH <user> <pass>`, or `AUTH <pass>` (`requirepass` / the `default` user), chosen by profile fields and server support.
 - Pipelining for TYPE/PTTL batches; `MULTI/EXEC` with `WATCH` for multi-step edits; no client-side caching (`CLIENT TRACKING`) in v1.
-- Command metadata from `COMMAND INFO` / `COMMAND DOCS`; bundled fallback catalog generated from Redis 7.4 and Valkey 8 sources, versioned, with a test that every command used by the editors is classified.
+- Command metadata from `COMMAND INFO` / `COMMAND DOCS`; bundled fallback catalog generated from Redis 7.4 and Valkey 8 sources and checked against Valkey 9, versioned, with a test that every command used by the editors is classified.
 - Pub/Sub and MONITOR only on dedicated console connections (FR-CO07).
 - Sentinel is P1 and Cluster (`MOVED`/`ASK`) is P2; in v1 a `MOVED` reply is shown as an error with the target node.
 
