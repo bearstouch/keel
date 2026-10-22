@@ -19,11 +19,11 @@ As a user, I want Keel's settings and profiles saved safely, so that a crash or 
 
 ## Acceptance criteria
 
-- [ ] **AC1.** Every saved file is mode 0600 inside a 0700 directory; symlinked targets are refused.
-- [ ] **AC2.** Killing the process at any point of a save leaves either the new file or the previous file/backup readable.
-- [ ] **AC3.** An older debounced save never overwrites a newer one.
-- [ ] **AC4.** A corrupt file triggers recovery with **Recover backup** / **Start empty** and the original is preserved before anything is written.
-- [ ] **AC5.** A file with a newer `version` is never overwritten during the session.
+- [x] **AC1.** Every saved file is mode 0600 inside a 0700 directory; symlinked targets are refused. *(Observed: `testWritesOwnerOnlyAtomically`, `testRefusesSymlinkedTarget` — file, backup and folder.)*
+- [x] **AC2.** Killing the process at any point of a save leaves either the new file or the previous file/backup readable. *(Observed by fault injection between fsync and rename of both the backup and the current file, `testInterruptedSaveLeavesReadableState`; no real SIGKILL run.)*
+- [x] **AC3.** An older debounced save never overwrites a newer one. *(Observed: `testSequenceGateDropsStaleSave`.)*
+- [x] **AC4.** A corrupt file triggers recovery with **Recover backup** / **Start empty** and the original is preserved before anything is written. *(Observed at the domain level — `RecoveryChoice` — in `testCorruptFileIsPreservedBeforeRecovery` and `PersistenceReviewTests`, including files over 4 MiB. **Pending:** the on-screen prompt arrives with the first store that loads a file, KEEL-014.)*
+- [x] **AC5.** A file with a newer `version` is never overwritten during the session. *(Observed: `testNewerVersionOpensReadOnly`, at load and mid-session. The envelope key is `schemaVersion`.)*
 
 ## Unit tests
 

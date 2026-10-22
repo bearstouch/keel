@@ -162,12 +162,14 @@ All state lives in `~/Library/Application Support/<identity>/` (`com.bearstouch.
 
 | File | Contents | Protection |
 | --- | --- | --- |
-| `connections.json` | Profiles, folders, ordering, labels; flags for which secrets exist (never values) | `connections.backup.json`; unreadable → preserved as `connections.unreadable.<UUID>.json` |
-| `hosts.json` | Keel's own saved SSH hosts (format version 1, same shape as the vendored host library) | Backup and unreadable-file preservation |
+| `connections.json` | Profiles, folders, ordering, labels; flags for which secrets exist (never values) | `connections.backup.json`; unreadable → preserved as `connections.corrupt.<UUID>.json` |
+| `hosts.json` | Keel's own saved SSH hosts (format version 1, same shape as the vendored host library) | Backup and corrupt-file preservation |
 | `windows.json` | Native windows, tabs (profile ID, db, mode, selected key path), splits, frames | Backup |
 | `settings.json` | Appearance, browser defaults, console options, remote-control settings | Backup |
-| `grants.json` | Agent grant metadata with token **hashes** only | Unreadable → preserved, store read-only |
-| `known-ca.json` | CA file fingerprints per profile | `0600` |
+| `grants.json` | Agent grant metadata with token **hashes** only | No backup (a stale copy could revive a revoked grant); unreadable → preserved, store read-only |
+| `known-ca.json` | CA file fingerprints per profile | `0600`, no backup; corrupt-file preservation |
+
+Each file is a flat JSON object with an integer `schemaVersion` beside the document's own keys, written by one `Persistence` actor per file (KeelCore). Reads never follow symlinks, are capped at 4 MiB and 128 nesting levels, and give `.missing`, `.loaded` or `.recovery(reason, backup)`; saving stays off until a file has loaded (or is missing), so nothing unread is overwritten. Before each save the previous good file becomes the backup. Saves carry a caller-assigned sequence (an older one never replaces a newer one); `scheduleSave` debounces 300 ms and `flush()` writes immediately on quit. Recovery offers **Recover backup** / **Start empty**; the original is first copied to `<name>.corrupt.<UUID>.json`. A file with a newer `schemaVersion` — at load or seen mid-session — makes that file read-only for the rest of the session: recovery is refused and the backup can only be used in memory. A symlinked file, backup or state folder is refused.
 
 `UserDefaults`: keyboard bindings, Sparkle preferences. **Never persisted:** values, key names from browsing, console output, console history (unless P1 opt-in, with AUTH-type commands always redacted), passwords, tokens, MCP request bodies. Versioned formats: bump, migrate, test the old format; newer unknown versions open read-only and are never overwritten.
 
