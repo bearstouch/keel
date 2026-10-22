@@ -18,3 +18,6 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - Streaming RESP2/RESP3 codec: every reply type including maps, sets, doubles, booleans, big numbers, verbatim
   strings, pushes and attributes; binary-safe command encoding; replies capped at 64 MiB, 4M elements and 128 nesting
   levels, with malformed frames failing as `PROTOCOL_ERROR` (KEEL-004).
+- `RedisConnection`: one pipelined connection per socket over TCP or a Unix socket, with connect and per-command
+  timeouts; a timed-out command closes its connection, and a write interrupted by a drop, timeout or close reports
+  `OUTCOME_UNKNOWN` and is never re-sent (KEEL-005).
