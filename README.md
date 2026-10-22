@@ -22,7 +22,7 @@ Requires Xcode 26 (Swift 6.2) on macOS 14 or later.
 ```sh
 swift build                                   # warning-free build
 swift test                                    # XCTest suite
-swift format lint --strict -r Sources Tests   # must print nothing
+swift format lint --strict -r Sources Tests ThirdParty   # must print nothing
 swift run Keel                                # run the app (development identity)
 swift run Keel --state-directory /abs/path    # use a separate state folder
 ```

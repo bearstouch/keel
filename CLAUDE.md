@@ -32,8 +32,8 @@ package (`Package.swift`); there is no `.xcodeproj`. Scripts marked *(later)* ar
 swift build                                    # build (must be warning-free)
 swift test                                     # full XCTest suite
 swift test --filter KeelCoreTests.SafetyPolicyTests   # one test class
-swift format -i -r Sources Tests               # format (config: .swift-format)
-swift format lint --strict -r Sources Tests    # lint: must print nothing
+swift format -i -r Sources Tests ThirdParty               # format (config: .swift-format)
+swift format lint --strict -r Sources Tests ThirdParty    # lint: must print nothing (swift format skips symlinks, so name ThirdParty)
 swift run Keel                                 # run the app (state: com.bearstouch.keel.dev)
 swift run Keel --fixture                       # fresh temporary state folder, never listens for MCP
 swift run Keel --state-directory /abs/path     # separate dev state directory
@@ -64,9 +64,10 @@ and fails on any warning in `Sources/`. Unknown `--` launch flags exit with stat
 | `KeelRelease` | Release manifest checks, update policy, data-removal plan. |
 | Tests | `KeelRESPTests`, `KeelSSHTests`, `KeelCoreTests`, `KeelControlTests`, `KeelMCPTests`, `KeelUITests`, `KeelReleaseTests`, `KeelIntegrationTests` (XCTest). |
 
-`ThirdParty/TrellisShared` holds code vendored from Trellis (SSH host library, askpass, owner-only storage,
-shortcut bindings, MCP HTTP layer). Record the Trellis commit and every local change in
-`ThirdParty/TrellisShared/PROVENANCE.md`. Sparkle 2 is the only external package (pinned exact version).
+`ThirdParty/TrellisShared/<Target>` holds code vendored from Trellis (SSH host library, askpass, owner-only storage,
+shortcut bindings, MCP HTTP layer); the symlink `Sources/<Target>/TrellisShared` compiles it into that target. Record the
+Trellis commit and every local change in `ThirdParty/TrellisShared/PROVENANCE.md`; `VendoredIdentifiersTests` fails on any
+Trellis Keychain service, state path, `TRELLIS_` variable, helper name or port 7777 in `Sources/`, `ThirdParty/TrellisShared/` or `release/`. Sparkle 2 is the only external package (pinned exact version).
 
 ## Architecture rules
 

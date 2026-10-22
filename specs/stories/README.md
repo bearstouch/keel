@@ -129,7 +129,7 @@ A story is done when all of these hold:
 
 1. The spec pages it touches are updated first (new requirement IDs get acceptance checks).
 2. Code and the listed unit tests are in; tests assert observable behavior and failure safety (previous state kept on error).
-3. `swift format lint --strict -r Sources Tests` prints nothing; `swift build` has zero warnings; `swift test` passes.
+3. `swift format lint --strict -r Sources Tests ThirdParty` prints nothing; `swift build` has zero warnings; `swift test` passes.
 4. Integration checks listed in the story pass against containers (never a user's servers).
 5. UI stories are reviewed against the design canvas ([08 Design](../08-design.md)) in light and dark, with VoiceOver labels and keyboard operation.
 6. No secrets, values, key names or console output are logged or persisted beyond what the specs allow.
