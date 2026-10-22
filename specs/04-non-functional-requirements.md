@@ -82,6 +82,6 @@ Targets are measured on the reference machines (Apple silicon M1 8 GB and an Int
 | --- | --- | --- |
 | NFR-QA01 | Swift 6 language mode, strict concurrency, warning-free build; `swift format lint --strict` prints nothing. | CI on `macos-26`. |
 | NFR-QA02 | XCTest coverage of observable behavior and failure safety per area; RESP codec, URL parser, safety policy and command catalog have exhaustive table tests. | |
-| NFR-QA03 | Integration matrix in CI against Redis 6.0, 6.2, 7.4, 8.x, Valkey 8 and Dragonfly 1.x containers, including TLS (custom CA, client cert), ACL users with restricted permissions, and an sshd tunnel. | |
+| NFR-QA03 | Integration matrix in CI against Redis 6.0, 6.2, 7.4, 8.x, Valkey 7.2, 8.x and 9.x and Dragonfly 1.x containers, including TLS (custom CA, client cert), ACL users with restricted permissions, and an sshd tunnel. | |
 | NFR-QA04 | Golden tests for console formatting against redis-cli 7.4 output. | |
 | NFR-QA05 | Specs are the contract: behavior changes update these pages in the same change, with new requirement IDs and acceptance checks. | Review checklist. |

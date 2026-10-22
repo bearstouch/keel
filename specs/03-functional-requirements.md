@@ -24,6 +24,7 @@ Every requirement has a stable ID, a priority and an acceptance check. Unless ma
 | FR-CN14 | Export and import profiles and folders as versioned JSON **without secrets**; import previews counts and conflicts and never overwrites without an explicit collision policy. | An exported file contains no password, passphrase, token, or `hasPassword`. Re-importing with "Skip existing" changes nothing. |
 | FR-CN15 | Disconnect and Reconnect are explicit actions per tab and per profile. Optional per-profile **Reconnect on launch** (off by default; always off for Production-labeled profiles unless explicitly set). | After relaunch tabs show "Disconnected · Connect" unless the option is on. |
 | FR-CN19 | New Connection sheet shows, in order: a URL field ("Paste a URL to fill the form"), Name, Host and Port, Username and Password ("saved in Keychain"), color label dots, a **Read-only** switch, then collapsed rows **TLS**, **SSH tunnel** and **Advanced** that open their settings in place, and the footer Test · Cancel · Save. | A plain local profile can be created without opening any collapsed row. Test reports one short line ("✓ Connected" or the error category). |
+| FR-CN20 | **Valkey parity** ([INT-01](06-integrations.md#redis-compatible-servers)): Valkey 7.2 – 9.x is a first-class, release-blocking target. Features that need commands Valkey lacks degrade through capability probes (FR-CN12), never by failing. | The browser, every editor, the console, the INFO overview and the agent tools pass the same integration suite on Valkey 7.2, 8.x and 9.x as on Redis 7.4; a failing Valkey case fails CI ([NFR-QA03](04-non-functional-requirements.md#quality-and-maintainability)). |
 | FR-CN16 (P1) | Unix-socket connections (`unix:///path/redis.sock`, `redis+unix://`). | |
 | FR-CN17 (P1) | Sentinel master discovery. | |
 | FR-CN18 (P2) | Redis Cluster browsing across all masters. | |
@@ -34,11 +35,11 @@ Every requirement has a stable ID, a priority and an acceptance check. Unless ma
 | --- | --- | --- |
 | `DNS_FAILED` | Host can't be resolved | The host |
 | `CONNECTION_REFUSED` | Nothing listening | Host and port |
-| `TIMEOUT` | Connect or handshake exceeded the timeout | Which phase (TCP, TLS, AUTH, tunnel) and the timeout |
+| `TIMEOUT` | Connect or handshake exceeded the timeout | Which phase (TCP — "TCP and TLS" for a TLS profile, AUTH, tunnel) and the timeout |
 | `TLS_UNTRUSTED` | Chain doesn't verify against system or custom CA | Issuer, and that a custom CA can be selected |
 | `TLS_HOSTNAME_MISMATCH` | Certificate doesn't match the server name | Expected name and certificate names; suggests SNI override |
-| `TLS_HANDSHAKE_FAILED` | Protocol mismatch, client cert required, or server not speaking TLS | "Server may not be using TLS" when the first bytes look like RESP |
-| `NOT_TLS_EXPECTED` | TLS server reached without TLS | Suggests enabling TLS |
+| `TLS_HANDSHAKE_FAILED` | Protocol mismatch, client cert required or refused, or server not speaking TLS | "Server may not be using TLS" when a plain `PING` to the same port gets a RESP reply ([Architecture](02-architecture.md#tls)); "requires a client certificate" when the profile has none, "rejected the client certificate" when it has one; the `errSSL` status |
+| `NOT_TLS_EXPECTED` | TLS server reached without TLS: it answered with a TLS record | Suggests enabling TLS |
 | `AUTH_FAILED` | `WRONGPASS`, `NOAUTH`, `ERR invalid password`, user disabled | Username (never the password); for `NOAUTH`, that a password is required |
 | `PERMISSION_DENIED` | `NOPERM` during handshake (e.g. `SELECT`, `INFO`) | The command the ACL user can't run |
 | `TUNNEL_FAILED` | ssh exited, forward failed, host key declined | ssh exit status and sanitized last stderr line |

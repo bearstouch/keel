@@ -84,7 +84,10 @@ public struct RESPLimits: Sendable, Equatable {
 
 /// What a malformed frame broke; carried by `RESPError.protocolError`.
 public enum RESPViolation: String, Sendable {
-    case unknownType, invalidLength, invalidInteger, invalidDouble, invalidBoolean, invalidBigNumber, invalidVerbatim, invalidNull
+    case unknownType
+    /// An unknown type byte that starts a TLS record (alert 0x15, handshake 0x16): the server expects TLS.
+    case tlsRecord
+    case invalidLength, invalidInteger, invalidDouble, invalidBoolean, invalidBigNumber, invalidVerbatim, invalidNull
     /// A CR not followed by LF, a bare LF, or a bulk payload not followed by CRLF.
     case invalidLineEnding
     case nestingTooDeep

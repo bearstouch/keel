@@ -12,7 +12,7 @@ As the safety policy and the console, I want every command's flags, arity, key p
 
 ## Scope
 
-- Bundled catalog generated from Redis 7.4 and Valkey 8 (`Resources/Commands`, versioned) with flags `write`, `readonly`, `admin`, `dangerous`, `blocking`, `pubsub`
+- Bundled catalog generated from Redis 7.4 and Valkey 8, checked against Valkey 9 (`Resources/Commands`, versioned) with flags `write`, `readonly`, `admin`, `dangerous`, `blocking`, `pubsub`
 - Live catalog from `COMMAND INFO` / `COMMAND DOCS` when available, merged over the bundled one
 - Subcommands (`CLIENT LIST`, `XINFO STREAM`)
 
