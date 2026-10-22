@@ -1,0 +1,34 @@
+{
+  "v": 3,
+  "createdOnFiles": {"v": 1, "at": "2026-10-22T19:40:00Z"},
+  "title": "Keel — Native calm",
+  "launch": {"view": "canvas"},
+  "pages": [],
+  "boards": {
+    "Main.dc.html": {"x": 0, "y": 260, "w": 1440, "h": 900, "title": "Browser · Light", "radius": 12},
+    "Console.dc.html": {"x": 1520, "y": 260, "w": 1440, "h": 900, "title": "Console · Light", "radius": 12},
+    "Info.dc.html": {"x": 3040, "y": 260, "w": 1440, "h": 900, "title": "Server info · Light", "radius": 12},
+    "Connection.dc.html": {"x": 4560, "y": 260, "w": 1440, "h": 900, "title": "New connection · Light", "radius": 12},
+    "BulkDelete.dc.html": {"x": 6080, "y": 260, "w": 1440, "h": 900, "title": "Bulk delete · Light", "radius": 12},
+    "Agents.dc.html": {"x": 7600, "y": 260, "w": 1440, "h": 900, "title": "Agents & MCP · Light", "radius": 12},
+    "BrowserDark.dc.html": {"x": 0, "y": 1540, "w": 1440, "h": 900, "title": "Browser · Dark · production read-only", "radius": 12},
+    "ConsoleDark.dc.html": {"x": 1520, "y": 1540, "w": 1440, "h": 900, "title": "Console · Dark · production read-only", "radius": 12},
+    "InfoDark.dc.html": {"x": 3040, "y": 1540, "w": 1440, "h": 900, "title": "Server info · Dark · production", "radius": 12},
+    "ConnectionDark.dc.html": {"x": 4560, "y": 1540, "w": 1440, "h": 900, "title": "New connection · Dark", "radius": 12},
+    "BulkDeleteDark.dc.html": {"x": 6080, "y": 1540, "w": 1440, "h": 900, "title": "Bulk delete · Dark", "radius": 12},
+    "AgentsDark.dc.html": {"x": 7600, "y": 1540, "w": 1440, "h": 900, "title": "Agents & MCP · Dark", "radius": 12},
+    "Tokens.dc.html": {"x": 0, "y": 2820, "w": 1440, "h": 900, "title": "Native calm tokens"},
+    "Sidebar.dc.html": {"x": 1520, "y": 2820, "w": 232, "h": 900, "title": "Sidebar component"}
+  },
+  "order": [
+    "Main.dc.html", "Console.dc.html", "Info.dc.html", "Connection.dc.html", "BulkDelete.dc.html", "Agents.dc.html",
+    "BrowserDark.dc.html", "ConsoleDark.dc.html", "InfoDark.dc.html", "ConnectionDark.dc.html", "BulkDeleteDark.dc.html", "AgentsDark.dc.html",
+    "Tokens.dc.html", "Sidebar.dc.html"
+  ],
+  "notes": {
+    "lightTitle": {"x": 0, "y": 0, "text": "Native calm · Light", "kind": "title1", "maxW": 9040},
+    "darkTitle": {"x": 0, "y": 1280, "text": "Native calm · Dark", "kind": "title1", "maxW": 9040},
+    "sysTitle": {"x": 0, "y": 2560, "text": "Tokens & components", "kind": "title1", "maxW": 1768}
+  },
+  "designSystems": []
+}

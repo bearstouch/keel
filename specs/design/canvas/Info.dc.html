@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Keel — Server info</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1440px; height: 900px; display: flex; overflow: hidden; background: {{t.bg}}; color: {{t.fg}}; font-family: Inter, system-ui, sans-serif; font-size: 13px;">
+  <dc-import name="Sidebar" theme="{{theme}}" selected="{{connId}}" hint-size="232px,900px"></dc-import>
+  <main style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column;">
+    <header style="height: 52px; flex-shrink: 0; display: flex; align-items: center; gap: 16px; padding: 0 20px; border-bottom: 1px solid {{t.hair}};">
+      <span style="font-size: 14px; font-weight: 600;">{{connId}}</span>
+      <span style="font-size: 12px; color: {{t.muted}};">Redis 7.4</span>
+      <span style="flex-grow: 1;"></span>
+      <div role="tablist" aria-label="Mode" style="display: flex; padding: 2px; border-radius: 8px; background: {{t.soft}}; gap: 2px;">
+        <button type="button" role="tab" aria-selected="false" style="height: 26px; padding: 0 14px; border: 0; border-radius: 6px; background: transparent; color: {{t.muted}}; font: inherit; font-size: 12.5px;">Browser</button>
+        <button type="button" role="tab" aria-selected="false" style="height: 26px; padding: 0 14px; border: 0; border-radius: 6px; background: transparent; color: {{t.muted}}; font: inherit; font-size: 12.5px;">Console</button>
+        <button type="button" role="tab" aria-selected="true" style="height: 26px; padding: 0 14px; border: 0; border-radius: 6px; background: {{t.segOn}}; color: {{t.fg}}; font: inherit; font-size: 12.5px; font-weight: 600; box-shadow: {{t.segShadow}};">Info</button>
+      </div>
+      <span style="flex-grow: 1;"></span>
+      <button type="button" aria-label="Refresh" style="width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 7px; background: transparent; color: {{t.muted}};">
+        <svg aria-hidden="true" width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"></path><path d="M13.5 2v3h-3"></path></svg>
+      </button>
+    </header>
+
+    <div role="tablist" aria-label="Open connections" style="height: 38px; flex-shrink: 0; display: flex; align-items: flex-end; gap: 2px; padding: 0 12px; background: {{t.tabBar}}; border-bottom: 1px solid {{t.hair}};">
+      <sc-for list="{{tabs}}" as="tab" hint-placeholder-count="3">
+        <button type="button" role="tab" aria-selected="{{tab.selected}}" style="height: 31px; margin-bottom: -1px; display: flex; align-items: center; gap: 8px; padding: 0 12px 0 14px; border: {{tab.border}}; border-bottom: 0; border-radius: 8px 8px 0 0; background: {{tab.bg}}; color: {{tab.fg}}; font: inherit; font-size: 12.5px; font-weight: {{tab.weight}};">
+          <span aria-hidden="true" style="width: 7px; height: 7px; border-radius: 50%; background: {{tab.dot}};"></span>
+          {{tab.label}}
+          <span aria-label="Close tab" style="margin-left: 4px; color: {{t.muted}}; font-size: 14px; line-height: 1;">×</span>
+        </button>
+      </sc-for>
+      <button type="button" aria-label="New tab" style="width: 30px; height: 31px; border: 0; background: transparent; color: {{t.muted}}; font: inherit; font-size: 16px;">+</button>
+    </div>
+
+    <sc-if value="{{production}}" hint-placeholder-val="{{ false }}">
+      <div role="status" style="height: 28px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; gap: 8px; background: {{t.prodBg}}; color: {{t.prodFg}}; font-size: 12px; font-weight: 600;">
+        <span>Production</span><span aria-hidden="true">·</span><span>Read-only</span>
+      </div>
+    </sc-if>
+
+    <div style="flex-grow: 1; padding: 40px 48px; display: flex; flex-direction: column; gap: 40px;">
+      <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px;">
+        <sc-for list="{{tiles}}" as="k" hint-placeholder-count="4">
+          <div style="display: flex; flex-direction: column; gap: 8px; padding: 22px 24px; border-radius: 12px; background: {{t.card}};">
+            <span style="font-size: 12.5px; color: {{t.muted}};">{{k.label}}</span>
+            <span style="display: flex; align-items: baseline; gap: 6px;">
+              <span style="font-size: 30px; font-weight: 600; letter-spacing: -0.02em;">{{k.value}}</span>
+              <span style="font-size: 13px; color: {{t.muted}};">{{k.unit}}</span>
+            </span>
+            <sc-if value="{{k.bar}}" hint-placeholder-val="{{ false }}">
+              <span aria-hidden="true" style="height: 4px; border-radius: 2px; background: {{t.track}}; overflow: hidden; margin-top: 6px;"><span style="display: block; width: 30%; height: 4px; background: {{t.accent}};"></span></span>
+            </sc-if>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 48px;">
+        <section aria-label="Databases" style="display: flex; flex-direction: column;">
+          <h2 style="margin: 0 0 12px; font-size: 14px; font-weight: 600;">Databases</h2>
+          <sc-for list="{{dbs}}" as="d" hint-placeholder-count="2">
+            <div style="display: flex; align-items: center; height: 44px; border-top: 1px solid {{t.hair}}; font-size: 13px;">
+              <span style="width: 80px; font-family: 'JetBrains Mono', ui-monospace, monospace;">{{d.db}}</span>
+              <span style="flex-grow: 1; color: {{t.muted}};">{{d.keys}}</span>
+              <a href="#" style="color: {{t.accent}}; text-decoration: none; font-size: 12.5px;">Browse</a>
+            </div>
+          </sc-for>
+        </section>
+        <section aria-label="Health" style="display: flex; flex-direction: column;">
+          <h2 style="margin: 0 0 12px; font-size: 14px; font-weight: 600;">Health</h2>
+          <sc-for list="{{health}}" as="h" hint-placeholder-count="3">
+            <div style="display: flex; align-items: center; height: 44px; border-top: 1px solid {{t.hair}}; font-size: 13px;">
+              <span style="flex-grow: 1; color: {{t.muted}};">{{h.k}}</span>
+              <span>{{h.v}}</span>
+            </div>
+          </sc-for>
+        </section>
+      </div>
+
+      <a href="#" style="align-self: flex-start; color: {{t.accent}}; text-decoration: none; font-size: 12.5px;">Show all INFO fields</a>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"production":{"editor":"boolean","default":false},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const theme = this.props.theme ?? 'light';
+    const dark = theme === 'dark';
+    const production = !!this.props.production;
+    const t = dark ? {
+      bg: '#1E1E1E', tabBar: '#29292B', card: '#262628', fg: '#E5E5E7', muted: '#A1A1A6', hair: '#38383A', soft: '#2C2C2E', segOn: '#48484A', segShadow: 'none',
+      accent: '#FF6F61', track: '#48484A', prodBg: '#4A1F1C', prodFg: '#FFD6D1'
+    } : {
+      bg: '#FFFFFF', tabBar: '#F6F8FB', card: '#F4F7FA', fg: '#18212F', muted: '#4E5B6D', hair: '#E3E8EE', soft: '#F1F4F8', segOn: '#FFFFFF', segShadow: '0 1px 2px rgba(24,33,47,0.12)',
+      accent: '#C7302A', track: '#DDE4EC', prodBg: '#7A1A14', prodFg: '#FFFFFF'
+    };
+    const tiles = [
+      { label: 'Memory', value: '1.2', unit: 'of 4 GB', bar: true },
+      { label: 'Clients', value: '48', unit: '' },
+      { label: 'Operations', value: '3,412', unit: 'per sec' },
+      { label: 'Uptime', value: '12', unit: 'days' }
+    ];
+    const dbs = [{ db: 'db0', keys: '1,204,551 keys' }, { db: 'db3', keys: '1,822 keys' }];
+    const health = [{ k: 'Replication', v: '2 replicas in sync' }, { k: 'Last save', v: '6 minutes ago' }, { k: 'Hit ratio', v: '97.8%' }];
+    const tabDots = dark ? { red: '#FF7B7B', orange: '#F2A65A', green: '#8DDAA4' } : { red: '#C8363C', orange: '#B86200', green: '#2E8B4F' };
+    const cur = production ? 'payments-prod' : 'local-dev';
+    const tabs = [['local-dev', 'green'], ['api-staging', 'orange'], ['payments-prod', 'red']].map(([label, c]) => {
+      const on = label === cur;
+      return { label, dot: tabDots[c], selected: on ? 'true' : 'false', bg: on ? t.bg : 'transparent', fg: on ? t.fg : t.muted, weight: on ? '600' : '400', border: on ? ('1px solid ' + t.hair) : '1px solid transparent' };
+    });
+    return { tabs, theme, t, production, connId: production ? 'payments-prod' : 'local-dev', tiles, dbs, health };
+  }
+}
+</script>
+</body>
+</html>

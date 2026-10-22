@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Keel — Console</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1440px; height: 900px; display: flex; overflow: hidden; background: {{t.bg}}; color: {{t.fg}}; font-family: Inter, system-ui, sans-serif; font-size: 13px;">
+  <dc-import name="Sidebar" theme="{{theme}}" selected="{{connId}}" hint-size="232px,900px"></dc-import>
+  <main style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column;">
+    <header style="height: 52px; flex-shrink: 0; display: flex; align-items: center; gap: 16px; padding: 0 20px; border-bottom: 1px solid {{t.hair}};">
+      <span style="font-size: 14px; font-weight: 600;">{{connId}}</span>
+      <button type="button" aria-label="Database db0" style="height: 26px; display: flex; align-items: center; gap: 6px; padding: 0 8px; border: 0; border-radius: 6px; background: {{t.soft}}; color: {{t.muted}}; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px;">
+        db0
+        <svg aria-hidden="true" width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 3.5 5 6.5 8 3.5"></path></svg>
+      </button>
+      <span style="flex-grow: 1;"></span>
+      <div role="tablist" aria-label="Mode" style="display: flex; padding: 2px; border-radius: 8px; background: {{t.soft}}; gap: 2px;">
+        <button type="button" role="tab" aria-selected="false" style="height: 26px; padding: 0 14px; border: 0; border-radius: 6px; background: transparent; color: {{t.muted}}; font: inherit; font-size: 12.5px;">Browser</button>
+        <button type="button" role="tab" aria-selected="true" style="height: 26px; padding: 0 14px; border: 0; border-radius: 6px; background: {{t.segOn}}; color: {{t.fg}}; font: inherit; font-size: 12.5px; font-weight: 600; box-shadow: {{t.segShadow}};">Console</button>
+        <button type="button" role="tab" aria-selected="false" style="height: 26px; padding: 0 14px; border: 0; border-radius: 6px; background: transparent; color: {{t.muted}}; font: inherit; font-size: 12.5px;">Info</button>
+      </div>
+      <span style="flex-grow: 1;"></span>
+      <button type="button" aria-label="Search, command palette ⌘K" style="width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 7px; background: transparent; color: {{t.muted}};">
+        <svg aria-hidden="true" width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4.5"></circle><path d="M10.5 10.5 14 14"></path></svg>
+      </button>
+    </header>
+
+    <div role="tablist" aria-label="Open connections" style="height: 38px; flex-shrink: 0; display: flex; align-items: flex-end; gap: 2px; padding: 0 12px; background: {{t.tabBar}}; border-bottom: 1px solid {{t.hair}};">
+      <sc-for list="{{tabs}}" as="tab" hint-placeholder-count="3">
+        <button type="button" role="tab" aria-selected="{{tab.selected}}" style="height: 31px; margin-bottom: -1px; display: flex; align-items: center; gap: 8px; padding: 0 12px 0 14px; border: {{tab.border}}; border-bottom: 0; border-radius: 8px 8px 0 0; background: {{tab.bg}}; color: {{tab.fg}}; font: inherit; font-size: 12.5px; font-weight: {{tab.weight}};">
+          <span aria-hidden="true" style="width: 7px; height: 7px; border-radius: 50%; background: {{tab.dot}};"></span>
+          {{tab.label}}
+          <span aria-label="Close tab" style="margin-left: 4px; color: {{t.muted}}; font-size: 14px; line-height: 1;">×</span>
+        </button>
+      </sc-for>
+      <button type="button" aria-label="New tab" style="width: 30px; height: 31px; border: 0; background: transparent; color: {{t.muted}}; font: inherit; font-size: 16px;">+</button>
+    </div>
+
+    <sc-if value="{{production}}" hint-placeholder-val="{{ false }}">
+      <div role="status" style="height: 28px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; gap: 8px; background: {{t.prodBg}}; color: {{t.prodFg}}; font-size: 12px; font-weight: 600;">
+        <span>Production</span><span aria-hidden="true">·</span><span>Read-only</span>
+      </div>
+    </sc-if>
+
+    <section aria-label="Redis console" style="flex-grow: 1; min-height: 0; position: relative; background: #151719; color: #DEE0E5; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 14px; line-height: 1.7; padding: 28px 32px;">
+      <sc-for list="{{lines}}" as="l" hint-placeholder-count="12">
+        <div style="white-space: pre; color: {{l.color}}; margin-top: {{l.gap}};"><span style="color: #7C899C;">{{l.prompt}}</span>{{l.text}}</div>
+      </sc-for>
+      <div style="white-space: pre; display: flex; align-items: center; margin-top: 12px;"><span style="color: #7C899C;">› </span><span style="color: #FFFFFF;">{{inputText}}</span><span aria-hidden="true" style="display: inline-block; width: 8px; height: 19px; background: #FF8A7E; margin-left: 1px;"></span><span style="color: #6B7689;">{{inputHint}}</span></div>
+
+      <sc-if value="{{showPop}}" hint-placeholder-val="{{ false }}">
+        <div role="listbox" aria-label="Completions" style="position: absolute; left: 50px; top: {{popTop}}; width: 220px; padding: 4px; border: 1px solid #3A3A3C; border-radius: 8px; background: #2A2A2C; box-shadow: 0 12px 32px rgba(0,0,0,0.45); font-size: 13px;">
+          <sc-for list="{{completions}}" as="c" hint-placeholder-count="3">
+            <div role="option" aria-selected="{{c.selected}}" style="height: 30px; display: flex; align-items: center; padding: 0 10px; border-radius: 5px; background: {{c.bg}}; color: #FFFFFF;">{{c.name}}</div>
+          </sc-for>
+        </div>
+      </sc-if>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"production":{"editor":"boolean","default":false},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const theme = this.props.theme ?? 'light';
+    const dark = theme === 'dark';
+    const production = !!this.props.production;
+    const t = dark ? {
+      bg: '#1E1E1E', tabBar: '#29292B', fg: '#E5E5E7', muted: '#A1A1A6', hair: '#38383A', soft: '#2C2C2E', segOn: '#48484A', segShadow: 'none', prodBg: '#4A1F1C', prodFg: '#FFD6D1'
+    } : {
+      bg: '#FFFFFF', tabBar: '#F6F8FB', fg: '#18212F', muted: '#4E5B6D', hair: '#E3E8EE', soft: '#F1F4F8', segOn: '#FFFFFF', segShadow: '0 1px 2px rgba(24,33,47,0.12)', prodBg: '#7A1A14', prodFg: '#FFFFFF'
+    };
+    const OUT = '#DEE0E5', CMD = '#FFFFFF', DIM = '#8C95A3', ERR = '#FFA4A4';
+    const C = (text) => ({ prompt: '› ', text, color: CMD, gap: '14px' });
+    const O = (text, color) => ({ prompt: '', text, color: color || OUT, gap: '0px' });
+    let lines, inputText, inputHint, showPop, popTop;
+    if (production) {
+      lines = [
+        C('GET config:version'), O('"2026.10.3"'),
+        C('DBSIZE'), O('(integer) 1204551'),
+        C('SET feature:checkout on'), O('(error) Blocked: this connection is read-only', ERR)
+      ];
+      inputText = 'SCAN 0 MATCH order:*'; inputHint = ''; showPop = false; popTop = '0px';
+    } else {
+      lines = [
+        C('HGET user:1042 plan'), O('"team"'),
+        C('TTL user:1042'), O('(integer) 274320'),
+        C('ZREVRANGE leaderboard:daily 0 2'), O('1) "ana"'), O('2) "rui"'), O('3) "joana"'),
+        C('GET cache:missing'), O('(nil)', DIM)
+      ];
+      inputText = 'HSC'; inputHint = 'AN key cursor'; showPop = true; popTop = '420px';
+    }
+    const completions = ['HSCAN', 'HSET', 'HSETNX'].map((name, i) => ({ name, selected: i === 0 ? 'true' : 'false', bg: i === 0 ? '#3D2826' : 'transparent' }));
+    const tabDots = dark ? { red: '#FF7B7B', orange: '#F2A65A', green: '#8DDAA4' } : { red: '#C8363C', orange: '#B86200', green: '#2E8B4F' };
+    const cur = production ? 'payments-prod' : 'local-dev';
+    const tabs = [['local-dev', 'green'], ['api-staging', 'orange'], ['payments-prod', 'red']].map(([label, c]) => {
+      const on = label === cur;
+      return { label, dot: tabDots[c], selected: on ? 'true' : 'false', bg: on ? t.bg : 'transparent', fg: on ? t.fg : t.muted, weight: on ? '600' : '400', border: on ? ('1px solid ' + t.hair) : '1px solid transparent' };
+    });
+    return { tabs, theme, t, production, connId: production ? 'payments-prod' : 'local-dev', lines, inputText, inputHint, showPop, popTop, completions };
+  }
+}
+</script>
+</body>
+</html>

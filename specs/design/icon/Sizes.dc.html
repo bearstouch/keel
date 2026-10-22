@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Keel icon sizes</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1280px; height: 560px; display: grid; grid-template-rows: repeat(2, minmax(0, 1fr)); font-family: Inter, system-ui, sans-serif;">
+  <sc-for list="{{rows}}" as="row" hint-placeholder-count="2">
+    <div style="display: flex; align-items: flex-end; gap: 44px; padding: 0 56px 34px; background: {{row.bg}}; color: {{row.fg}};">
+      <sc-for list="{{row.sizes}}" as="s" hint-placeholder-count="6">
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 12px;">
+          <dc-import name="Icon" variant="red" concept="layers" size="{{s.size}}" hint-size="{{s.hint}}"></dc-import>
+          <span style="font-size: 12px; color: {{row.muted}};">{{s.label}}</span>
+        </div>
+      </sc-for>
+    </div>
+  </sc-for>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":560}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const sizes = [[200, '1024 / 512'], [128, '256'], [64, '128'], [48, '64'], [32, '32'], [16, '16']].map(([size, label]) => ({ size, label: label + ' px', hint: size + 'px,' + size + 'px' }));
+    const rows = [
+      { bg: '#FFFFFF', fg: '#18212F', muted: '#4E5B6D', sizes },
+      { bg: '#1E1E1E', fg: '#E5E5E7', muted: '#A1A1A6', sizes }
+    ];
+    return { rows };
+  }
+}
+</script>
+</body>
+</html>

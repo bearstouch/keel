@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Keel — New connection</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1440px; height: 900px; position: relative; display: flex; overflow: hidden; background: {{t.bg}}; color: {{t.fg}}; font-family: Inter, system-ui, sans-serif; font-size: 13px;">
+  <dc-import name="Sidebar" theme="{{theme}}" selected="api-staging" hint-size="232px,900px"></dc-import>
+  <div style="flex-grow: 1; border-top: 52px solid {{t.bg}};"></div>
+  <div aria-hidden="true" style="position: absolute; left: 0; top: 0; width: 1440px; height: 900px; background: {{t.scrim}};"></div>
+
+  <section role="dialog" aria-modal="true" aria-labelledby="ncTitle" style="position: absolute; left: 556px; top: 64px; width: 560px; box-sizing: border-box; display: flex; flex-direction: column; gap: 18px; padding: 28px 32px; border-radius: 14px; background: {{t.sheet}}; box-shadow: 0 24px 64px rgba(0,0,0,{{t.shadowA}});">
+    <h1 id="ncTitle" style="margin: 0; font-size: 18px; font-weight: 600;">New Connection</h1>
+
+    <label style="display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: {{t.muted}};">Paste a URL to fill the form
+      <input type="text" value="rediss://app@cache.internal:6380/2" style="height: 36px; box-sizing: border-box; padding: 0 12px; border: 0; border-radius: 8px; background: {{t.field}}; color: {{t.fg}}; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12.5px;">
+    </label>
+
+    <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px;">
+      <label style="grid-column: span 4; display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: {{t.muted}};">Name
+        <input type="text" value="orders-cache" style="height: 36px; box-sizing: border-box; padding: 0 12px; border: 0; border-radius: 8px; background: {{t.field}}; color: {{t.fg}}; font: inherit; font-size: 13px;">
+      </label>
+      <label style="grid-column: span 3; display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: {{t.muted}};">Host
+        <input type="text" value="cache.internal" style="height: 36px; box-sizing: border-box; padding: 0 12px; border: 0; border-radius: 8px; background: {{t.field}}; color: {{t.fg}}; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12.5px;">
+      </label>
+      <label style="grid-column: span 1; display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: {{t.muted}};">Port
+        <input type="text" value="6380" style="height: 36px; box-sizing: border-box; padding: 0 12px; border: 0; border-radius: 8px; background: {{t.field}}; color: {{t.fg}}; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12.5px;">
+      </label>
+      <label style="grid-column: span 2; display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: {{t.muted}};">Username
+        <input type="text" value="app" style="height: 36px; box-sizing: border-box; padding: 0 12px; border: 0; border-radius: 8px; background: {{t.field}}; color: {{t.fg}}; font: inherit; font-size: 13px;">
+      </label>
+      <label style="grid-column: span 2; display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: {{t.muted}};">Password · saved in Keychain
+        <input type="password" value="secretvalue1" style="height: 36px; box-sizing: border-box; padding: 0 12px; border: 0; border-radius: 8px; background: {{t.field}}; color: {{t.fg}}; font: inherit; font-size: 13px;">
+      </label>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <span style="font-size: 12px; color: {{t.muted}}; width: 60px;">Label</span>
+      <div role="radiogroup" aria-label="Color label" style="display: flex; gap: 8px;">
+        <sc-for list="{{labels}}" as="lb" hint-placeholder-count="5">
+          <button type="button" role="radio" aria-checked="{{lb.checked}}" aria-label="{{lb.name}}" style="width: 22px; height: 22px; padding: 0; border-radius: 50%; border: {{lb.ring}}; background: {{t.sheet}}; display: flex; align-items: center; justify-content: center;">
+            <span aria-hidden="true" style="width: 14px; height: 14px; border-radius: 50%; background: {{lb.dot}};"></span>
+          </button>
+        </sc-for>
+      </div>
+      <span style="font-size: 12.5px;">Production</span>
+    </div>
+
+    <label style="display: flex; align-items: center; gap: 12px; font-size: 13px;">
+      <span style="flex-grow: 1;">Read-only</span>
+      <input type="checkbox" checked="{{yes}}" style="position: absolute; width: 1px; height: 1px; opacity: 0;">
+      <span aria-hidden="true" style="width: 34px; height: 20px; border-radius: 10px; background: {{t.accent}}; position: relative;"><span style="position: absolute; right: 2px; top: 2px; width: 16px; height: 16px; border-radius: 50%; background: {{t.knob}};"></span></span>
+    </label>
+
+    <div style="display: flex; flex-direction: column; border-top: 1px solid {{t.hair}};">
+      <sc-for list="{{more}}" as="m" hint-placeholder-count="3">
+        <button type="button" aria-expanded="false" style="height: 44px; display: flex; align-items: center; gap: 10px; padding: 0; border: 0; border-bottom: 1px solid {{t.hair}}; background: transparent; color: {{t.fg}}; font: inherit; font-size: 13px; text-align: left;">
+          <span style="flex-grow: 1;">{{m.name}}</span>
+          <span style="color: {{t.muted}}; font-size: 12.5px;">{{m.value}}</span>
+          <svg aria-hidden="true" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="{{t.muted}}" stroke-width="1.5"><path d="M3.5 2 6.5 5 3.5 8"></path></svg>
+        </button>
+      </sc-for>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <button type="button" style="height: 34px; padding: 0 4px; border: 0; background: transparent; color: {{t.accent}}; font: inherit; font-size: 13px;">Test</button>
+      <span role="status" style="font-size: 12.5px; color: {{t.success}};">✓ Connected</span>
+      <span style="flex-grow: 1;"></span>
+      <button type="button" style="height: 34px; padding: 0 16px; border: 0; border-radius: 8px; background: {{t.field}}; color: {{t.fg}}; font: inherit; font-size: 13px;">Cancel</button>
+      <button type="button" style="height: 34px; padding: 0 20px; border: 0; border-radius: 8px; background: {{t.accent}}; color: {{t.onAccent}}; font: inherit; font-size: 13px; font-weight: 600;">Save</button>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const theme = this.props.theme ?? 'light';
+    const dark = theme === 'dark';
+    const t = dark ? {
+      bg: '#1E1E1E', fg: '#E5E5E7', muted: '#A1A1A6', hair: '#3A3A3C', sheet: '#2A2A2C', field: '#38383A', scrim: 'rgba(5,7,10,0.55)', shadowA: '0.55',
+      accent: '#FF6F61', onAccent: '#2A0B08', knob: '#2A0B08', success: '#8DDAA4'
+    } : {
+      bg: '#FFFFFF', fg: '#18212F', muted: '#4E5B6D', hair: '#E3E8EE', sheet: '#FFFFFF', field: '#F1F4F8', scrim: 'rgba(24,33,47,0.22)', shadowA: '0.18',
+      accent: '#C7302A', onAccent: '#FFFFFF', knob: '#FFFFFF', success: '#216B3B'
+    };
+    const dots = dark
+      ? [['Production', '#FF7B7B'], ['Staging', '#F2A65A'], ['Local', '#8DDAA4'], ['Blue', '#8BB8F0'], ['Gray', '#8E8E93']]
+      : [['Production', '#C8363C'], ['Staging', '#B86200'], ['Local', '#2E8B4F'], ['Blue', '#2F6FBF'], ['Gray', '#7A8596']];
+    const labels = dots.map(([name, dot], i) => ({ name, dot, checked: i === 0 ? 'true' : 'false', ring: i === 0 ? ('2px solid ' + t.accent) : '2px solid transparent' }));
+    const more = [{ name: 'TLS', value: 'On' }, { name: 'SSH tunnel', value: 'None' }, { name: 'Advanced', value: '' }];
+    return { theme, t, labels, more, yes: true };
+  }
+}
+</script>
+</body>
+</html>

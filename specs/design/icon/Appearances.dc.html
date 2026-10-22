@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Keel icon appearances</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1280px; height: 560px; box-sizing: border-box; padding: 56px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 24px; background: #F6F8FB; color: #18212F; font-family: Inter, system-ui, sans-serif;">
+  <sc-for list="{{looks}}" as="k" hint-placeholder-count="4">
+    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; border-radius: 16px; background: {{k.bg}};">
+      <dc-import name="Icon" variant="{{k.id}}" concept="layers" size="{{size}}" hint-size="220px,220px"></dc-import>
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 3px;">
+        <span style="font-size: 15px; font-weight: 600; color: {{k.fg}};">{{k.name}}</span>
+        <span style="font-size: 12.5px; color: {{k.muted}};">{{k.note}}</span>
+      </div>
+    </div>
+  </sc-for>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":560}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const looks = [
+      { id: 'red', name: 'Default', note: 'Redis red · Dock and Finder', bg: '#FFFFFF', fg: '#18212F', muted: '#4E5B6D' },
+      { id: 'dark', name: 'Dark', note: 'Dark icon appearance', bg: '#1E1E1E', fg: '#E5E5E7', muted: '#A1A1A6' },
+      { id: 'tinted', name: 'Tinted', note: 'Monochrome, tinted by macOS', bg: '#1E1E1E', fg: '#E5E5E7', muted: '#A1A1A6' },
+      { id: 'light', name: 'Light', note: 'DMG, website, documents', bg: '#FBEEEC', fg: '#18212F', muted: '#4E5B6D' }
+    ];
+    return { looks, size: 220 };
+  }
+}
+</script>
+</body>
+</html>

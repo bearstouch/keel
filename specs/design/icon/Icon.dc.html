@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Keel icon</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: {{px}}; height: {{px}}; display: flex; align-items: center; justify-content: center;">
+<svg role="img" aria-label="{{label}}" width="{{size}}" height="{{size}}" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="{{bgId}}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="{{c.bgTop}}"></stop>
+      <stop offset="1" stop-color="{{c.bgBottom}}"></stop>
+    </linearGradient>
+    <linearGradient id="{{shineId}}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="{{c.shine}}"></stop>
+      <stop offset="0.55" stop-color="#FFFFFF" stop-opacity="0"></stop>
+    </linearGradient>
+    <linearGradient id="{{markId}}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="{{c.markTop}}"></stop>
+      <stop offset="1" stop-color="{{c.markBottom}}"></stop>
+    </linearGradient>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#{{bgId}})"></rect>
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#{{shineId}})"></rect>
+  <rect x="100.5" y="100.5" width="823" height="823" rx="185.5" fill="none" stroke="{{c.edge}}" stroke-width="2"></rect>
+
+  <g display="{{showLayersFull}}">
+    <g transform="translate(0 14)" fill="{{c.shadow}}" opacity="{{c.shadowOpacity}}">
+      <rect x="262" y="288" width="500" height="74" rx="37"></rect>
+      <rect x="312" y="390" width="400" height="74" rx="37"></rect>
+      <rect x="372" y="492" width="280" height="74" rx="37"></rect>
+      <path d="M484 566 H540 L528 712 H496 Z"></path>
+      <ellipse cx="512" cy="722" rx="96" ry="30"></ellipse>
+    </g>
+    <g fill="url(#{{markId}})">
+      <rect x="262" y="288" width="500" height="74" rx="37"></rect>
+      <rect x="312" y="390" width="400" height="74" rx="37"></rect>
+      <rect x="372" y="492" width="280" height="74" rx="37"></rect>
+      <path d="M484 566 H540 L528 712 H496 Z"></path>
+      <ellipse cx="512" cy="722" rx="96" ry="30"></ellipse>
+    </g>
+  </g>
+
+  <g display="{{showLayersSimple}}" fill="url(#{{markId}})">
+    <rect x="232" y="270" width="560" height="120" rx="60"></rect>
+    <rect x="342" y="430" width="340" height="120" rx="60"></rect>
+    <path d="M477 550 H547 L533 700 H491 Z"></path>
+    <ellipse cx="512" cy="712" rx="120" ry="42"></ellipse>
+  </g>
+
+  <g display="{{showHull}}">
+    <g transform="translate(0 14)" fill="{{c.shadow}}" opacity="{{c.shadowOpacity}}">
+      <path d="M222 322 H802 C790 440 680 518 512 530 C344 518 234 440 222 322 Z"></path>
+      <path d="M486 526 H538 L528 682 H496 Z"></path>
+      <ellipse cx="512" cy="692" rx="96" ry="30"></ellipse>
+    </g>
+    <g fill="url(#{{markId}})">
+      <path d="M222 322 H802 C790 440 680 518 512 530 C344 518 234 440 222 322 Z"></path>
+      <path d="M486 526 H538 L528 682 H496 Z"></path>
+      <ellipse cx="512" cy="692" rx="96" ry="30"></ellipse>
+    </g>
+  </g>
+
+  <g display="{{showMonogram}}">
+    <g transform="translate(0 14)" fill="{{c.shadow}}" opacity="{{c.shadowOpacity}}">
+      <rect x="292" y="262" width="112" height="500" rx="24"></rect>
+      <path d="M404 500 L640 262 H780 L404 640 Z"></path>
+      <path d="M470 560 L548 482 L700 712 L636 744 Z"></path>
+      <ellipse cx="690" cy="740" rx="98" ry="30"></ellipse>
+    </g>
+    <g fill="url(#{{markId}})">
+      <rect x="292" y="262" width="112" height="500" rx="24"></rect>
+      <path d="M404 500 L640 262 H780 L404 640 Z"></path>
+      <path d="M470 560 L548 482 L700 712 L636 744 Z"></path>
+      <ellipse cx="690" cy="740" rx="98" ry="30"></ellipse>
+    </g>
+  </g>
+</svg>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"variant":{"editor":"enum","options":["red","dark","tinted","light"],"default":"red"},"concept":{"editor":"enum","options":["layers","hull","monogram"],"default":"layers"},"size":{"editor":"int","min":16,"max":1024,"default":512},"$preview":{"width":512,"height":512}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const variant = this.props.variant ?? 'red';
+    const concept = this.props.concept ?? 'layers';
+    const size = Number(this.props.size ?? 512);
+    const palettes = {
+      red:    { bgTop: '#EA4A3E', bgBottom: '#B3271E', shine: 0.22, edge: 'rgba(0,0,0,0.08)', markTop: '#FFFFFF', markBottom: '#FCE7E4', shadow: '#5E120D', shadowOpacity: 0.28 },
+      dark:   { bgTop: '#3A3A3C', bgBottom: '#161617', shine: 0.10, edge: 'rgba(255,255,255,0.08)', markTop: '#FF7A6C', markBottom: '#E0392C', shadow: '#000000', shadowOpacity: 0.45 },
+      tinted: { bgTop: '#2E2E30', bgBottom: '#1A1A1B', shine: 0.08, edge: 'rgba(255,255,255,0.08)', markTop: '#F2F2F4', markBottom: '#C9C9CE', shadow: '#000000', shadowOpacity: 0.4 },
+      light:  { bgTop: '#FFFFFF', bgBottom: '#F3EDEC', shine: 0.0, edge: 'rgba(0,0,0,0.10)', markTop: '#DC382D', markBottom: '#B3271E', shadow: '#7A1A14', shadowOpacity: 0.14 }
+    };
+    const c = palettes[variant] || palettes.red;
+    const simple = concept === 'layers' && size <= 48;
+    const uid = variant + '-' + concept + '-' + size;
+    return {
+      c, size, px: size + 'px',
+      label: 'Keel app icon',
+      bgId: 'bg-' + uid, shineId: 'sh-' + uid, markId: 'mk-' + uid,
+      showLayersFull: concept === 'layers' && !simple ? 'inline' : 'none',
+      showLayersSimple: simple ? 'inline' : 'none',
+      showHull: concept === 'hull' ? 'inline' : 'none',
+      showMonogram: concept === 'monogram' ? 'inline' : 'none'
+    };
+  }
+}
+</script>
+</body>
+</html>

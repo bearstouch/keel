@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Keel sidebar</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<nav aria-label="Connections" style="width: 232px; height: 900px; box-sizing: border-box; display: flex; flex-direction: column; background: {{t.sidebar}}; color: {{t.fg}}; border-right: 1px solid {{t.hair}}; font-family: Inter, system-ui, sans-serif; font-size: 13px;">
+  <div style="height: 52px; display: flex; align-items: center; gap: 8px; padding: 0 18px; flex-shrink: 0;">
+    <span aria-hidden="true" style="width: 12px; height: 12px; border-radius: 50%; background: #FF5F57;"></span>
+    <span aria-hidden="true" style="width: 12px; height: 12px; border-radius: 50%; background: #FEBC2E;"></span>
+    <span aria-hidden="true" style="width: 12px; height: 12px; border-radius: 50%; background: #28C840;"></span>
+  </div>
+  <div style="display: flex; align-items: center; padding: 6px 12px 10px 20px;">
+    <span style="flex-grow: 1; font-size: 12px; font-weight: 600; color: {{t.muted}};">Connections</span>
+    <button type="button" aria-label="New connection" style="width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 6px; background: transparent; color: {{t.muted}};">
+      <svg aria-hidden="true" width="13" height="13" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 1.5v9M1.5 6h9"></path></svg>
+    </button>
+  </div>
+  <div style="flex-grow: 1; padding: 0 10px; display: flex; flex-direction: column; gap: 18px;">
+    <sc-for list="{{groups}}" as="g" hint-placeholder-count="3">
+      <div style="display: flex; flex-direction: column; gap: 2px;">
+        <span style="padding: 0 10px 4px; font-size: 11px; color: {{t.muted}};">{{g.name}}</span>
+        <sc-for list="{{g.items}}" as="c" hint-placeholder-count="2">
+          <button type="button" aria-label="{{c.aria}}" aria-current="{{c.current}}" style="height: 32px; display: flex; align-items: center; gap: 10px; padding: 0 10px; border: 0; border-radius: 7px; background: {{c.bg}}; color: {{t.fg}}; text-align: left; font: inherit; font-weight: {{c.weight}};">
+            <span aria-hidden="true" style="width: 8px; height: 8px; border-radius: 50%; background: {{c.dot}}; flex-shrink: 0;"></span>
+            <span style="flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{c.name}}</span>
+            <sc-if value="{{c.on}}" hint-placeholder-val="{{ false }}">
+              <svg aria-hidden="true" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="{{t.muted}}" stroke-width="1.4"><path d="M5 7l2-2M4.2 8.8 3.2 9.8a1.6 1.6 0 0 1-2.2-2.2l1.6-1.6a1.6 1.6 0 0 1 2.2 0M7.8 3.2l1-1a1.6 1.6 0 0 1 2.2 2.2L9.4 6a1.6 1.6 0 0 1-2.2 0"></path></svg>
+            </sc-if>
+          </button>
+        </sc-for>
+      </div>
+    </sc-for>
+  </div>
+  <div style="flex-shrink: 0; display: flex; align-items: center; gap: 9px; padding: 16px 20px 18px;">
+    <svg role="img" aria-label="Keel" width="24" height="24" viewBox="100 100 824 824"><defs><linearGradient id="keelMarkBg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#EA4A3E"></stop><stop offset="1" stop-color="#B3271E"></stop></linearGradient></defs><rect x="100" y="100" width="824" height="824" rx="186" fill="url(#keelMarkBg)"></rect><g fill="#FFFFFF"><rect x="232" y="270" width="560" height="120" rx="60"></rect><rect x="342" y="430" width="340" height="120" rx="60"></rect><path d="M477 550 H547 L533 700 H491 Z"></path><ellipse cx="512" cy="712" rx="120" ry="42"></ellipse></g></svg>
+    <span style="font-size: 13.5px; font-weight: 600; letter-spacing: -0.01em;">Keel</span>
+  </div>
+</nav>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"selected":{"editor":"enum","options":["local-dev","payments-prod","api-staging"],"default":"local-dev"},"$preview":{"width":232,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const dark = (this.props.theme ?? 'light') === 'dark';
+    const t = dark
+      ? { sidebar: '#29292B', fg: '#E5E5E7', muted: '#A1A1A6', hair: '#333335', sel: '#3D2826', brand: '#FF6F61', brandInk: '#2A0B08' }
+      : { sidebar: '#FBEEEC', fg: '#18212F', muted: '#4E5B6D', hair: '#F1DAD7', sel: '#F4D2CD', brand: '#C7302A', brandInk: '#FFFFFF' };
+    const label = dark
+      ? { red: '#FF7B7B', orange: '#F2A65A', green: '#8DDAA4' }
+      : { red: '#C8363C', orange: '#B86200', green: '#2E8B4F' };
+    const sel = this.props.selected ?? 'local-dev';
+    const mk = (name, color, labelName) => {
+      const on = name === sel || name === 'local-dev';
+      const isSel = name === sel;
+      return {
+        name, on, dot: label[color], bg: isSel ? t.sel : 'transparent', weight: isSel ? '600' : '400', current: isSel ? 'true' : 'false',
+        aria: name + ', ' + labelName + (on ? ', connected' : '')
+      };
+    };
+    const groups = [
+      { name: 'Production', items: [mk('payments-prod', 'red', 'Production'), mk('orders-prod', 'red', 'Production')] },
+      { name: 'Staging', items: [mk('api-staging', 'orange', 'Staging')] },
+      { name: 'Local', items: [mk('local-dev', 'green', 'Local')] }
+    ];
+    return { t, groups };
+  }
+}
+</script>
+</body>
+</html>

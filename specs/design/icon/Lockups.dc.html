@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Keel wordmark lockups</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1280px; height: 640px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); font-family: Inter, system-ui, sans-serif;">
+  <sc-for list="{{sides}}" as="s" hint-placeholder-count="2">
+    <div style="display: flex; flex-direction: column; justify-content: center; gap: 56px; padding: 0 64px; background: {{s.bg}}; color: {{s.fg}};">
+      <div style="display: flex; align-items: center; gap: 20px;">
+        <dc-import name="Icon" variant="{{s.icon}}" concept="layers" size="{{lg}}" hint-size="112px,112px"></dc-import>
+        <span style="font-size: 76px; font-weight: 700; letter-spacing: -0.045em; line-height: 1;">Keel</span>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 8px; padding: 14px 18px; width: 200px; border-radius: 10px; background: {{s.sidebar}};">
+        <dc-import name="Icon" variant="{{s.icon}}" concept="layers" size="{{sm}}" hint-size="28px,28px"></dc-import>
+        <span style="font-size: 13.5px; font-weight: 600; letter-spacing: -0.01em;">Keel</span>
+        <span style="flex-grow: 1;"></span>
+        <span style="font-size: 11px; color: {{s.muted}};">sidebar</span>
+      </div>
+
+      <div aria-label="Dock preview" style="align-self: flex-start; display: flex; align-items: flex-end; gap: 12px; padding: 10px 14px; border-radius: 22px; background: {{s.dock}}; border: 1px solid {{s.dockEdge}};">
+        <span aria-hidden="true" style="width: 60px; height: 60px; border-radius: 14px; background: {{s.other}};"></span>
+        <span aria-hidden="true" style="width: 60px; height: 60px; border-radius: 14px; background: {{s.other}};"></span>
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+          <dc-import name="Icon" variant="{{s.icon}}" concept="layers" size="{{dock}}" hint-size="72px,72px"></dc-import>
+          <span aria-hidden="true" style="width: 4px; height: 4px; border-radius: 50%; background: {{s.fg}};"></span>
+        </div>
+        <span aria-hidden="true" style="width: 60px; height: 60px; border-radius: 14px; background: {{s.other}};"></span>
+      </div>
+    </div>
+  </sc-for>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":640}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const sides = [
+      { bg: '#FFFFFF', fg: '#18212F', muted: '#4E5B6D', sidebar: '#FBEEEC', dock: 'rgba(246,248,251,0.9)', dockEdge: '#E3E8EE', other: '#E3E8EE', icon: 'red' },
+      { bg: '#1E1E1E', fg: '#E5E5E7', muted: '#A1A1A6', sidebar: '#29292B', dock: 'rgba(42,42,44,0.9)', dockEdge: '#38383A', other: '#38383A', icon: 'dark' }
+    ];
+    return { sides, lg: 112, sm: 28, dock: 72 };
+  }
+}
+</script>
+</body>
+</html>

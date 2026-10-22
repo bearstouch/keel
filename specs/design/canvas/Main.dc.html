@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Keel — Key browser</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1440px; height: 900px; display: flex; overflow: hidden; background: {{t.bg}}; color: {{t.fg}}; font-family: Inter, system-ui, sans-serif; font-size: 13px;">
+  <dc-import name="Sidebar" theme="{{theme}}" selected="{{connId}}" hint-size="232px,900px"></dc-import>
+
+  <main style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column;">
+    <header style="height: 52px; flex-shrink: 0; display: flex; align-items: center; gap: 16px; padding: 0 20px; border-bottom: 1px solid {{t.hair}};">
+      <span style="font-size: 14px; font-weight: 600;">{{connId}}</span>
+      <button type="button" aria-label="Database db0" style="height: 26px; display: flex; align-items: center; gap: 6px; padding: 0 8px; border: 0; border-radius: 6px; background: {{t.soft}}; color: {{t.muted}}; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px;">
+        db0
+        <svg aria-hidden="true" width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 3.5 5 6.5 8 3.5"></path></svg>
+      </button>
+      <span style="flex-grow: 1;"></span>
+      <div role="tablist" aria-label="Mode" style="display: flex; padding: 2px; border-radius: 8px; background: {{t.soft}}; gap: 2px;">
+        <button type="button" role="tab" aria-selected="true" style="height: 26px; padding: 0 14px; border: 0; border-radius: 6px; background: {{t.segOn}}; color: {{t.fg}}; font: inherit; font-size: 12.5px; font-weight: 600; box-shadow: {{t.segShadow}};">Browser</button>
+        <button type="button" role="tab" aria-selected="false" style="height: 26px; padding: 0 14px; border: 0; border-radius: 6px; background: transparent; color: {{t.muted}}; font: inherit; font-size: 12.5px;">Console</button>
+        <button type="button" role="tab" aria-selected="false" style="height: 26px; padding: 0 14px; border: 0; border-radius: 6px; background: transparent; color: {{t.muted}}; font: inherit; font-size: 12.5px;">Info</button>
+      </div>
+      <span style="flex-grow: 1;"></span>
+      <button type="button" aria-label="Search, command palette ⌘K" style="width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 7px; background: transparent; color: {{t.muted}};">
+        <svg aria-hidden="true" width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4.5"></circle><path d="M10.5 10.5 14 14"></path></svg>
+      </button>
+    </header>
+
+    <div role="tablist" aria-label="Open connections" style="height: 38px; flex-shrink: 0; display: flex; align-items: flex-end; gap: 2px; padding: 0 12px; background: {{t.tabBar}}; border-bottom: 1px solid {{t.hair}};">
+      <sc-for list="{{tabs}}" as="tab" hint-placeholder-count="3">
+        <button type="button" role="tab" aria-selected="{{tab.selected}}" style="height: 31px; margin-bottom: -1px; display: flex; align-items: center; gap: 8px; padding: 0 12px 0 14px; border: {{tab.border}}; border-bottom: 0; border-radius: 8px 8px 0 0; background: {{tab.bg}}; color: {{tab.fg}}; font: inherit; font-size: 12.5px; font-weight: {{tab.weight}};">
+          <span aria-hidden="true" style="width: 7px; height: 7px; border-radius: 50%; background: {{tab.dot}};"></span>
+          {{tab.label}}
+          <span aria-label="Close tab" style="margin-left: 4px; color: {{t.muted}}; font-size: 14px; line-height: 1;">×</span>
+        </button>
+      </sc-for>
+      <button type="button" aria-label="New tab" style="width: 30px; height: 31px; border: 0; background: transparent; color: {{t.muted}}; font: inherit; font-size: 16px;">+</button>
+    </div>
+
+    <sc-if value="{{production}}" hint-placeholder-val="{{ false }}">
+      <div role="status" style="height: 28px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; gap: 8px; background: {{t.prodBg}}; color: {{t.prodFg}}; font-size: 12px; font-weight: 600;">
+        <span>Production</span><span aria-hidden="true">·</span><span>Read-only</span>
+      </div>
+    </sc-if>
+
+    <div style="flex-grow: 1; min-height: 0; display: flex;">
+      <section aria-label="Keys" style="width: 380px; flex-shrink: 0; display: flex; flex-direction: column; border-right: 1px solid {{t.hair}};">
+        <div style="padding: 16px 16px 10px;">
+          <label style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border-radius: 8px; background: {{t.soft}}; color: {{t.muted}};">
+            <svg aria-hidden="true" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4.5"></circle><path d="M10.5 10.5 14 14"></path></svg>
+            <span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);">Filter keys</span>
+            <input type="text" placeholder="Filter keys" value="user:*" style="flex-grow: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: {{t.fg}}; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12.5px;">
+          </label>
+        </div>
+        <div role="tree" aria-label="Keys" style="flex-grow: 1; min-height: 0; overflow: hidden; padding: 0 8px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12.5px;">
+          <sc-for list="{{rows}}" as="r" hint-placeholder-count="12">
+            <div role="treeitem" aria-selected="{{r.selected}}" aria-label="{{r.aria}}" style="height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 10px 0 {{r.indent}}; border-radius: 7px; background: {{r.bg}};">
+              <span aria-hidden="true" style="width: 10px; color: {{t.muted}}; font-size: 8px;">{{r.chev}}</span>
+              <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{r.name}}</span>
+              <span style="font-family: Inter, system-ui, sans-serif; font-size: 11px; color: {{t.muted}};">{{r.meta}}</span>
+              <sc-if value="{{r.isKey}}" hint-placeholder-val="{{ true }}">
+                <span style="font-family: Inter, system-ui, sans-serif; width: 40px; text-align: center; padding: 1px 0; border-radius: 4px; font-size: 9.5px; font-weight: 600; letter-spacing: 0.04em; color: {{r.badgeFg}}; background: {{r.badgeBg}};">{{r.type}}</span>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+        <div style="height: 40px; flex-shrink: 0; display: flex; align-items: center; padding: 0 18px; font-size: 11.5px; color: {{t.muted}};">
+          250,000 of 1.2M keys loaded · <a href="#" style="margin-left: 4px; color: {{t.accent}}; text-decoration: none;">Load more</a>
+        </div>
+      </section>
+
+      <section aria-label="Value" style="flex-grow: 1; min-width: 0; position: relative; display: flex; flex-direction: column; padding: 28px 36px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <h1 style="margin: 0; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 20px; font-weight: 600;">user:1042</h1>
+          <span style="padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 600; letter-spacing: 0.04em; color: {{t.hashFg}}; background: {{t.hashBg}};">HASH</span>
+          <span style="flex-grow: 1;"></span>
+          <button type="button" aria-label="More actions: rename, TTL, delete" style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 7px; background: transparent; color: {{t.muted}};">
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><circle cx="3.5" cy="8" r="1.3"></circle><circle cx="8" cy="8" r="1.3"></circle><circle cx="12.5" cy="8" r="1.3"></circle></svg>
+          </button>
+        </div>
+        <p style="margin: 6px 0 0; font-size: 12.5px; color: {{t.muted}}; display: flex; align-items: center; gap: 8px;">
+          <span>Expires in 3 days · 6 fields</span>
+          <sc-if value="{{production}}" hint-placeholder-val="{{ false }}">
+            <span style="display: flex; align-items: center; gap: 4px;">· <svg aria-hidden="true" width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="5.5" width="8" height="5" rx="1"></rect><path d="M4 5.5V4a2 2 0 0 1 4 0v1.5"></path></svg>Read-only</span>
+          </sc-if>
+        </p>
+
+        <div role="table" aria-label="Fields" style="margin-top: 28px; display: flex; flex-direction: column;">
+          <div role="row" style="display: grid; grid-template-columns: 200px minmax(0, 1fr); padding: 0 12px 8px; font-size: 11.5px; color: {{t.muted}};">
+            <span role="columnheader">Field</span><span role="columnheader">Value</span>
+          </div>
+          <sc-for list="{{fields}}" as="f" hint-placeholder-count="6">
+            <div role="row" style="display: grid; grid-template-columns: 200px minmax(0, 1fr); align-items: center; height: 40px; padding: 0 12px; border-top: 1px solid {{t.hairSoft}}; border-radius: 0; background: {{f.bg}}; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12.5px;">
+              <span role="cell" style="display: flex; align-items: center; gap: 7px; color: {{t.muted}};">{{f.field}}<sc-if value="{{f.dirty}}" hint-placeholder-val="{{ false }}"><span aria-label="Changed" style="width: 6px; height: 6px; border-radius: 50%; background: {{t.accent}};"></span></sc-if></span>
+              <span role="cell" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{f.value}}</span>
+            </div>
+          </sc-for>
+        </div>
+        <sc-if value="{{canEdit}}" hint-placeholder-val="{{ true }}">
+          <button type="button" style="align-self: flex-start; margin-top: 14px; height: 30px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; color: {{t.accent}}; font: inherit; font-size: 12.5px;">+ Add field</button>
+        </sc-if>
+
+        <div style="margin-top: 16px; border-radius: 10px; background: {{t.codeBg}}; overflow: hidden;">
+          <div style="height: 42px; display: flex; align-items: center; gap: 12px; padding: 0 8px 0 16px;">
+            <span style="font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12.5px; font-weight: 600;">preferences</span>
+            <span style="font-size: 12px; color: {{t.success}};">✓ Valid JSON</span>
+            <span style="flex-grow: 1;"></span>
+            <div role="tablist" aria-label="View value as" style="display: flex; padding: 2px; border-radius: 7px; background: {{t.segBg}}; gap: 2px;">
+              <sc-for list="{{viewers}}" as="v" hint-placeholder-count="4">
+                <button type="button" role="tab" aria-selected="{{v.selected}}" style="height: 24px; padding: 0 10px; border: 0; border-radius: 5px; background: {{v.bg}}; color: {{v.fg}}; font: inherit; font-size: 12px; font-weight: {{v.weight}}; box-shadow: {{v.shadow}};">{{v.name}}</button>
+              </sc-for>
+            </div>
+          </div>
+          <pre style="margin: 0; padding: 4px 16px 16px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12.5px; line-height: 1.7; color: {{t.fg}}; white-space: pre;">{
+  <span style="color: {{t.jsonKey}};">"theme"</span>: <span style="color: {{t.jsonStr}};">"dark"</span>,
+  <span style="color: {{t.jsonKey}};">"digest"</span>: <span style="color: {{t.jsonStr}};">"weekly"</span>,
+  <span style="color: {{t.jsonKey}};">"beta"</span>: <span style="color: {{t.jsonLit}};">true</span>
+}</pre>
+        </div>
+
+        <sc-if value="{{canEdit}}" hint-placeholder-val="{{ true }}">
+          <div style="position: absolute; left: 36px; right: 36px; bottom: 24px; height: 48px; display: flex; align-items: center; gap: 10px; padding: 0 8px 0 16px; border-radius: 10px; background: {{t.barBg}}; color: {{t.barFg}}; box-shadow: 0 6px 20px rgba(0,0,0,0.14);">
+            <span style="flex-grow: 1; font-size: 12.5px;">1 unsaved change</span>
+            <button type="button" style="height: 32px; padding: 0 14px; border: 0; border-radius: 7px; background: transparent; color: {{t.barFg}}; font: inherit; font-size: 12.5px;">Revert</button>
+            <button type="button" style="height: 32px; padding: 0 16px; border: 0; border-radius: 7px; background: {{t.accent}}; color: {{t.onAccent}}; font: inherit; font-size: 12.5px; font-weight: 600;">Save</button>
+          </div>
+        </sc-if>
+      </section>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"production":{"editor":"boolean","default":false},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const theme = this.props.theme ?? 'light';
+    const production = !!this.props.production;
+    const dark = theme === 'dark';
+    const t = dark ? {
+      bg: '#1E1E1E', tabBar: '#29292B', codeBg: '#262628', segBg: '#38383A', jsonKey: '#8BB8F0', jsonStr: '#8DDAA4', jsonLit: '#F2CC7A', success: '#8DDAA4', fg: '#E5E5E7', muted: '#A1A1A6', hair: '#38383A', hairSoft: '#2C2C2E', soft: '#2C2C2E', segOn: '#48484A', segShadow: 'none',
+      sel: '#3D2826', accent: '#FF6F61', onAccent: '#2A0B08', prodBg: '#4A1F1C', prodFg: '#FFD6D1', hashFg: '#C6A0E8', hashBg: '#2A2238',
+      barBg: '#E5E5E7', barFg: '#1E1E1E', dirtyRow: '#2E2423'
+    } : {
+      bg: '#FFFFFF', tabBar: '#F6F8FB', codeBg: '#F6F8FB', segBg: '#E7ECF2', jsonKey: '#185AA8', jsonStr: '#216B3B', jsonLit: '#805400', success: '#216B3B', fg: '#18212F', muted: '#4E5B6D', hair: '#E3E8EE', hairSoft: '#EEF2F6', soft: '#F1F4F8', segOn: '#FFFFFF', segShadow: '0 1px 2px rgba(24,33,47,0.12)',
+      sel: '#FCEAE8', accent: '#C7302A', onAccent: '#FFFFFF', prodBg: '#7A1A14', prodFg: '#FFFFFF', hashFg: '#6B3FA0', hashBg: '#EFE7F8',
+      barBg: '#18212F', barFg: '#FFFFFF', dirtyRow: '#FDF3F2'
+    };
+    const badges = dark
+      ? { STR: ['#8BB8F0', '#1E2B3E'], HASH: ['#C6A0E8', '#2A2238'], LIST: ['#7FD5DD', '#163034'], ZSET: ['#F2CC7A', '#342B19'], STREAM: ['#F5A3CF', '#36202E'] }
+      : { STR: ['#185AA8', '#E3EDF9'], HASH: ['#6B3FA0', '#EFE7F8'], LIST: ['#0F6A6E', '#DDF1F1'], ZSET: ['#805400', '#F8EDD8'], STREAM: ['#A02D6A', '#F8E4EF'] };
+    const defs = [
+      [0, 'user', 'folder', '48,210', true],
+      [1, '1041', 'HASH', ''],
+      [1, '1042', 'HASH', '3d', false, true],
+      [1, '1043', 'HASH', '12m'],
+      [1, '1044', 'HASH', ''],
+      [0, 'session', 'folder', '902,114', false],
+      [0, 'cache', 'folder', '180,002', false],
+      [0, 'leaderboard', 'folder', '3', false],
+      [0, 'queue', 'folder', '2', false],
+      [0, 'config:version', 'STR', '']
+    ];
+    const rows = defs.map(([depth, name, type, meta, open, selected]) => {
+      const isFolder = type === 'folder';
+      const b = badges[type] || ['', ''];
+      return {
+        name, meta, isKey: !isFolder, type: type === 'STR' ? 'STR' : type,
+        chev: isFolder ? (open ? '▼' : '▶') : '', indent: (10 + depth * 18) + 'px',
+        bg: selected ? t.sel : 'transparent', selected: selected ? 'true' : 'false',
+        badgeFg: b[0], badgeBg: b[1],
+        aria: isFolder ? (name + ', ' + meta + ' keys') : (name + ', ' + type + (meta ? ', expires in ' + meta : ''))
+      };
+    });
+    const F = [
+      ['email', 'ana.silva@example.com'],
+      ['name', 'Ana Silva'],
+      ['plan', production ? 'pro' : 'team', !production],
+      ['country', 'PT'],
+      ['created_at', '2025-03-14T09:12:44Z'],
+      ['preferences', '{"theme":"dark","digest":"weekly","beta":true}', false, true]
+    ];
+    const fields = F.map(([field, value, dirty, sel]) => ({ field, value, dirty: !!dirty, bg: sel ? t.sel : (dirty ? t.dirtyRow : 'transparent') }));
+    const viewers = ['Text', 'JSON', 'Hex', 'Raw'].map((name) => {
+      const on = name === 'JSON';
+      return { name, selected: on ? 'true' : 'false', bg: on ? t.segOn : 'transparent', fg: on ? t.fg : t.muted, weight: on ? '600' : '400', shadow: on ? t.segShadow : 'none' };
+    });
+    const tabDots = dark ? { red: '#FF7B7B', orange: '#F2A65A', green: '#8DDAA4' } : { red: '#C8363C', orange: '#B86200', green: '#2E8B4F' };
+    const cur = production ? 'payments-prod' : 'local-dev';
+    const tabs = [['local-dev', 'green'], ['api-staging', 'orange'], ['payments-prod', 'red']].map(([label, c]) => {
+      const on = label === cur;
+      return { label, dot: tabDots[c], selected: on ? 'true' : 'false', bg: on ? t.bg : 'transparent', fg: on ? t.fg : t.muted, weight: on ? '600' : '400', border: on ? ('1px solid ' + t.hair) : '1px solid transparent' };
+    });
+    return { theme, production, t, rows, fields, viewers, tabs, connId: production ? 'payments-prod' : 'local-dev', canEdit: !production };
+  }
+}
+</script>
+</body>
+</html>

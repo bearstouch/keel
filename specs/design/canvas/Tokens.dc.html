@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Keel — Native calm tokens</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1440px; height: 900px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); font-family: Inter, system-ui, sans-serif; font-size: 13px;">
+  <sc-for list="{{modes}}" as="m" hint-placeholder-count="2">
+    <section aria-label="{{m.title}}" style="box-sizing: border-box; height: 900px; padding: 40px 44px; display: flex; flex-direction: column; gap: 22px; background: {{m.bg}}; color: {{m.fg}};">
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <h1 style="margin: 0; font-size: 26px; font-weight: 600; letter-spacing: -0.01em;">{{m.title}}</h1>
+        <span style="font-size: 12.5px; color: {{m.muted}};">{{m.source}}</span>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <h2 style="margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: {{m.muted}};">Surfaces &amp; text</h2>
+        <div style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px;">
+          <sc-for list="{{m.surfaces}}" as="s" hint-placeholder-count="6">
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              <span aria-hidden="true" style="height: 52px; border-radius: 8px; background: {{s.hex}}; border: 1px solid {{m.hair}};"></span>
+              <span style="font-size: 12px; font-weight: 600;">{{s.name}}</span>
+              <span style="font-size: 11px; color: {{m.muted}}; font-family: 'JetBrains Mono', ui-monospace, monospace;">{{s.hex}}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <h2 style="margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: {{m.muted}};">Accent &amp; status</h2>
+        <div style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px;">
+          <sc-for list="{{m.status}}" as="s" hint-placeholder-count="6">
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              <span aria-hidden="true" style="height: 36px; border-radius: 8px; background: {{s.hex}};"></span>
+              <span style="font-size: 12px; font-weight: 600;">{{s.name}}</span>
+              <span style="font-size: 11px; color: {{m.muted}}; font-family: 'JetBrains Mono', ui-monospace, monospace;">{{s.hex}}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <h2 style="margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: {{m.muted}};">Type badges · color labels</h2>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+          <sc-for list="{{m.badges}}" as="b" hint-placeholder-count="6">
+            <span style="width: 58px; text-align: center; padding: 3px 0; border-radius: 4px; font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em; color: {{b.fg}}; background: {{b.bg}};">{{b.name}}</span>
+          </sc-for>
+          <span aria-hidden="true" style="width: 1px; height: 20px; background: {{m.hair}}; margin: 0 6px;"></span>
+          <sc-for list="{{m.labels}}" as="l" hint-placeholder-count="5">
+            <span style="display: flex; align-items: center; gap: 5px; font-size: 12px;"><span aria-hidden="true" style="width: 9px; height: 9px; border-radius: 50%; background: {{l.hex}};"></span>{{l.name}}</span>
+          </sc-for>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <h2 style="margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: {{m.muted}};">Production chrome</h2>
+        <div role="status" style="height: 30px; display: flex; align-items: center; gap: 10px; padding: 0 14px; border-radius: 6px; background: {{m.prodBg}}; color: {{m.prodFg}}; font-size: 12px; font-weight: 600; letter-spacing: 0.03em;">
+          <span>PRODUCTION · payments-prod</span>
+          <span style="padding: 1px 8px; border-radius: 10px; border: 1px solid {{m.prodFg}}; font-size: 11px;">READ-ONLY</span>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <h2 style="margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: {{m.muted}};">Console (dark in both themes)</h2>
+        <div style="padding: 14px 16px; border-radius: 8px; background: #151719; color: #DEE0E5; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12.5px; line-height: 1.6;">
+          <div><span style="color: #8BB8F0;">127.0.0.1:6379&gt; </span><span style="color: #FFFFFF;">INCR visits</span></div>
+          <div>(integer) 4182</div>
+          <div style="color: #FFA4A4;">(error) KEEL_READ_ONLY write commands are blocked</div>
+          <div style="display: flex; gap: 6px; margin-top: 8px;">
+            <sc-for list="{{ansi}}" as="a" hint-placeholder-count="8"><span aria-hidden="true" style="width: 22px; height: 14px; border-radius: 3px; background: {{a}};"></span></sc-for>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 28px; align-items: baseline;">
+        <span style="font-size: 17px; font-weight: 600;">Inter — interface</span>
+        <span style="font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 15px;">JetBrains Mono — keys, values, console</span>
+      </div>
+    </section>
+  </sc-for>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const S = (name, hex) => ({ name, hex });
+    const B = (name, fg, bg) => ({ name, fg, bg });
+    const modes = [
+      {
+        title: 'Native calm · Light', source: 'Redis red accent · first-launch default', bg: '#FFFFFF', fg: '#18212F', muted: '#4E5B6D', hair: '#D9E0E8',
+        surfaces: [S('Window', '#FFFFFF'), S('Surface', '#F2F5F9'), S('Sidebar', '#FBEEEC'), S('Hairline', '#D9E0E8'), S('Text', '#18212F'), S('Muted text', '#4E5B6D')],
+        status: [S('Accent', '#C7302A'), S('Selection', '#FCEAE8'), S('Focus', '#C7302A'), S('Success', '#216B3B'), S('Warning', '#805400'), S('Error', '#B22D32')],
+        badges: [B('STRING', '#185AA8', '#E3EDF9'), B('HASH', '#6B3FA0', '#EFE7F8'), B('LIST', '#0F6A6E', '#DDF1F1'), B('SET', '#216B3B', '#E2F2E7'), B('ZSET', '#805400', '#F8EDD8'), B('STREAM', '#A02D6A', '#F8E4EF')],
+        labels: [S('Production', '#C8363C'), S('Staging', '#B86200'), S('Local', '#2E8B4F'), S('Blue', '#2F6FBF'), S('Purple', '#7A4DB3')],
+        prodBg: '#7A1A14', prodFg: '#FFFFFF'
+      },
+      {
+        title: 'Native calm · Dark', source: 'Trellis native dark chrome · Redis red accent', bg: '#1E1E1E', fg: '#E5E5E7', muted: '#A1A1A6', hair: '#38383A',
+        surfaces: [S('Window', '#1E1E1E'), S('Surface', '#2A2A2C'), S('Sidebar', '#29292B'), S('Hairline', '#38383A'), S('Text', '#E5E5E7'), S('Muted text', '#A1A1A6')],
+        status: [S('Accent', '#FF6F61'), S('Selection', '#3D2826'), S('Focus', '#FF6F61'), S('Success', '#8DDAA4'), S('Warning', '#F2CC7A'), S('Error', '#FFA4A4')],
+        badges: [B('STRING', '#8BB8F0', '#1E2B3E'), B('HASH', '#C6A0E8', '#2A2238'), B('LIST', '#7FD5DD', '#163034'), B('SET', '#8DDAA4', '#183025'), B('ZSET', '#F2CC7A', '#342B19'), B('STREAM', '#F5A3CF', '#36202E')],
+        labels: [S('Production', '#FF7B7B'), S('Staging', '#F2A65A'), S('Local', '#8DDAA4'), S('Blue', '#8BB8F0'), S('Purple', '#C6A0E8')],
+        prodBg: '#4A1F1C', prodFg: '#FFD6D1'
+      }
+    ];
+    const ansi = ['#1B202A', '#EF8585', '#8DDAA4', '#F2CC7A', '#8BB8F0', '#C6A0E8', '#7FD5DD', '#CFD7E2'];
+    return { modes, ansi };
+  }
+}
+</script>
+</body>
+</html>

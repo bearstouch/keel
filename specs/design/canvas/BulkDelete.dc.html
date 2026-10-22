@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Keel — Bulk delete by pattern</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1440px; height: 900px; position: relative; display: flex; overflow: hidden; background: {{t.bg}}; color: {{t.fg}}; font-family: Inter, system-ui, sans-serif; font-size: 13px;">
+  <dc-import name="Sidebar" theme="{{theme}}" selected="api-staging" hint-size="232px,900px"></dc-import>
+  <div style="flex-grow: 1;"></div>
+  <div aria-hidden="true" style="position: absolute; left: 0; top: 0; width: 1440px; height: 900px; background: {{t.scrim}};"></div>
+
+  <sc-if value="{{isConfirm}}" hint-placeholder-val="{{ true }}">
+    <section role="alertdialog" aria-modal="true" aria-labelledby="bdTitle" style="position: absolute; left: 596px; top: 120px; width: 480px; box-sizing: border-box; display: flex; flex-direction: column; gap: 18px; padding: 28px 32px; border-radius: 14px; background: {{t.sheet}}; box-shadow: 0 24px 64px rgba(0,0,0,{{t.shadowA}});">
+      <h1 id="bdTitle" style="margin: 0; font-size: 18px; font-weight: 600;">Delete matching keys?</h1>
+      <p style="margin: 0; font-size: 13.5px; line-height: 1.55; color: {{t.muted}};">About <strong style="color: {{t.fg}}; font-weight: 600;">2.1 million keys</strong> match <span style="font-family: 'JetBrains Mono', ui-monospace, monospace; color: {{t.fg}};">tmp:import:*</span> in api-staging. This can’t be undone.</p>
+      <label style="display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: {{t.muted}};">Type the pattern to confirm
+        <input type="text" value="tmp:imp" style="height: 36px; box-sizing: border-box; padding: 0 12px; border: 1.5px solid {{t.focus}}; border-radius: 8px; background: {{t.field}}; color: {{t.fg}}; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 13px;">
+      </label>
+      <div style="display: flex; gap: 10px; justify-content: flex-end;">
+        <button type="button" style="height: 34px; padding: 0 16px; border: 0; border-radius: 8px; background: {{t.field}}; color: {{t.fg}}; font: inherit; font-size: 13px;">Cancel</button>
+        <button type="button" disabled="{{yes}}" style="height: 34px; padding: 0 16px; border: 0; border-radius: 8px; background: {{t.disabledBg}}; color: {{t.disabledFg}}; font: inherit; font-size: 13px; font-weight: 600;">Delete</button>
+      </div>
+    </section>
+  </sc-if>
+
+  <sc-if value="{{isProgress}}" hint-placeholder-val="{{ false }}">
+    <section role="dialog" aria-modal="true" aria-labelledby="bdRunTitle" style="position: absolute; left: 596px; top: 120px; width: 480px; box-sizing: border-box; display: flex; flex-direction: column; gap: 18px; padding: 28px 32px; border-radius: 14px; background: {{t.sheet}}; box-shadow: 0 24px 64px rgba(0,0,0,{{t.shadowA}});">
+      <h1 id="bdRunTitle" style="margin: 0; font-size: 18px; font-weight: 600;">Deleting <span style="font-family: 'JetBrains Mono', ui-monospace, monospace;">tmp:import:*</span></h1>
+      <div role="progressbar" aria-label="Progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="58" style="height: 6px; border-radius: 3px; background: {{t.track}}; overflow: hidden;"><span style="display: block; width: 58%; height: 6px; background: {{t.accent}};"></span></div>
+      <p style="margin: 0; font-size: 13.5px; color: {{t.muted}};">1,221,000 deleted · about a minute left</p>
+      <div style="display: flex; justify-content: flex-end;">
+        <button type="button" style="height: 34px; padding: 0 16px; border: 0; border-radius: 8px; background: {{t.field}}; color: {{t.fg}}; font: inherit; font-size: 13px;">Cancel</button>
+      </div>
+    </section>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"stage":{"editor":"enum","options":["confirm","progress"],"default":"confirm"},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const theme = this.props.theme ?? 'light';
+    const dark = theme === 'dark';
+    const stage = this.props.stage ?? 'confirm';
+    const t = dark ? {
+      bg: '#1E1E1E', fg: '#E5E5E7', muted: '#A1A1A6', sheet: '#2A2A2C', field: '#38383A', scrim: 'rgba(5,7,10,0.55)', shadowA: '0.55',
+      accent: '#FF6F61', focus: '#FF6F61', track: '#48484A', disabledBg: '#48484A', disabledFg: '#8E8E93'
+    } : {
+      bg: '#FFFFFF', fg: '#18212F', muted: '#4E5B6D', sheet: '#FFFFFF', field: '#F1F4F8', scrim: 'rgba(24,33,47,0.22)', shadowA: '0.18',
+      accent: '#C7302A', focus: '#C7302A', track: '#E4E9F0', disabledBg: '#F1F4F8', disabledFg: '#6B7889'
+    };
+    return { theme, t, yes: true, isConfirm: stage === 'confirm', isProgress: stage === 'progress' };
+  }
+}
+</script>
+</body>
+</html>
