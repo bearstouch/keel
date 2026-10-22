@@ -25,3 +25,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
   `HELLO`, then `SELECT`; `CLIENT SETNAME` can be turned off. Failures map to the FR-CN10 categories (`DNS_FAILED`,
   `CONNECTION_REFUSED`, `TIMEOUT` with its phase, `AUTH_FAILED`, `PERMISSION_DENIED`, `PROTOCOL_ERROR`,
   `DB_OUT_OF_RANGE`) with a message and a suggested fix that name the user, never the password (KEEL-006).
+- TLS connections: TLS 1.2 or later, SNI override, anchor-only trust for a custom CA bundle, a client certificate from
+  the Keychain and an explicit **Skip verification** that the connection reports as not verified. Failures map to
+  `TLS_UNTRUSTED` (naming the issuer), `TLS_HOSTNAME_MISMATCH` (expected and certificate names), `TLS_HANDSHAKE_FAILED`
+  (including "Server may not be using TLS" and a required client certificate) and `NOT_TLS_EXPECTED`. Client
+  certificates import from `.p12` or a PEM certificate plus an RSA/EC key (PKCS#8, encrypted PKCS#8, PKCS#1, SEC1)
+  into the login Keychain; a wrong passphrase imports nothing (KEEL-007).

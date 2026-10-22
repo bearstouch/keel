@@ -181,7 +181,8 @@ public struct RESPParser: Sendable {
         guard position < buffer.count else { return nil }
         let type = buffer[position]
         // Unknown type bytes fail at once, so a non-Redis peer (HTTP, SSH banner) is caught on its first byte.
-        guard Self.isKnownType(type) else { throw .protocolError(.unknownType) }
+        // 0x15 / 0x16 start a TLS alert or handshake record: a TLS server answering plain text (NOT_TLS_EXPECTED).
+        guard Self.isKnownType(type) else { throw .protocolError(type == 0x15 || type == 0x16 ? .tlsRecord : .unknownType) }
         // Numeric headers are short; a long one is garbage, not a slow server.
         let lineCap = Self.isShortLineType(type) ? Self.maxShortLine : Int.max
         var index = max(lineScanFrom, position + 1)

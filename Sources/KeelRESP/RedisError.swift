@@ -1,11 +1,17 @@
 import Foundation
 
-/// Why a transport stopped or never became ready. Carries OS codes only, never bytes from the peer, so it is safe to
-/// show and to map onto FR-CN10 categories (POSIX 61 → `CONNECTION_REFUSED`, any DNS code → `DNS_FAILED`).
+/// Why a transport stopped or never became ready. Carries OS codes, plus sanitized certificate names for a refused
+/// chain, never stream bytes, so it is safe to show and to map onto FR-CN10 categories (POSIX 61 →
+/// `CONNECTION_REFUSED`, any DNS code → `DNS_FAILED`, a refused chain → `TLS_UNTRUSTED` / `TLS_HOSTNAME_MISMATCH`).
 public enum TransportError: Error, Equatable, Sendable {
     case posix(Int32)
     case dns(Int32)
+    /// A TLS handshake failure (`errSSL…` OSStatus) other than Keel's own verify block refusing the chain.
     case tls(Int32)
+    /// Keel's verify block refused the server's certificate chain.
+    case tlsRejected(TLSTrustFailure)
+    /// TLS didn't come up, and a plain `PING` to the same port got a RESP reply: the server isn't using TLS.
+    case plaintextServer
     /// The peer closed the stream.
     case closed
     /// Keel cancelled the transport.
@@ -13,8 +19,8 @@ public enum TransportError: Error, Equatable, Sendable {
     case other
 }
 
-/// Which step ran out of time: `connect` is TCP (or the Unix socket), `auth` any handshake command. TLS and tunnel
-/// phases join with their stories.
+/// Which step ran out of time: `connect` is TCP (or the Unix socket) plus the TLS handshake, `auth` any handshake
+/// command. The tunnel phase joins with its story.
 public enum TimeoutPhase: String, Sendable { case connect, auth, command }
 
 /// A `RedisConnection` failure. Server error replies (`-ERR …`) are not errors here: they come back as

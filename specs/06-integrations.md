@@ -63,7 +63,7 @@ Keel can also **copy** a profile as a URL without the password (`redis://user@ho
 **INT-05 (P0).** TLS uses Network.framework with Security.framework trust evaluation; no OpenSSL.
 
 - System trust store by default; custom CA bundle (PEM) as anchor-only trust per profile.
-- Client identities live in the login Keychain. Keel imports `.p12` files, or a PEM certificate plus PEM/PKCS#8 private key (encrypted keys prompt for a passphrase saved under `Keel TLS`), into the Keychain, and stores only the persistent reference.
+- Client identities live in the login Keychain. Keel imports `.p12` files, or a PEM certificate plus PEM/PKCS#8 private key (encrypted keys prompt for a passphrase saved under `Keel TLS`), into the Keychain, and stores only the persistent reference. Supported keys: RSA and EC, as PKCS#8 (plain or PBES2-encrypted), PKCS#1 or SEC1; legacy `Proc-Type: 4,ENCRYPTED` PEM keys are refused with "convert with `openssl pkcs8 -topk8`". A wrong passphrase or a key that doesn't match the certificate imports nothing ([Architecture](02-architecture.md#tls)).
 - Keel never writes to the system keychain or changes trust settings for other apps.
 
 ## SSH tunnels

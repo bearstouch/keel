@@ -22,34 +22,67 @@ public protocol Transport: Sendable {
     func receive() async throws(TransportError) -> Data
     /// Closes the stream and fails any pending `connect` or `receive`. Idempotent.
     func cancel()
+    /// Nil without TLS; false when TLS skips verification, which the UI must show in text (NFR-SC02).
+    var tlsVerified: Bool? { get }
+    /// After a failed TLS connect: whether the endpoint answers a plain `PING` with RESP, i.e. isn't using TLS.
+    /// Opens its own short-lived plain connection; false for transports without TLS.
+    func answersPlainRESP() async -> Bool
 }
 
-/// `Transport` over one `NWConnection` (TCP or Unix socket; TLS arrives through `parameters`).
+extension Transport {
+    public var tlsVerified: Bool? { nil }
+    public func answersPlainRESP() async -> Bool { false }
+}
+
+/// `Transport` over one `NWConnection`: TCP or Unix socket, with or without TLS.
 public final class NetworkTransport: Transport {
     private let connection: NWConnection
-    private let queue = DispatchQueue(label: "com.bearstouch.keel.resp.transport")
-    private let state = OSAllocatedUnfairLock(initialState: Shared())
+    private let endpoint: NWEndpoint
+    private let queue: DispatchQueue
+    private let state: OSAllocatedUnfairLock<Shared>
+    public let tlsVerified: Bool?
 
     private struct Shared {
         var started = false
         var cancelled = false
         var connectWaiter: CheckedContinuation<Result<Void, TransportError>, Never>?
+        /// Set by the verify block; Network then fails with a bare OSStatus, so this says which check refused.
+        var trustFailure: TLSTrustFailure?
     }
 
-    /// `parameters` defaults to TCP with Nagle off, which Redis pipelining wants.
-    public init(endpoint: RedisEndpoint, parameters: NWParameters? = nil) {
-        let nwEndpoint: NWEndpoint
-        switch endpoint {
-        case .tcp(let host, let port): nwEndpoint = .hostPort(host: NWEndpoint.Host(host), port: NWEndpoint.Port(rawValue: port) ?? .any)
-        case .unixSocket(let path): nwEndpoint = .unix(path: path)
-        }
-        connection = NWConnection(to: nwEndpoint, using: parameters ?? Self.defaultParameters())
+    /// TCP with Nagle off, which Redis pipelining wants, under TLS when `tls` is set (02 Architecture → TLS).
+    public convenience init(endpoint: RedisEndpoint, tls: TLSConfiguration? = nil) {
+        let state = OSAllocatedUnfairLock(initialState: Shared())
+        let queue = DispatchQueue(label: Self.queueLabel)
+        let tlsOptions = tls?.makeOptions(for: endpoint, queue: queue) { failure in state.withLock { $0.trustFailure = failure } }
+        self.init(endpoint: endpoint, parameters: NWParameters(tls: tlsOptions, tcp: Self.tcpOptions()), queue: queue, state: state, tlsVerified: tls.map { !$0.skipVerification })
     }
 
-    private static func defaultParameters() -> NWParameters {
+    /// For callers that build their own `NWParameters`; `tlsVerified` is then unknown, so nil.
+    public convenience init(endpoint: RedisEndpoint, parameters: NWParameters) {
+        self.init(
+            endpoint: endpoint, parameters: parameters, queue: DispatchQueue(label: Self.queueLabel), state: OSAllocatedUnfairLock(initialState: Shared()), tlsVerified: nil)
+    }
+
+    private init(endpoint: RedisEndpoint, parameters: NWParameters, queue: DispatchQueue, state: OSAllocatedUnfairLock<Shared>, tlsVerified: Bool?) {
+        self.queue = queue; self.state = state; self.tlsVerified = tlsVerified
+        self.endpoint = Self.nwEndpoint(endpoint)
+        connection = NWConnection(to: self.endpoint, using: parameters)
+    }
+
+    private static let queueLabel = "com.bearstouch.keel.resp.transport"
+
+    private static func tcpOptions() -> NWProtocolTCP.Options {
         let tcp = NWProtocolTCP.Options()
         tcp.noDelay = true
-        return NWParameters(tls: nil, tcp: tcp)
+        return tcp
+    }
+
+    private static func nwEndpoint(_ endpoint: RedisEndpoint) -> NWEndpoint {
+        switch endpoint {
+        case .tcp(let host, let port): return .hostPort(host: NWEndpoint.Host(host), port: NWEndpoint.Port(rawValue: port) ?? .any)
+        case .unixSocket(let path): return .unix(path: path)
+        }
     }
 
     public func connect() async throws(TransportError) {
@@ -72,7 +105,7 @@ public final class NetworkTransport: Transport {
         switch update {
         case .ready: outcome = .success(())
         // `.waiting` would retry forever (e.g. connection refused); a Redis client wants the error now.
-        case .waiting(let error), .failed(let error): outcome = .failure(Self.map(error))
+        case .waiting(let error), .failed(let error): outcome = .failure(Self.map(error, refused: state.withLock { $0.trustFailure }))
         case .cancelled: outcome = .failure(.cancelled)
         default: return
         }
@@ -91,13 +124,13 @@ public final class NetworkTransport: Transport {
 
     public func receive() async throws(TransportError) -> Data {
         if state.withLock({ $0.cancelled }) { throw .cancelled }
-        let result = await withCheckedContinuation { (waiter: CheckedContinuation<Result<Data, TransportError>, Never>) in
+        let result = await withCheckedContinuation { [state] (waiter: CheckedContinuation<Result<Data, TransportError>, Never>) in
             connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { data, _, isComplete, error in
                 // Deliver bytes before an end-of-stream that came with them; the next call reports the end.
                 if let data, !data.isEmpty {
                     waiter.resume(returning: .success(data))
                 } else if let error {
-                    waiter.resume(returning: .failure(Self.map(error)))
+                    waiter.resume(returning: .failure(Self.map(error, refused: state.withLock { $0.trustFailure })))
                 } else if isComplete {
                     waiter.resume(returning: .failure(.closed))
                 } else {
@@ -118,12 +151,55 @@ public final class NetworkTransport: Transport {
         waiter?.resume(returning: .failure(.cancelled))
     }
 
-    private static func map(_ error: NWError) -> TransportError {
+    /// A plain connection that sends `PING` and looks at the first reply byte (`+PONG`, or `-NOAUTH` from a
+    /// protected server), within 2 s. A Redis server reads a TLS ClientHello as an unfinished inline command and
+    /// never answers it, so this is the only way to tell "not TLS" from a slow server.
+    public func answersPlainRESP() async -> Bool {
+        guard tlsVerified != nil else { return false }
+        let probe = PlainProbe(connection: NWConnection(to: endpoint, using: NWParameters(tls: nil, tcp: Self.tcpOptions())))
+        return await withCheckedContinuation { waiter in probe.run(on: queue, waiter) }
+    }
+
+    /// Whatever status Network reports after the verify block said no, the refusal (`refused`) is the useful answer.
+    private static func map(_ error: NWError, refused: TLSTrustFailure?) -> TransportError {
+        if let refused { return .tlsRejected(refused) }
         switch error {
         case .posix(let code): return code == .ECANCELED ? .cancelled : .posix(code.rawValue)
         case .dns(let code): return .dns(code)
         case .tls(let status): return .tls(status)
         default: return .other
         }
+    }
+}
+
+/// One `answersPlainRESP` attempt. Every path ends in `finish`, which resumes the waiter exactly once.
+private final class PlainProbe: @unchecked Sendable {
+    private let connection: NWConnection
+    private let waiter = OSAllocatedUnfairLock<CheckedContinuation<Bool, Never>?>(initialState: nil)
+
+    init(connection: NWConnection) { self.connection = connection }
+
+    func run(on queue: DispatchQueue, _ continuation: CheckedContinuation<Bool, Never>) {
+        waiter.withLock { $0 = continuation }
+        connection.stateUpdateHandler = { [self] update in
+            switch update {
+            case .ready:
+                connection.send(content: RESPEncoder.command([Data("PING".utf8)]), completion: .idempotent)
+                connection.receive(minimumIncompleteLength: 1, maximumLength: 64) { [self] data, _, _, _ in
+                    finish(data?.first == UInt8(ascii: "+") || data?.first == UInt8(ascii: "-"))
+                }
+            case .waiting, .failed, .cancelled: finish(false)
+            default: break
+            }
+        }
+        connection.start(queue: queue)
+        queue.asyncAfter(deadline: .now() + 2) { [self] in finish(false) }
+    }
+
+    private func finish(_ answered: Bool) {
+        guard let continuation = waiter.withLock({ $0.take() }) else { return }
+        connection.stateUpdateHandler = nil
+        connection.cancel()
+        continuation.resume(returning: answered)
     }
 }

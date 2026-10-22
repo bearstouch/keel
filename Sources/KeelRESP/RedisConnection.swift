@@ -59,9 +59,13 @@ public actor RedisConnection {
         (pushes, pushSink) = AsyncStream.makeStream(of: RESPValue.self, bufferingPolicy: .bufferingNewest(256))
     }
 
-    public init(endpoint: RedisEndpoint, options: Options = Options()) {
-        self.init(transport: NetworkTransport(endpoint: endpoint), options: options)
+    /// A connection over Network.framework; with `tls`, the stream is TLS 1.2+ verified as configured.
+    public init(endpoint: RedisEndpoint, tls: TLSConfiguration? = nil, options: Options = Options()) {
+        self.init(transport: NetworkTransport(endpoint: endpoint, tls: tls), options: options)
     }
+
+    /// Nil without TLS; false when TLS skips verification, which the tab, chrome strip and Info show in text.
+    public nonisolated var tlsVerified: Bool? { transport.tlsVerified }
 
     deinit { transport.cancel() }
 
@@ -88,7 +92,7 @@ public actor RedisConnection {
         // A timeout or close() while connecting already moved the state on and cancelled the transport.
         switch state {
         case .connecting: break
-        case .failed(let error): throw error
+        case .failed(let error): throw await explainTLSFailure(error)
         default: throw .cancelled
         }
         switch result {
@@ -102,8 +106,21 @@ public actor RedisConnection {
             startReading()
         case .failure(let error):
             end(.failed(.connectionFailed(error)), readsFail: .connectionLost)
-            throw .connectionFailed(error)
+            throw await explainTLSFailure(.connectionFailed(error))
         }
+    }
+
+    /// A TLS connect that timed out or failed in the handshake may be talking to a plain server; if a plain `PING`
+    /// gets RESP back, that is the answer ("Server may not be using TLS"). Certificate refusals, DNS and refused
+    /// connections are already precise and aren't probed.
+    private func explainTLSFailure(_ error: RedisError) async -> RedisError {
+        switch error {
+        case .timeout(.connect), .connectionFailed(.tls): break
+        default: return error
+        }
+        guard transport.tlsVerified != nil, await transport.answersPlainRESP() else { return error }
+        state = .failed(.connectionFailed(.plaintextServer))
+        return .connectionFailed(.plaintextServer)
     }
 
     /// Closes the socket. In-flight reads fail with `CANCELLED`, sent writes with `OUTCOME_UNKNOWN`.

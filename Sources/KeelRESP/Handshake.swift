@@ -145,6 +145,9 @@ extension RedisConnection {
         } catch {
             // A peer that talks first (an SSH or SMTP banner) breaks the stream before HELLO is sent; report why.
             if error == .notConnected, case .failed(let reason) = state { throw .connection(reason, step: step) }
+            // TLS 1.3 servers check the client certificate after the client's handshake is done, so a missing or
+            // refused one ends the stream at the first command; the TLS status says why.
+            if error == .connectionLost, case .failed(let reason) = state, case .connectionFailed(.tls) = reason { throw .connection(reason, step: step) }
             throw .connection(error, step: step)
         }
     }
