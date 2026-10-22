@@ -35,7 +35,7 @@ let package = Package(
         .testTarget(name: "KeelUITests", dependencies: ["KeelUI", "KeelCore"]),
         .testTarget(name: "KeelReleaseTests", dependencies: ["KeelRelease", "KeelCore"]),
         // Container matrix (Redis/Valkey/Dragonfly/sshd); real cases run only with KEEL_INTEGRATION=1.
-        .testTarget(name: "KeelIntegrationTests", dependencies: ["KeelCore"])
+        .testTarget(name: "KeelIntegrationTests", dependencies: ["KeelCore", "KeelRESP"])
     ],
     swiftLanguageModes: [.v6]
 )

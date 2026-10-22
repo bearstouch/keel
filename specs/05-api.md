@@ -198,6 +198,7 @@ Tool errors return `isError: true` with `{"error": {"code", "message", "retryabl
 | `INTERACTION_REQUIRED` | An SSH prompt, CA change or Keychain prompt awaits the user in the app | yes |
 | `TIMEOUT` | Command exceeded its timeout; outcome of writes is unknown | no for writes |
 | `OUTCOME_UNKNOWN` | Connection dropped after a write was sent | no |
+| `CANCELLED` | The request was cancelled, or Keel closed the connection, before a read's reply arrived (a write in flight reports `OUTCOME_UNKNOWN` instead) | yes |
 | `LIMIT_EXCEEDED` | Response, page, key count or rate limit exceeded | usually |
 | `SERVER_ERROR` | Any other server error, text in `details.serverError` | no |
 | `UNSUPPORTED` | Server lacks the needed command (e.g. `OBJECT ENCODING` on Dragonfly) | no |
