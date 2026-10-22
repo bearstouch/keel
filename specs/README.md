@@ -12,6 +12,7 @@ Keel is a native Swift Redis client for macOS by Bearstouch, a sibling of Trelli
 | [06 Integrations](06-integrations.md) | Redis-compatible servers, protocol, TLS, OpenSSH, Keychain, Trellis, MCP clients, updates (`INT-…`) |
 | [07 macOS support](07-macos-support.md) | Platform, distribution, signing, permissions, installation (`MAC-…`) |
 | [08 Design](08-design.md) | Visual contract: palettes, type, layout, components, screens; design sources in [`design/`](design/) |
+| [Stories](stories/README.md) | 57 implementation stories with acceptance criteria and unit tests, epics, sprint plan, definition of done |
 
 ## Requirement IDs
 
