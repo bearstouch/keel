@@ -18,10 +18,10 @@ As the connection layer, I want a byte-exact, bounded RESP parser and encoder, s
 
 ## Acceptance criteria
 
-- [ ] **AC1.** Every RESP type round-trips through encoder/parser byte-exactly, including binary bulk strings with `\r\n` and `\0` inside.
-- [ ] **AC2.** Replies split at every possible byte boundary parse to the same value.
-- [ ] **AC3.** Invalid lengths, non-numeric integers, nesting > 128 or a bulk > 64 MiB fail with a typed error and never allocate the declared size up front.
-- [ ] **AC4.** A fuzz run of at least 1,000,000 random and mutated inputs completes without crash or hang (CI job).
+- [x] **AC1.** Every RESP type round-trips through encoder/parser byte-exactly, including binary bulk strings with `\r\n` and `\0` inside. *(Observed: `testRoundTripsEveryTypeByteExactly` over every canonical fixture, `testBinarySafeBulkStrings` with all 256 byte values. Non-canonical spellings the parser accepts (`:+7`, `,3`, `-nan`, `+inf`) decode to the same value but re-encode canonically.)*
+- [x] **AC2.** Replies split at every possible byte boundary parse to the same value. *(Observed: `testChunkBoundariesProduceSameValue` — every offset, byte at a time, and a pipelined stream of all fixtures.)*
+- [x] **AC3.** Invalid lengths, non-numeric integers, nesting > 128 or a bulk > 64 MiB fail with a typed error and never allocate the declared size up front. *(Observed: `testRejectsNegativeAndHugeLengths` (reserved capacity < 1 MiB for declared 60 MB / 4M elements), `testRejectsExcessiveNesting`, `testRejectsMalformedFrames`, and `RESPReviewTests` — attribute chains count toward nesting.)*
+- [x] **AC4.** A fuzz run of at least 1,000,000 random and mutated inputs completes without crash or hang (CI job). *(Observed locally: `testRandomInputsNeverCrash`, 1M seeded cases in ~13 s debug, runs in CI's `swift test` step. **Pending:** first green run on the `macos-26` runner for this PR.)*
 
 ## Unit tests
 

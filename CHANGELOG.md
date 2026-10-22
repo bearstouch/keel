@@ -15,3 +15,6 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - Owner-only versioned persistence for the state files: atomic 0600 writes in a 0700 folder, last-known-good
   backups, sequence-gated 300 ms debounced saves, corrupt files preserved before **Recover backup** / **Start empty**,
   and files from a newer Keel opened read-only (KEEL-003).
+- Streaming RESP2/RESP3 codec: every reply type including maps, sets, doubles, booleans, big numbers, verbatim
+  strings, pushes and attributes; binary-safe command encoding; replies capped at 64 MiB, 4M elements and 128 nesting
+  levels, with malformed frames failing as `PROTOCOL_ERROR` (KEEL-004).
