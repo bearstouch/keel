@@ -200,6 +200,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     @objc private func focusKeyFilter(_ sender: Any?) { NotificationCenter.default.post(name: KeyListCommands.focusFilterNotification, object: NSApp.keyWindow) }
     /// ⌘R: the key window's browser rescans (FR-KB09).
     @objc private func refreshKeys(_ sender: Any?) { NotificationCenter.default.post(name: KeyListCommands.refreshNotification, object: NSApp.keyWindow) }
+    /// ⌘S / ⌘Z: the key window's open editor saves or reverts its unsaved changes (03 → Value editors).
+    @objc private func saveEdits(_ sender: Any?) { NotificationCenter.default.post(name: EditorCommands.saveNotification, object: NSApp.keyWindow) }
+    @objc private func revertEdits(_ sender: Any?) { NotificationCenter.default.post(name: EditorCommands.revertNotification, object: NSApp.keyWindow) }
     /// ⌥⌘0…⌥⌘9: the key window's browser switches to the item's database (FR-KB08).
     @objc private func selectDatabase(_ sender: NSMenuItem) {
         NotificationCenter.default.post(name: KeyListCommands.selectDatabaseNotification, object: NSApp.keyWindow, userInfo: [KeyListCommands.databaseKey: sender.tag])
@@ -215,6 +218,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         case #selector(reconnect(_:)), #selector(disconnect(_:)): return tab != nil
         case #selector(nextTab(_:)), #selector(previousTab(_:)): return (keyTabs?.tabs.count ?? 0) > 1
         case #selector(newTab(_:)): return keyTabs != nil
+        // Only while the selected tab's editor shows the save bar, so ⌘Z means nothing else then.
+        case #selector(saveEdits(_:)), #selector(revertEdits(_:)):
+            return tab.flatMap { app?.session($0.id)?.browser?.editor?.showsSaveBar } ?? false
         default: return true
         }
     }
@@ -234,6 +240,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         fileMenu.addItem(.separator())
         add("Close Tab", #selector(closeTab(_:)), "w", to: fileMenu)
         add("Close Window", #selector(closeWindow(_:)), "w", [.command, .shift], to: fileMenu)
+        add("Save Changes", #selector(saveEdits(_:)), "s", to: fileMenu)
+        add("Revert Changes", #selector(revertEdits(_:)), "z", to: fileMenu)
         fileMenu.addItem(.separator())
         add("Import Connections…", #selector(importConnections(_:)), "", to: fileMenu)
         add("Export Connections…", #selector(exportConnections(_:)), "", to: fileMenu)

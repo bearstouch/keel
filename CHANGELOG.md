@@ -119,6 +119,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
   connection now connects it and shows its keys; Connection → Reconnect (⇧⌘R) / Disconnect (⇧⌘D). Windows, tabs,
   modes, databases and frames are saved in `windows.json` and restored disconnected, except profiles with Reconnect on
   launch (never production ones). Closing a tab or window with unsaved edits asks first (KEEL-026).
+- Editor shell: key name, type badge and `⋯` (Copy name or redis-cli argument, Details with encoding, exact TTL and
+  memory on request, "unavailable" when the server won't say), one metadata line ("Expires in 3 days · 6 fields",
+  "· Read-only" with a lock), and a floating save bar only while something is unsaved (⌘S / ⌘Z). Saves run as one
+  pipelined `MULTI … EXEC` guarded by `WATCH`; a key changed since loading reports `CONFLICT`, writes nothing and
+  offers Reload or Overwrite (KEEL-027).
 
 ### Removed
 

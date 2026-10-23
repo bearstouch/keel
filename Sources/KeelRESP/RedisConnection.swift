@@ -47,8 +47,9 @@ public actor RedisConnection {
     private struct Pending {
         let id: UInt64
         let mayWrite: Bool
-        /// Nil once the caller stopped waiting; the slot stays so the reply, when it comes, is dropped in order.
-        var waiter: CheckedContinuation<Result<RESPValue, RedisError>, Never>?
+        /// Hands the slot's outcome to its caller (a lone send's continuation, or one entry of a pipeline). Nil once
+        /// the caller stopped waiting; the slot stays so the reply, when it comes, is dropped in order.
+        var waiter: ((Result<RESPValue, RedisError>) -> Void)?
         var timer: Task<Void, Never>?
     }
 
@@ -145,7 +146,7 @@ public actor RedisConnection {
         pending = []; head = 0
         for slot in settled {
             slot.timer?.cancel()
-            slot.waiter?.resume(returning: .failure(slot.mayWrite ? .outcomeUnknown : readError))
+            slot.waiter?(.failure(slot.mayWrite ? .outcomeUnknown : readError))
         }
         pushSink.finish()
     }
@@ -169,13 +170,41 @@ public actor RedisConnection {
         let result = await withTaskCancellationHandler {
             await withCheckedContinuation { (waiter: CheckedContinuation<Result<RESPValue, RedisError>, Never>) in
                 nextID += 1
-                pending.append(Pending(id: id, mayWrite: mayWrite, waiter: waiter, timer: startTimer(id, limit)))
+                pending.append(Pending(id: id, mayWrite: mayWrite, waiter: { waiter.resume(returning: $0) }, timer: startTimer(id, limit)))
                 transport.send(frame)
             }
         } onCancel: {
             Task { await self.callerCancelled(id) }
         }
         return try result.get()
+    }
+
+    /// Sends `commands` in one write and waits for every reply, each one's outcome in order. Nothing else sent on
+    /// this connection can land between them, which is what a `MULTI … EXEC` on a shared connection needs: a
+    /// command queued inside someone else's transaction would get `QUEUED` instead of its reply. Each command fails
+    /// on its own as `send` would (a write in flight when the connection ends reports `OUTCOME_UNKNOWN`). Throws
+    /// `NOT_CONNECTED`, sending nothing, unless the connection is ready.
+    public func sendPipeline(_ commands: [[Data]], mayWrite: Bool = true, timeout: Duration? = nil) async throws(RedisError) -> [Result<RESPValue, RedisError>] {
+        guard state == .ready else { throw .notConnected }
+        guard !Task.isCancelled else { throw .cancelled }
+        guard !commands.isEmpty else { return [] }
+        let first = nextID, count = commands.count
+        let frame = commands.reduce(into: Data()) { $0.append(RESPEncoder.command($1)) }
+        let limit = timeout ?? options.commandTimeout
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { (waiter: CheckedContinuation<[Result<RESPValue, RedisError>], Never>) in
+                // Every slot settles exactly once (reply, failure or cancel), so the last one to settle resumes.
+                let replies = PipelineReplies(count: count) { waiter.resume(returning: $0) }
+                for offset in 0..<count {
+                    let id = first + UInt64(offset)
+                    pending.append(Pending(id: id, mayWrite: mayWrite, waiter: { replies.settle(offset, $0) }, timer: startTimer(id, limit)))
+                }
+                nextID += UInt64(count)
+                transport.send(frame)
+            }
+        } onCancel: {
+            Task { for offset in 0..<count { await self.callerCancelled(first + UInt64(offset)) } }
+        }
     }
 
     private func startTimer(_ id: UInt64, _ limit: Duration) -> Task<Void, Never> {
@@ -193,7 +222,7 @@ public actor RedisConnection {
 
     /// Resumes the slot's caller, if still waiting, and keeps the slot so its reply is later dropped in order.
     private func fail(_ index: Int, _ error: RedisError) {
-        pending[index].waiter?.resume(returning: .failure(error))
+        pending[index].waiter?(.failure(error))
         pending[index].waiter = nil
     }
 
@@ -253,7 +282,7 @@ public actor RedisConnection {
         let slot = pending[head]
         head += 1
         slot.timer?.cancel()
-        slot.waiter?.resume(returning: .success(reply))
+        slot.waiter?(.success(reply))
         // Compact now and then so a long-lived pipelined connection doesn't grow `pending` without bound.
         if head == pending.count {
             pending.removeAll(keepingCapacity: pending.capacity <= 4_096); head = 0
@@ -261,5 +290,22 @@ public actor RedisConnection {
             pending.removeSubrange(0..<head); head = 0
         }
         return true
+    }
+}
+
+/// A pipeline's replies as its slots settle; only touched on the connection's actor.
+private final class PipelineReplies {
+    private var results: [Result<RESPValue, RedisError>?]
+    private var remaining: Int
+    private let finish: ([Result<RESPValue, RedisError>]) -> Void
+
+    init(count: Int, finish: @escaping ([Result<RESPValue, RedisError>]) -> Void) {
+        results = Array(repeating: nil, count: count); remaining = count; self.finish = finish
+    }
+
+    func settle(_ offset: Int, _ result: Result<RESPValue, RedisError>) {
+        guard results[offset] == nil else { return }
+        results[offset] = result; remaining -= 1
+        if remaining == 0 { finish(results.map { $0! }) }
     }
 }

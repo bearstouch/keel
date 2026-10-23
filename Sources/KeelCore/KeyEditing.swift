@@ -1,0 +1,209 @@
+import Foundation
+import KeelRESP
+
+/// The command that counts a type's elements for the editor's metadata line (FR-ED13).
+public enum LengthCommand: String, Sendable, Equatable {
+    case strlen = "STRLEN", hlen = "HLEN", llen = "LLEN", scard = "SCARD", zcard = "ZCARD", xlen = "XLEN"
+
+    /// Nil for module and unknown types: they have no common length command.
+    public init?(_ type: KeyType) {
+        switch type {
+        case .string: self = .strlen
+        case .hash: self = .hlen
+        case .list: self = .llen
+        case .set: self = .scard
+        case .zset: self = .zcard
+        case .stream: self = .xlen
+        case .unknown, .other: return nil
+        }
+    }
+
+    /// "6 fields", "1 member", "512 bytes".
+    public func describe(_ count: Int64) -> String {
+        let unit: String
+        switch self {
+        case .strlen: unit = "byte"
+        case .hlen: unit = "field"
+        case .llen: unit = "item"
+        case .scard, .zcard: unit = "member"
+        case .xlen: unit = "entry"
+        }
+        let plural = count == 1 ? unit : (unit == "entry" ? "entries" : unit + "s")
+        return "\(KeyIndexFooter.grouped(Int(clamping: count))) \(plural)"
+    }
+}
+
+// MARK: - Editable values
+
+/// One row of an open value: a string is one row, a hash one per field. `id` names the row for the changed-row dot.
+public struct EditorRow: Sendable, Equatable, Identifiable {
+    public var id: Data
+    public var value: Data
+
+    public init(id: Data, value: Data) { self.id = id; self.value = value }
+}
+
+/// A value as an editor loaded it, with the reads a save repeats under `WATCH` to prove it unchanged.
+public struct LoadedValue: Sendable, Equatable {
+    public var rows: [EditorRow]
+    public var watch: WatchGuard
+
+    public init(rows: [EditorRow], watch: WatchGuard) { self.rows = rows; self.watch = watch }
+}
+
+/// How one type's editor (KEEL-029…034) loads and saves through the editor shell: the shell keeps the loaded rows and
+/// the draft, counts the changes and runs the save; the binding knows the commands.
+public struct EditorBinding: Sendable {
+    public typealias Load = @Sendable (_ key: Data, DataCommandService, DataContext) async throws(DataCommandError) -> LoadedValue
+    /// The writes that turn `loaded` into `draft`; empty when they are the same.
+    public typealias Writes = @Sendable (_ key: Data, _ loaded: [EditorRow], _ draft: [EditorRow]) -> [DataOperation]
+
+    public var load: Load
+    public var writes: Writes
+
+    public init(load: @escaping Load, writes: @escaping Writes) { self.load = load; self.writes = writes }
+}
+
+public enum EditorChanges {
+    /// Rows added, changed or removed in `draft` compared with `loaded`: one unsaved change each.
+    public static func changedRows(loaded: [EditorRow], draft: [EditorRow]) -> Set<Data> {
+        let before = Dictionary(loaded.map { ($0.id, $0.value) }, uniquingKeysWith: { first, _ in first })
+        let after = Dictionary(draft.map { ($0.id, $0.value) }, uniquingKeysWith: { first, _ in first })
+        var changed = Set(after.compactMap { id, value in before[id] == value ? nil : id })
+        changed.formUnion(before.keys.filter { after[$0] == nil })
+        return changed
+    }
+}
+
+// MARK: - Header (FR-ED13)
+
+/// The editor header's facts: type, expiry and length, read when the key opens.
+public struct KeyHeader: Sendable, Equatable {
+    public var type: KeyType
+    /// `PTTL` as loaded: nil without an expiry (or when it couldn't be read).
+    public var ttlMilliseconds: Int64?
+    /// The type's element count (`HLEN`, …); nil for module types or when it couldn't be read.
+    public var length: Int64?
+    public var readOnly: Bool
+
+    public init(type: KeyType, ttlMilliseconds: Int64? = nil, length: Int64? = nil, readOnly: Bool) {
+        self.type = type; self.ttlMilliseconds = ttlMilliseconds; self.length = length; self.readOnly = readOnly
+    }
+
+    /// The one metadata line: "Expires in 3 days · 6 fields", "No expiry · 12 bytes · Read-only".
+    public var metadataLine: String {
+        var parts = [ttlMilliseconds.map { "Expires in " + Self.relative($0) } ?? "No expiry"]
+        if let length, let command = LengthCommand(type) { parts.append(command.describe(length)) }
+        if readOnly { parts.append("Read-only") }
+        return parts.joined(separator: " · ")
+    }
+
+    /// The largest whole unit: "3 days", "1 hour", "45 seconds" (rounded up, like the key rows).
+    static func relative(_ milliseconds: Int64) -> String {
+        let seconds = max((milliseconds + 999) / 1_000, 1)
+        let (count, unit): (Int64, String) =
+            switch seconds {
+            case 86_400...: (seconds / 86_400, "day")
+            case 3_600...: (seconds / 3_600, "hour")
+            case 60...: (seconds / 60, "minute")
+            default: (seconds, "second")
+            }
+        return "\(count) \(unit)\(count == 1 ? "" : "s")"
+    }
+
+    /// Reads `PTTL` and the length beside the type the browser already knows. A failed read leaves its part out
+    /// rather than failing the editor: the header is informative only.
+    public static func load(key: Data, type: KeyType, service: DataCommandService, context: DataContext) async -> KeyHeader {
+        async let ttl = integer(.pttl(key: key), service, context)
+        async let length = Self.length(of: key, type: type, service, context)
+        let milliseconds = await ttl
+        return KeyHeader(type: type, ttlMilliseconds: milliseconds.flatMap { $0 >= 0 ? $0 : nil }, length: await length, readOnly: context.profile.readOnly)
+    }
+
+    private static func length(of key: Data, type: KeyType, _ service: DataCommandService, _ context: DataContext) async -> Int64? {
+        guard let command = LengthCommand(type) else { return nil }
+        return await integer(.length(key: key, command: command), service, context)
+    }
+}
+
+/// An integer reply, or nil for anything else (a server error, a refusal, a lost connection).
+private func integer(_ operation: DataOperation, _ service: DataCommandService, _ context: DataContext) async -> Int64? {
+    guard case .integer(let value)? = try? await service.execute(.operation(operation), origin: .editor, context: context).reply else { return nil }
+    return value
+}
+
+// MARK: - Details (FR-ED13)
+
+/// ⋯ → Details: encoding, exact TTL and, on request, memory size. Anything the server can't or won't answer (no
+/// `OBJECT` on Dragonfly, an ACL without it, the key gone) is "unavailable", never an error.
+public struct KeyDetails: Sendable, Equatable {
+    public enum Value<T: Sendable & Equatable>: Sendable, Equatable {
+        case value(T)
+        case unavailable
+        /// Not asked yet (memory size waits for the user).
+        case notLoaded
+    }
+
+    public enum TTL: Sendable, Equatable { case persistent, milliseconds(Int64) }
+
+    public var encoding: Value<String>
+    public var ttl: Value<TTL>
+    public var memory: Value<Int64>
+
+    public init(encoding: Value<String> = .notLoaded, ttl: Value<TTL> = .notLoaded, memory: Value<Int64> = .notLoaded) {
+        self.encoding = encoding; self.ttl = ttl; self.memory = memory
+    }
+
+    public static let unavailableText = "unavailable"
+
+    public var encodingText: String {
+        if case .value(let text) = encoding { return text }
+        return encoding == .notLoaded ? "…" : Self.unavailableText
+    }
+
+    /// "No expiry", "90,000 ms (1m 30s)".
+    public var ttlText: String {
+        switch ttl {
+        case .value(.persistent): return "No expiry"
+        case .value(.milliseconds(let ms)): return "\(KeyIndexFooter.grouped(Int(clamping: ms))) ms (\(TTLFormatter.short(milliseconds: ms)))"
+        case .unavailable: return Self.unavailableText
+        case .notLoaded: return "…"
+        }
+    }
+
+    /// "4.1 KB (4,213 bytes)"; nil until measured.
+    public var memoryText: String? {
+        switch memory {
+        case .value(let bytes): return "\(KeySizeFormatter.short(bytes: bytes)) (\(KeyIndexFooter.grouped(Int(clamping: bytes))) bytes)"
+        case .unavailable: return Self.unavailableText
+        case .notLoaded: return nil
+        }
+    }
+
+    /// Encoding and exact TTL; `memory` adds `MEMORY USAGE`, which the user asks for (it can be slow on big values).
+    public static func load(key: Data, memory: Bool, service: DataCommandService, context: DataContext) async -> KeyDetails {
+        async let encoding = reply(.objectEncoding(key: key), service, context)
+        async let ttl = reply(.pttl(key: key), service, context)
+        async let size = memory ? reply(.memoryUsage(key: key), service, context) : nil
+        var details = KeyDetails()
+        switch await encoding {
+        case .bulkString(let name)?, .simpleString(let name)?: details.encoding = .value(String(decoding: name, as: UTF8.self))
+        default: details.encoding = .unavailable
+        }
+        switch await ttl {
+        case .integer(-1)?: details.ttl = .value(.persistent)
+        case .integer(let ms)? where ms >= 0: details.ttl = .value(.milliseconds(ms))
+        // -2 (the key is gone), an error or no reply.
+        default: details.ttl = .unavailable
+        }
+        if memory {
+            if case .integer(let bytes)? = await size { details.memory = .value(bytes) } else { details.memory = .unavailable }
+        }
+        return details
+    }
+}
+
+/// The reply, or nil when the command was refused or the connection failed. Server errors come back as values.
+private func reply(_ operation: DataOperation, _ service: DataCommandService, _ context: DataContext) async -> RESPValue? {
+    try? await service.execute(.operation(operation), origin: .editor, context: context).reply
+}
