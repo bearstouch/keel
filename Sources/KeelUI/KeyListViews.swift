@@ -175,6 +175,7 @@ public struct KeyListPane: View {
                 .buttonStyle(.plain).foregroundStyle(Tokens.accent)
             }
             Spacer(minLength: 0)
+            if dataSource.metadataLoader != nil { moreMenu }
         }
         .font(Tokens.interface(11.5)).foregroundStyle(Tokens.muted)
         .lineLimit(1)
@@ -182,5 +183,17 @@ public struct KeyListPane: View {
         .frame(height: 40)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(footer.text)
+    }
+
+    /// The list's secondary actions ("show less, reveal on demand"). Show Sizes measures the visible rows (FR-KB07).
+    private var moreMenu: some View {
+        Menu {
+            Toggle("Show Sizes", isOn: Binding(get: { dataSource.showsSizes }, set: { on in Task { await dataSource.setShowsSizes(on) } }))
+        } label: {
+            Image(systemName: "ellipsis")
+        }
+        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+        .accessibilityLabel("More key list actions")
+        .help("More")
     }
 }

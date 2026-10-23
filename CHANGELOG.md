@@ -104,3 +104,7 @@ and versions follow [Semantic Versioning](https://semver.org/).
   Changing a filter restarts the scan and clears the list at once; Refresh keeps it. The same field also filters the
   loaded keys by substring, live and without the server, showing matches flat; View → Filter Keys (⌘F) focuses it
   (KEEL-023).
+- Key rows show their type badge and, for expiring keys only, a short TTL ("1m 30s", "3d") that counts down on this
+  Mac and reads "expired" when the key is gone. Types and TTLs are fetched for the rows on screen in pipelined
+  `TYPE` + `PTTL` batches, at most one per 100 ms, so an idle list sends nothing. ⋯ → Show Sizes measures the visible
+  rows with `MEMORY USAGE … SAMPLES 0`, at most 100 a batch, and only while it is on (KEEL-024).
