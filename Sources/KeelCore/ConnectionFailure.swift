@@ -1,8 +1,9 @@
 import Darwin
 import Foundation
 import KeelRESP
+import KeelSSH
 
-/// FR-CN10 connection error categories. The tunnel category joins with its story.
+/// FR-CN10 connection error categories.
 public enum ConnectionErrorCategory: String, Sendable, CaseIterable {
     case dnsFailed = "DNS_FAILED"
     case connectionRefused = "CONNECTION_REFUSED"
@@ -19,6 +20,8 @@ public enum ConnectionErrorCategory: String, Sendable, CaseIterable {
     case tlsCAChanged = "TLS_CA_CHANGED"
     case authFailed = "AUTH_FAILED"
     case permissionDenied = "PERMISSION_DENIED"
+    /// ssh exited, the forward failed or the host key was declined (FR-CN05).
+    case tunnelFailed = "TUNNEL_FAILED"
     case protocolError = "PROTOCOL_ERROR"
     case databaseOutOfRange = "DB_OUT_OF_RANGE"
     /// The connection dropped or the OS reported another error.
@@ -37,9 +40,11 @@ public struct ConnectionFailure: Error, Equatable, Sendable, CustomStringConvert
     public var phase: TimeoutPhase?
     /// The server's error reply, scrubbed, for details (05 API `details.serverError`).
     public var serverError: String?
+    /// Set for `TUNNEL_FAILED` when ssh ran: its exit status and sanitized last stderr line.
+    public var tunnelExit: TunnelExit?
 
-    public init(category: ConnectionErrorCategory, message: String, suggestion: String, phase: TimeoutPhase? = nil, serverError: String? = nil) {
-        self.category = category; self.message = message; self.suggestion = suggestion; self.phase = phase; self.serverError = serverError
+    public init(category: ConnectionErrorCategory, message: String, suggestion: String, phase: TimeoutPhase? = nil, serverError: String? = nil, tunnelExit: TunnelExit? = nil) {
+        self.category = category; self.message = message; self.suggestion = suggestion; self.phase = phase; self.serverError = serverError; self.tunnelExit = tunnelExit
     }
 
     public var description: String { "\(category.rawValue): \(message)" }
@@ -80,6 +85,57 @@ public struct ConnectionFailure: Error, Equatable, Sendable, CustomStringConvert
             self.init(
                 category: .tlsCAChanged, message: "The CA file “\(path)” changed and the new certificate wasn't accepted.",
                 suggestion: "Connect again to review its fingerprint, or select the CA file you trust.")
+        }
+    }
+
+    /// A tunnel that couldn't be opened (FR-CN05). `destination` is the SSH host as configured; no Redis connection was made.
+    public init(tunnel error: TunnelError, destination: String) {
+        switch error {
+        case .exited(let exit):
+            let status: String
+            switch exit.status {
+            case .exited(let code): status = "exited with status \(code)"
+            case .signaled(let signal): status = "was stopped by signal \(signal)"
+            }
+            let detail = exit.lastErrorLine.map { ": \($0)" } ?? "."
+            self.init(category: .tunnelFailed, message: "ssh to \(destination) \(status)\(detail)", suggestion: Self.tunnelSuggestion(exit.lastErrorLine, destination: destination), tunnelExit: exit)
+        case .timeout(let timeout):
+            self.init(
+                category: .timeout, message: "The SSH tunnel through \(destination) wasn't ready within \(timeout.shortText) (tunnel).",
+                suggestion: "Check that `ssh \(destination)` connects without a prompt, or raise the connect timeout.", phase: .tunnel)
+        case .launchFailed(let code):
+            self.init(category: .tunnelFailed, message: "Couldn't start \(SSHTunnelArguments.executable): \(Self.reason(code)).", suggestion: "Check that OpenSSH is installed at /usr/bin/ssh.")
+        case .invalidArguments(let field):
+            // The rejected text is never echoed: it may hold control characters or an injection attempt.
+            self.init(category: .tunnelFailed, message: "The SSH tunnel settings aren't valid (\(Self.fieldName(field))).", suggestion: "Edit the connection's SSH tunnel settings.")
+        case .runtimeDirectory:
+            self.init(category: .tunnelFailed, message: "Couldn't create Keel's private folder for tunnel sockets.", suggestion: "Check the permissions of your temporary folder, then try again.")
+        case .shutDown:
+            self.init(category: .tunnelFailed, message: "The SSH tunnel was closed because Keel is quitting.", suggestion: "Open the connection again.")
+        }
+    }
+
+    private static func tunnelSuggestion(_ line: String?, destination: String) -> String {
+        let text = line?.lowercased() ?? ""
+        if text.contains("host key verification failed") || text.contains("remote host identification has changed") {
+            return "Check the SSH server's host key in ~/.ssh/known_hosts."
+        }
+        if text.contains("permission denied") { return "Check the SSH user, key or saved password for \(destination)." }
+        if text.contains("forward") || text.contains("open failed") || text.contains("connect failed") {
+            return "Check the Redis host and port as seen from the SSH server."
+        }
+        if text.contains("could not resolve") { return "Check the SSH host name, your VPN and your DNS settings." }
+        return "Check that `ssh \(destination)` works in Terminal."
+    }
+
+    private static func fieldName(_ error: SSHTunnelArgumentError) -> String {
+        switch error {
+        case .invalidDestination: return "SSH host"
+        case .invalidUser: return "SSH user"
+        case .invalidIdentityFile: return "identity file"
+        case .invalidPort: return "SSH port"
+        case .invalidRedisHost: return "Redis host"
+        case .invalidRedisPort: return "Redis port"
         }
     }
 

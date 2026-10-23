@@ -34,3 +34,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - CA file change detection: the SHA-256 of each profile's custom CA file is kept in `known-ca.json`; a changed file
   shows the old and new fingerprints and connects only once accepted, and a missing or unusable file fails with
   `TLS_CA_UNAVAILABLE` naming the path (KEEL-008).
+- SSH tunnels through `/usr/bin/ssh -N` with a Unix-socket forward in an owner-only runtime folder (no local TCP
+  port): one ssh per profile shared by its connections, closed 10 s after the last one; destinations starting with `-`
+  are refused and no trust-bypass option is ever added; ssh failing reports `TUNNEL_FAILED` with its exit status and
+  sanitized last stderr line, a socket that isn't ready in time `TIMEOUT` (tunnel). Signals go to ssh's own process
+  group only while it is still the same process; quitting terminates every tunnel and the next launch cleans up
+  tunnels a crashed run left behind (KEEL-009).
