@@ -2,12 +2,16 @@ import AppKit
 import KeelCore
 import SwiftUI
 
-/// The colors of 08 Design that the sheets use, light and dark (DS-06: nothing else). KEEL-049 completes the set and
+/// The colors of 08 Design that the sheets and the sidebar use, light and dark (DS-06: nothing else). KEEL-049 completes the set and
 /// bundles the fonts; until then `Font.custom` falls back to the system font.
 enum Tokens {
     static let bg = Color(light: 0xFFFFFF, dark: 0x1E1E1E)
     /// Sheets are `bg` in light and `sheet` in dark.
     static let sheet = Color(light: 0xFFFFFF, dark: 0x2A2A2C)
+    /// The sidebar's soft Redis-red tint in light, graphite in dark; its edge and selected row.
+    static let sidebar = Color(light: 0xFBEEEC, dark: 0x29292B)
+    static let sidebarSelection = Color(light: 0xF4D2CD, dark: 0x3D2826)
+    static let sidebarHair = Color(light: 0xF1DAD7, dark: 0x333335)
     static let field = Color(light: 0xF1F4F8, dark: 0x38383A)
     static let hair = Color(light: 0xE3E8EE, dark: 0x38383A)
     static let fg = Color(light: 0x18212F, dark: 0xE5E5E7)

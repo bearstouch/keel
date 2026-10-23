@@ -30,7 +30,9 @@ public enum PasswordChange: Equatable, Sendable {
 /// A change to host, port, username, TLS server name or tunnel advances the connection revision and removes the
 /// saved password, so it is never offered to a different server.
 public actor ProfileStore {
-    public private(set) var document = ConnectionsDocument()
+    public private(set) var document = ConnectionsDocument() {
+        didSet { for observer in observers.values { observer.yield(document) } }
+    }
     /// False until `load()` sees a usable or missing file, while awaiting recovery, and for a newer file.
     public private(set) var isWritable = false
 
@@ -41,6 +43,8 @@ public actor ProfileStore {
     private var recoveryBackup: ConnectionsDocument?
     private var busy = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
+    /// `changes()` subscribers; each sees only the newest document, so a slow view never queues stale copies.
+    private var observers: [UUID: AsyncStream<ConnectionsDocument>.Continuation] = [:]
 
     public static let passwordByteLimit = 4096
 
@@ -72,6 +76,19 @@ public actor ProfileStore {
         guard let profile = profile(profileID), profile.connectionRevision == connectionRevision, profile.hasPassword else { return nil }
         do { return try secrets.read(.password, profileID: profileID) } catch { throw .secretStore(error) }
     }
+
+    /// The current document, then every document the store publishes (load, recovery and each committed change), so
+    /// the sidebar follows edits made by the sheet, agents or another view. Ends when the caller stops iterating.
+    public func changes() -> AsyncStream<ConnectionsDocument> {
+        let (stream, continuation) = AsyncStream.makeStream(of: ConnectionsDocument.self, bufferingPolicy: .bufferingNewest(1))
+        let id = UUID()
+        observers[id] = continuation
+        continuation.onTermination = { [weak self] _ in Task { await self?.removeObserver(id) } }
+        continuation.yield(document)
+        return stream
+    }
+
+    private func removeObserver(_ id: UUID) { observers[id] = nil }
 
     // MARK: Loading and recovery
 
