@@ -90,6 +90,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         fileMenu.addItem(withTitle: "Import Connections…", action: #selector(importConnections(_:)), keyEquivalent: "").target = self
         fileMenu.addItem(withTitle: "Export Connections…", action: #selector(exportConnections(_:)), keyEquivalent: "").target = self
         fileItem.submenu = fileMenu
+        let viewItem = NSMenuItem(); menu.addItem(viewItem)
+        let viewMenu = NSMenu(title: "View")
+        // Sent to the first responder: the key list answers it while focused (FR-KB03); the menu item is dimmed otherwise.
+        let toggle = viewMenu.addItem(withTitle: "Toggle Tree / Flat", action: KeyListCommands.toggleMode, keyEquivalent: "t")
+        toggle.keyEquivalentModifierMask = [.command, .shift]
+        viewItem.submenu = viewMenu
         let windowItem = NSMenuItem(); menu.addItem(windowItem)
         let windowMenu = NSMenu(title: "Window")
         windowMenu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")

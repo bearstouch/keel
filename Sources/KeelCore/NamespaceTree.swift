@@ -39,8 +39,12 @@ public struct NamespaceEntry: Sendable, Equatable {
     public var name: Data
     /// Loaded keys at or below a folder (FR-KB03); 1 for a key.
     public var keyCount: Int
+    /// A key's type and state (KEEL-024 fills the type); empty for a folder.
+    public var metadata: KeyMetadata
 
-    public init(child: NamespaceChild, name: Data, keyCount: Int) { self.child = child; self.name = name; self.keyCount = keyCount }
+    public init(child: NamespaceChild, name: Data, keyCount: Int, metadata: KeyMetadata = KeyMetadata()) {
+        self.child = child; self.name = name; self.keyCount = keyCount; self.metadata = metadata
+    }
 }
 
 /// Read-only view of `KeyIndex`'s arena: key i is `arena[ends[i - 1] ..< ends[i]]`.
@@ -116,13 +120,8 @@ struct NamespaceTree {
 
     /// The folder with this path, created under `parent` when it doesn't exist yet.
     private mutating func folder(path: UnsafeRawBufferPointer, parent: Int, sourceKey: Int, _ keys: KeyBytes) -> Int {
-        let mask = slots.count - 1
-        var slot = Self.hash(path) & mask
-        while slots[slot] != 0 {
-            let candidate = Int(slots[slot])
-            if Self.equal(self.path(of: candidate, keys), path) { return candidate }
-            slot = (slot + 1) & mask
-        }
+        let (found, slot) = probe(path, keys)
+        if let found { return found }
         let id = folders.count
         folders.append(Folder(sourceKey: UInt32(sourceKey), pathEnd: UInt32(path.count), keyCount: 0, firstChild: Self.end, nextSibling: folders[parent].firstChild))
         folders[parent].firstChild = UInt32(id)
@@ -130,6 +129,18 @@ struct NamespaceTree {
         // Keep the load factor under 3/4 so probes stay short.
         if (folders.count - 1) * 4 > slots.count * 3 { rehash(capacity: slots.count * 2, keys) }
         return id
+    }
+
+    /// Linear probing: the folder with this path, or the empty slot where it belongs.
+    private func probe(_ path: UnsafeRawBufferPointer, _ keys: KeyBytes) -> (id: Int?, slot: Int) {
+        let mask = slots.count - 1
+        var slot = Self.hash(path) & mask
+        while slots[slot] != 0 {
+            let candidate = Int(slots[slot])
+            if Self.equal(self.path(of: candidate, keys), path) { return (candidate, slot) }
+            slot = (slot + 1) & mask
+        }
+        return (nil, slot)
     }
 
     private mutating func rehash(capacity: Int, _ keys: KeyBytes) {
@@ -161,6 +172,18 @@ struct NamespaceTree {
         var start = 0
         while let split = nextSplit(in: bytes, from: start) { start = split + separatorBytes.count }
         return UnsafeRawBufferPointer(rebasing: bytes[start...])
+    }
+
+    /// The folders holding key `index`, outermost first (root excluded): the rows to expand to reveal the key.
+    func ancestors(of index: Int, _ keys: KeyBytes) -> [Int] {
+        let key = keys[index]
+        var result: [Int] = [], start = 0
+        // `insert` created a folder for every prefix, so the lookup only misses for a key not added to this tree yet.
+        while let split = nextSplit(in: key, from: start), let id = probe(UnsafeRawBufferPointer(rebasing: key[..<split]), keys).id {
+            result.append(id)
+            start = split + separatorBytes.count
+        }
+        return result
     }
 
     /// The folder's children, sub-folders first, each group in byte order of the name.

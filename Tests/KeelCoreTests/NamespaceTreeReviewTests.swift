@@ -57,4 +57,27 @@ final class NamespaceTreeReviewTests: XCTestCase {
         let path = await index.namespacePath(of: empty)
         XCTAssertEqual(path, Data("xaa".utf8))
     }
+
+    /// The key list reveals a key by expanding its folders, and the flat view shows full names with metadata (KEEL-022).
+    func testAncestorsAndFullNamesForTheKeyList() async throws {
+        let index = emptyIndex()
+        await index.ingest(["a:b:c", "a:b", "x"].map { Data($0.utf8) })
+        let a = try await XCTUnwrapAsync(await folder(index, "a"))
+        let ab = try await XCTUnwrapAsync(await folder(index, "b", in: a))
+        let deep = await index.namespaceAncestors(ofKey: 0)
+        XCTAssertEqual(deep, [a, ab])
+        let shallow = await index.namespaceAncestors(ofKey: 1)
+        XCTAssertEqual(shallow, [a])
+        let top = await index.namespaceAncestors(ofKey: 2)
+        XCTAssertEqual(top, [])
+        let missing = await index.namespaceAncestors(ofKey: 3)
+        XCTAssertEqual(missing, [])
+
+        await index.updateMetadata(at: 0) { $0.type = .hash }
+        let full = await index.namespaceEntries([.key(0), .folder(a)], fullNames: true)
+        XCTAssertEqual(full.map(\.name), [Data("a:b:c".utf8), Data("a".utf8)])
+        XCTAssertEqual(full.map(\.metadata.type), [.hash, .unknown])
+        let leaf = await index.namespaceEntries([.key(0)])
+        XCTAssertEqual(leaf.map(\.name), [Data("c".utf8)])
+    }
 }
