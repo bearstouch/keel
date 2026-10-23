@@ -87,3 +87,7 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - File → **Import Connections…** / **Export Connections…**: profiles and folders as versioned JSON without any secret
   or secret flag; import previews counts and collisions with **Skip existing** (preselected), **Replace existing** or
   **Keep both**, applies in one commit (a failure changes nothing), and refuses files from a newer Keel (KEEL-019).
+- SCAN key index for the browser: keys load with `SCAN` only (`COUNT` 1,000) through the single data path, by
+  **Load more** (one SCAN per click) or **Auto-page** with pause, up to a loaded-key limit (default 1M, max 10M) with
+  **Continue**; repeated keys are listed once, a failed page keeps what was loaded, and the footer reads
+  "250,000 of 1.2M keys loaded · Load more" / "All keys loaded". About 36 bytes per key beyond the names (KEEL-020).
