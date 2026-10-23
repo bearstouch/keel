@@ -140,6 +140,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
   items in the value viewer and delete by index through the save bar (`LSET`, and `LSET` to a unique sentinel +
   `LREM 1`, in one `MULTI` guarded by an `LRANGE` of the touched span, so indexes shifted elsewhere are a
   `CONFLICT`). Push, pop and insert before/after run at once; pops ask first on production connections (KEEL-031).
+- Set editor: a member list sorted by name with a local filter and the count from `SCARD`; sets up to 1,000 members
+  load with `SMEMBERS`, larger ones page with `SSCAN … COUNT 500` and **Load more**. **+ Add member** runs `SADD` at
+  once and says "Already a member of this set." when `SADD` returns 0; removed members are saved together as one
+  `SREM`. Members open read-only in the value viewer (KEEL-032).
 
 ### Removed
 

@@ -29,6 +29,12 @@ public enum DataOperation: Sendable, Equatable {
     case hashGet(key: Data, field: Data)
     /// `LRANGE key start stop` (inclusive): a page of a list, and a list save's guard read (FR-ED03).
     case listRange(key: Data, start: Int, stop: Int)
+    /// `SMEMBERS key`: a set of up to 1,000 members at once (FR-ED04).
+    case setMembers(key: Data)
+    /// `SSCAN key cursor COUNT n`: one page of a larger set.
+    case setScan(key: Data, cursor: Data, count: Int)
+    /// `SISMEMBER key member`: whether a removed member is gone after a save.
+    case setIsMember(key: Data, member: Data)
     // Writes
     case stringSet(key: Data, value: Data, keepTTL: Bool)
     case hashSetField(key: Data, field: Data, value: Data)
@@ -88,6 +94,9 @@ public enum DataOperation: Sendable, Equatable {
         case .hashScan(let key, let cursor, let count): return [d("HSCAN"), key, cursor, d("COUNT"), d(String(count))]
         case .hashGet(let key, let field): return [d("HGET"), key, field]
         case .listRange(let key, let start, let stop): return [d("LRANGE"), key, d(String(start)), d(String(stop))]
+        case .setMembers(let key): return [d("SMEMBERS"), key]
+        case .setScan(let key, let cursor, let count): return [d("SSCAN"), key, cursor, d("COUNT"), d(String(count))]
+        case .setIsMember(let key, let member): return [d("SISMEMBER"), key, member]
         case .stringSet(let key, let value, let keepTTL): return [d("SET"), key, value] + (keepTTL ? [d("KEEPTTL")] : [])
         case .hashSetField(let key, let field, let value): return [d("HSET"), key, field, value]
         case .hashDeleteFields(let key, let fields): return [d("HDEL"), key] + fields

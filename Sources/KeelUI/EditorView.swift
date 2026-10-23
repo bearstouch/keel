@@ -114,6 +114,8 @@ struct EditorShell: View {
                 HashEditorView(session: session)
             } else if session.type == .list, session.binding != nil, session.loaded != nil {
                 ListEditorView(session: session)
+            } else if session.type == .set, session.binding != nil, session.loaded != nil {
+                SetEditorView(session: session)
             } else if session.binding == nil {
                 Notice(type: session.type)
             }

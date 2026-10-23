@@ -61,7 +61,7 @@ public final class EditorSession: ObservableObject {
         self.key = key; self.type = type; self.binding = binding; self.service = service; self.context = context
         header = KeyHeader(type: type, readOnly: context.profile.readOnly)
         viewer = ValueViewerModel(
-            choices: viewerChoices, pattern: ValueViewerMemory.pattern(of: key, separator: separator), isEditable: !context.profile.readOnly)
+            choices: viewerChoices, pattern: ValueViewerMemory.pattern(of: key, separator: separator), isEditable: !context.profile.readOnly && binding?.editsValues != false)
         viewer.onChange = { [weak self] state in self?.viewerChanged(state) }
     }
 
@@ -257,7 +257,7 @@ public final class EditorSession: ObservableObject {
         phase = .ready
         // A reload or save keeps the selected field open while it still exists.
         if let selectedRow, !value.rows.contains(where: { $0.id == selectedRow }) { self.selectedRow = nil }
-        viewer.isEditable = !isReadOnly && value.partial == nil
+        viewer.isEditable = !isReadOnly && value.partial == nil && binding?.editsValues != false
         syncViewer()
     }
 
@@ -332,7 +332,8 @@ public final class EditorSession: ObservableObject {
 
     /// After every viewer change: its bytes become the draft (the save bar counts them), its complaint blocks Save.
     private func viewerChanged(_ state: ValueViewerState) {
-        saveBlock = state.saveBlock
+        // A read-only viewer (a set member) saves nothing from its view, so invalid JSON shown there can't block the draft.
+        saveBlock = binding?.editsValues == false ? nil : state.saveBlock
         guard let row = viewedRow, row.id == viewedRowID, row.value != state.bytes else { return }
         update(draft.map { $0.id == row.id ? EditorRow(id: row.id, value: state.bytes) : $0 })
         // Refused (typing while a save runs): the viewer shows the draft again, so what's on screen is what saves.

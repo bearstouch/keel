@@ -120,13 +120,16 @@ public struct EditorBinding: Sendable {
     /// Rows are named by position (a list's index): once the value moved, a draft's rows name other items, so a conflict
     /// offers no Overwrite and an unknown outcome replaces the draft with the server's value.
     public var positional: Bool
+    /// False where a row's value is its name (a set member): the viewer shows it read-only, since changing the bytes
+    /// would be a different member, not an edit.
+    public var editsValues: Bool
 
     public init(
         load: @escaping Load, writes: @escaping Writes, loadAll: Load? = nil, loadMore: LoadMore? = nil, saveGuard: Guard? = nil, reread: Reread? = nil,
-        positional: Bool = false
+        positional: Bool = false, editsValues: Bool = true
     ) {
         self.load = load; self.writes = writes; self.loadAll = loadAll; self.loadMore = loadMore; self.saveGuard = saveGuard; self.reread = reread
-        self.positional = positional
+        self.positional = positional; self.editsValues = editsValues
     }
 
     /// The editor for a core type; nil while its editor isn't built (the shell shows the header and a notice).
@@ -135,6 +138,7 @@ public struct EditorBinding: Sendable {
         case .string: return StringEditor.binding
         case .hash: return HashEditor.binding
         case .list: return ListEditor.binding
+        case .set: return SetEditor.binding
         default: return nil
         }
     }
