@@ -17,10 +17,19 @@ As a user, I want to paste a `redis://` or `rediss://` URL to fill the form, so 
 
 ## Acceptance criteria
 
-- [ ] **AC1.** `rediss://app:p%40ss@cache.internal:6380/2` fills TLS on, user `app`, password `p@ss`, host, port 6380, db 2.
-- [ ] **AC2.** Unknown query parameters are listed as ignored.
-- [ ] **AC3.** The URL is never persisted; the password goes to the Keychain on save.
+- [x] **AC1.** `rediss://app:p%40ss@cache.internal:6380/2` fills TLS on, user `app`, password `p@ss`, host, port 6380, db 2.
+- [x] **AC2.** Unknown query parameters are listed as ignored.
+- [x] **AC3.** The URL is never persisted; the password goes to the Keychain on save.
 - [ ] **AC4.** Malformed URLs show an inline error and change nothing.
+
+**Verification (KEEL-015).** Observed in `RedisURLTests` (`KeelCoreTests`).
+- AC1: `testParsesFullURL` parses the URL and `applied(to:)` fills TLS, user, host, port and db (password returned as bytes).
+- AC2: `testReportsIgnoredQueryParameters`: names are reported in order, de-duplicated, and never applied. Showing the
+  list in the sheet arrives with KEEL-016.
+- AC3: `testPastedURLIsNeverPersisted` saves a pasted URL through `ProfileStore`; the password is in the (fake)
+  Keychain and `connections.json` contains neither it, the scheme nor the query.
+- AC4 (**pending** the sheet, KEEL-016): `testRejectsMalformedURLs` covers the table, a failed parse leaves the form
+  unchanged and every `RedisURLError` has an inline `message`; the inline error display itself is not built yet.
 
 ## Unit tests
 

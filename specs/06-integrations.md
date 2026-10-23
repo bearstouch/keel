@@ -70,7 +70,18 @@ Results are cached for the session; a connection failure or a transient error (`
 | `/db` | Database index (0 if absent) |
 | Query (`?…`) | Not applied in v1; listed to the user as ignored |
 
-Keel can also **copy** a profile as a URL without the password (`redis://user@host:port/db`).
+Keel can also **copy** a profile as a URL without the password (`redis://user@host:port/db`). The copy always names the port
+and database, percent-encodes the user name and brackets IPv6 hosts (`%25` before a zone ID), and parses back to the
+same connection fields.
+
+Parsing details: the scheme is case-insensitive and surrounding whitespace from a paste is trimmed. Userinfo ends at
+the **last** `@`, so an unencoded `@` in a password still parses; empty user or password parts are absent. Passwords
+are decoded to bytes (any byte is allowed); user names must decode to UTF-8 without spaces or control characters.
+IPv6 hosts must be valid addresses (an optional zone is a non-empty interface name or number) and are stored without brackets; other hosts never contain `[`, `]` or `%`. Database `/` or no path is 0; the port is 1–65535 and the database 0–65535.
+Raw spaces, control characters, a `#fragment`, an unbracketed IPv6 address, invalid `%` escapes or URLs over 4 KiB
+are malformed: the sheet shows an inline message and changes no field. Applying a URL sets host, port, user, database
+and TLS (a `rediss://` paste keeps an existing TLS server name and CA); every other field is kept, and a blank name
+takes the host.
 
 ## TLS and certificates
 
