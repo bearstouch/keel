@@ -38,10 +38,13 @@ struct EditorShell: View {
         }
         .alert("This key changed since it was loaded", isPresented: conflict) {
             Button("Reload") { Task { await session.reload() } }
-            Button("Overwrite", role: .destructive) { Task { await session.overwrite() } }
+            if session.canOverwrite { Button("Overwrite", role: .destructive) { Task { await session.overwrite() } } }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Nothing was saved. Reload shows the server's value and drops your changes; Overwrite saves your changes over it.")
+            Text(
+                session.canOverwrite
+                    ? "Nothing was saved. Reload shows the server's value and drops your changes; Overwrite saves your changes over it."
+                    : "Nothing was saved. Edits by index could now land on other items, so they can't be forced; Reload shows the server's value and drops your changes.")
         }
     }
 
@@ -109,6 +112,8 @@ struct EditorShell: View {
                 }
             } else if session.type == .hash, session.binding != nil, session.loaded != nil {
                 HashEditorView(session: session)
+            } else if session.type == .list, session.binding != nil, session.loaded != nil {
+                ListEditorView(session: session)
             } else if session.binding == nil {
                 Notice(type: session.type)
             }

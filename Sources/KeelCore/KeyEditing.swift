@@ -117,11 +117,16 @@ public struct EditorBinding: Sendable {
     /// Nil: the shell reads the value again with `loadAll`, else `load`. A paged collection re-reads only what it touched,
     /// so the pages already loaded stay.
     public var reread: Reread?
+    /// Rows are named by position (a list's index): once the value moved, a draft's rows name other items, so a conflict
+    /// offers no Overwrite and an unknown outcome replaces the draft with the server's value.
+    public var positional: Bool
 
     public init(
-        load: @escaping Load, writes: @escaping Writes, loadAll: Load? = nil, loadMore: LoadMore? = nil, saveGuard: Guard? = nil, reread: Reread? = nil
+        load: @escaping Load, writes: @escaping Writes, loadAll: Load? = nil, loadMore: LoadMore? = nil, saveGuard: Guard? = nil, reread: Reread? = nil,
+        positional: Bool = false
     ) {
         self.load = load; self.writes = writes; self.loadAll = loadAll; self.loadMore = loadMore; self.saveGuard = saveGuard; self.reread = reread
+        self.positional = positional
     }
 
     /// The editor for a core type; nil while its editor isn't built (the shell shows the header and a notice).
@@ -129,6 +134,7 @@ public struct EditorBinding: Sendable {
         switch type {
         case .string: return StringEditor.binding
         case .hash: return HashEditor.binding
+        case .list: return ListEditor.binding
         default: return nil
         }
     }

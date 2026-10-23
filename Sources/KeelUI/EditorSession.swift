@@ -39,6 +39,8 @@ public final class EditorSession: ObservableObject {
     @Published public private(set) var isLoadingMore = false
     /// Why the last "Load more" failed; the rows loaded so far stay.
     @Published public private(set) var loadMoreFailure: String?
+    /// Why the last immediate action (a list push, pop or insert) or window load failed; the editor stays as re-read.
+    @Published public private(set) var actionFailure: String?
     /// Why Save is refused while the viewer shows what it shows: invalid JSON in JSON view, Raw text that doesn't parse.
     @Published public private(set) var saveBlock: String?
     /// The value viewer (KEEL-028): a string's whole value; collection editors open their selected element in it.
@@ -81,12 +83,14 @@ public final class EditorSession: ObservableObject {
     public var saveBarText: String { "\(unsavedChangeCount) unsaved change\(unsavedChangeCount == 1 ? "" : "s")" }
     /// Add and Save controls, and the ⋯ menu's write actions, only on writable profiles (AC3).
     public var allowsWrites: Bool { !isReadOnly }
+    /// Immediate actions and another window re-read the value, so they wait until nothing is unsaved and nothing else runs.
+    public var canRunAction: Bool { loaded != nil && partial == nil && !hasUnsavedChanges && phase == .ready && !isLoadingMore }
 
     // MARK: - Loading
 
     /// Reads the header and the value. Reload after a conflict comes here too, and discards the draft.
     public func load() async {
-        phase = .loading
+        phase = .loading; actionFailure = nil
         header = await KeyHeader.load(key: key, type: type, service: service, context: context)
         guard let binding else { phase = .ready; return }
         do throws(DataCommandError) {
@@ -179,8 +183,15 @@ public final class EditorSession: ObservableObject {
     /// with `CONFLICT` and writes nothing; the draft stays for Reload or Overwrite.
     public func save() async { await save(guarded: true) }
 
-    /// Overwrite after a conflict: the same writes without the guard, still all or nothing.
-    public func overwrite() async { await save(guarded: false) }
+    /// Overwrite after a conflict: the same writes without the guard, still all or nothing. Not for positional rows: a
+    /// list's index edits would land on whichever items moved there.
+    public func overwrite() async {
+        guard canOverwrite else { return }
+        await save(guarded: false)
+    }
+
+    /// The conflict alert offers Overwrite only where a draft's rows still name the same items (not a list's indexes).
+    public var canOverwrite: Bool { binding?.positional != true }
 
     /// Cancel on the conflict alert: the draft stays unsaved.
     public func dismissConflict() { if phase == .conflict { phase = .ready } }
@@ -207,7 +218,10 @@ public final class EditorSession: ObservableObject {
             case .command(.outcomeUnknown), .command(.timeout):
                 // The writes may or may not have run: re-read what the server has, never re-send (NFR-RL03).
                 await refreshLoaded()
-                phase = .failed("The connection dropped during the save, so its outcome is unknown. The value was reloaded; review it before saving again.")
+                phase = .failed(
+                    binding.positional
+                        ? "The connection dropped during the save, so its outcome is unknown. The value was reloaded in place of your changes; check whether they were applied."
+                        : "The connection dropped during the save, so its outcome is unknown. The value was reloaded; review it before saving again.")
             default:
                 phase = .failed(Self.message(error))
             }
@@ -247,6 +261,53 @@ public final class EditorSession: ObservableObject {
         syncViewer()
     }
 
+    // MARK: - Immediate actions
+
+    /// An edit that runs at once rather than through the draft (a list push, pop or insert, which shift every index after
+    /// them): its writes in one transaction under `watch`, then the value is re-read. Returns `EXEC`'s replies, or nil when
+    /// nothing ran or the outcome is unknown; `actionFailure` says why.
+    @discardableResult
+    public func run(_ writes: [DataOperation], watch: WatchGuard?) async -> RESPValue? {
+        guard allowsWrites, canRunAction, let binding, let loaded, !writes.isEmpty else { return nil }
+        phase = .saving; actionFailure = nil
+        var reply: RESPValue?
+        do throws(DataCommandError) {
+            let result = try await service.executeTransaction(writes, unchanged: watch, context: context)
+            if let failure = Self.serverError(in: result.reply) { actionFailure = failure } else { reply = result.reply }
+        } catch {
+            switch error {
+            case .conflict:
+                actionFailure = "The key changed since it was loaded, so nothing was changed. The value was reloaded; check it and try again."
+            case .command(.outcomeUnknown), .command(.timeout):
+                // Never re-sent (NFR-RL03): the re-read below shows what the server has.
+                actionFailure = "The connection dropped, so the outcome is unknown. The value was reloaded; check it before trying again."
+            default:
+                // Refused or not connected: nothing was sent, so what is shown is still the server's value.
+                actionFailure = Self.message(error); phase = .ready
+                return nil
+            }
+        }
+        do throws(DataCommandError) {
+            adopt(try await reread(binding, loaded))
+        } catch {
+            phase = .ready
+            actionFailure = actionFailure ?? "Reading the value back failed: \(Self.message(error))"
+        }
+        header = await KeyHeader.load(key: key, type: type, service: service, context: context)
+        return reply
+    }
+
+    /// Another window of the value replaces the loaded one (a list's "Jump to index"); a failure keeps the current one.
+    public func loadWindow(_ read: (Data, DataCommandService, DataContext) async throws(DataCommandError) -> LoadedValue) async {
+        guard canRunAction else { return }
+        phase = .loading; actionFailure = nil
+        do throws(DataCommandError) {
+            adopt(try await read(key, service, context))
+        } catch {
+            phase = .ready; actionFailure = Self.message(error)
+        }
+    }
+
     // MARK: - Viewer
 
     /// The viewer shows the whole value's draft; a revert, reload or save puts the new one in front of it. Unchanged
@@ -279,8 +340,11 @@ public final class EditorSession: ObservableObject {
     }
 
     /// After an unknown outcome: the loaded value becomes the server's, the draft stays so the dots show what differs.
+    /// Positional rows can't keep the draft: after a delete that ran, its indexes name other items, and saving it again
+    /// would overwrite or delete them.
     private func refreshLoaded() async {
         guard let binding, let current = loaded, let value = try? await reread(binding, current) else { return }
+        if binding.positional { adopt(value); return }
         loaded = value
         changedRows = EditorChanges.changedRows(loaded: value.rows, draft: draft)
     }

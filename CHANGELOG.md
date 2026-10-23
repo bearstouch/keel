@@ -136,6 +136,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
   `HGETALL`, larger ones page with `HSCAN … COUNT 500` and **Load more** ("Showing 1–500 of N"). Add, edit (in the
   value viewer), rename and delete fields; adding or renaming onto an existing field asks first. A save runs its
   `HSET`s and `HDEL` in one `MULTI`, guarded per touched field, so a rename is all or nothing (KEEL-030).
+- List editor: an Index / Value table read in `LRANGE` pages of 500 with **Load more** and **Jump to index**. Edit
+  items in the value viewer and delete by index through the save bar (`LSET`, and `LSET` to a unique sentinel +
+  `LREM 1`, in one `MULTI` guarded by an `LRANGE` of the touched span, so indexes shifted elsewhere are a
+  `CONFLICT`). Push, pop and insert before/after run at once; pops ask first on production connections (KEEL-031).
 
 ### Removed
 

@@ -70,7 +70,7 @@ public struct ProfileSessionConnector: SessionConnecting {
             throw ConnectionFailure(category: .connectionFailed, message: "This connection no longer exists.", suggestion: "Close the tab, or create the connection again.")
         }
         let settings = profile.settings
-        let safety = SafetyProfile(name: settings.name, readOnly: settings.readOnly)
+        let safety = SafetyProfile(name: settings.name, readOnly: settings.readOnly, production: await profiles.isProduction(profile))
         let connectTimeout = settings.connectTimeoutMilliseconds.map { Duration.milliseconds($0) } ?? ConnectionTester.defaultConnectTimeout
         let commandTimeout = settings.commandTimeoutMilliseconds.map { Duration.milliseconds($0) } ?? ConnectionTester.defaultCommandTimeout
         // Bound to the revision just read: an edit that changed the connection since never gets the old password.

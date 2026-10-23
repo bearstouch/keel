@@ -81,6 +81,20 @@ final class SessionConnectorTests: XCTestCase {
         XCTAssertTrue(server.opened.allSatisfy(\.isClosed))
     }
 
+    /// The session's safety profile carries the label's "treat as production" (a list pop then asks first, FR-ED03).
+    func testProductionLabelReachesSafetyProfile() async throws {
+        let (store, profile) = try await store(ConnectionSettings(name: "orders", label: .blue))
+        let server = ConnectorServer()
+        let connector = ProfileSessionConnector(profiles: store, makeConnection: server.makeConnection)
+        let plain = try await connector.connect(profileID: profile.id, database: 0).get()
+        XCTAssertFalse(plain.safety.production)
+        await plain.close()
+        try await store.setTreatAsProduction(.blue, true)
+        let production = try await connector.connect(profileID: profile.id, database: 0).get()
+        XCTAssertTrue(production.safety.production)
+        await production.close()
+    }
+
     func testRefusedServerClosesEverything() async throws {
         let (store, profile) = try await store(ConnectionSettings(name: "old"))
         let server = ConnectorServer(version: "5.0.7")

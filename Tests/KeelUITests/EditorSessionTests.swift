@@ -13,13 +13,26 @@ final class TransactionalKeyspace: @unchecked Sendable {
     private var values: [String: String]
     /// Hash keys: fields in insertion order; `HSCAN`'s cursor is an offset.
     private var hashes: [String: [(String, String)]] = [:]
+    /// List keys; an emptied list is removed, as on a server.
+    private var lists: [String: [String]] = [:]
     private var versions: [String: Int] = [:]
     private var sent: [[String]] = []
+    /// The next `EXEC` runs its writes, then the connection closes before its reply: the outcome is unknown.
+    var dropNextExecReply = false
     /// Another client's write, made right after the save's guard read (between `GET` and `EXEC`).
     var changeAfterGuardRead: (key: String, value: String)?
 
     init(_ values: [String: String]) { self.values = values }
     init(hashes: [String: [(String, String)]]) { values = [:]; self.hashes = hashes }
+    init(lists: [String: [String]]) { values = [:]; self.lists = lists }
+
+    func list(_ key: String) -> [String]? { lock.withLock { lists[key] } }
+    /// Another client's list write (`LPUSH`, `RPUSH`, `LSET` …).
+    func listWrite(_ arguments: [String]) {
+        lock.withLock {
+            _ = runList(arguments); versions[arguments[1], default: 0] += 1
+        }
+    }
 
     func hash(_ key: String) -> [String: String]? { lock.withLock { hashes[key].map { Dictionary($0, uniquingKeysWith: { a, _ in a }) } } }
     /// Another client's `HSET`.
@@ -43,7 +56,7 @@ final class TransactionalKeyspace: @unchecked Sendable {
     var commands: [[String]] { lock.withLock { sent } }
     var commandNames: [String] { commands.compactMap(\.first) }
 
-    @MainActor func session(_ key: String, type: KeyType = .string, readOnly: Bool = false) -> EditorSession {
+    @MainActor func session(_ key: String, type: KeyType = .string, readOnly: Bool = false, production: Bool = false) -> EditorSession {
         let server = ServerSession { (_: ConnectionRole, _: Int) async throws(ConnectionFailure) -> RedisConnection in
             let connection = RedisConnection(transport: Transport(self))
             do throws(RedisError) { try await connection.connect() } catch {
@@ -51,8 +64,42 @@ final class TransactionalKeyspace: @unchecked Sendable {
             }
             return connection
         }
-        let context = DataContext(profile: SafetyProfile(name: readOnly ? "payments-prod" : "local", readOnly: readOnly))
+        let context = DataContext(profile: SafetyProfile(name: readOnly ? "payments-prod" : "local", readOnly: readOnly, production: production))
         return EditorSession(key: Data(key.utf8), type: type, binding: EditorBinding.editor(for: type), service: DataCommandService(session: server), context: context)
+    }
+
+    /// Redis's list commands; indexes may be negative. Called with `lock` held.
+    private func runList(_ arguments: [String]) -> String {
+        let key = arguments[1]
+        var items = lists[key] ?? []
+        defer { lists[key] = items.isEmpty ? nil : items }
+        func position(_ text: String) -> Int { let index = Int(text)!; return index < 0 ? items.count + index : index }
+        func bulk(_ text: String) -> String { "$\(text.utf8.count)\r\n\(text)\r\n" }
+        switch arguments[0] {
+        case "LLEN": return ":\(items.count)\r\n"
+        case "LRANGE":
+            let start = max(position(arguments[2]), 0), stop = min(position(arguments[3]), items.count - 1)
+            let page = start <= stop ? Array(items[start...stop]) : []
+            return "*\(page.count)\r\n" + page.map(bulk).joined()
+        case "LSET":
+            let index = position(arguments[2])
+            guard items.indices.contains(index) else { return "-ERR index out of range\r\n" }
+            items[index] = arguments[3]
+            return "+OK\r\n"
+        case "LREM":
+            guard let index = items.firstIndex(of: arguments[3]) else { return ":0\r\n" }
+            items.remove(at: index)
+            return ":1\r\n"
+        case "LPUSH": items.insert(contentsOf: arguments.dropFirst(2).reversed(), at: 0); return ":\(items.count)\r\n"
+        case "RPUSH": items += arguments.dropFirst(2); return ":\(items.count)\r\n"
+        case "LPOP": return items.isEmpty ? "$-1\r\n" : bulk(items.removeFirst())
+        case "RPOP": return items.isEmpty ? "$-1\r\n" : bulk(items.removeLast())
+        case "LINSERT":
+            guard let pivot = items.firstIndex(of: arguments[3]) else { return ":-1\r\n" }
+            items.insert(arguments[4], at: arguments[2] == "BEFORE" ? pivot : pivot + 1)
+            return ":\(items.count)\r\n"
+        default: return "-ERR unexpected\r\n"
+        }
     }
 
     /// The string editor (KEEL-029): `STRLEN`, then `GET` (or `GETRANGE` over 1 MiB); `GET` guards, `SET … KEEPTTL` saves.
@@ -67,6 +114,8 @@ final class TransactionalKeyspace: @unchecked Sendable {
         private var pending: [Data] = []
         private var receiver: CheckedContinuation<Result<Data, TransportError>, Never>?
         private var cancelled = false
+        /// Closed by the peer (`dropNextExecReply`): replies already sent arrive, then every receive fails.
+        private var closed = false
 
         init(_ keyspace: TransactionalKeyspace) { self.keyspace = keyspace }
 
@@ -109,7 +158,13 @@ final class TransactionalKeyspace: @unchecked Sendable {
                 defer { watched = nil }
                 let changed = keyspace.lock.withLock { (watched ?? [:]).contains { keyspace.versions[$0.key, default: 0] != $0.value } }
                 if changed { return "*-1\r\n" }
-                return "*\(commands.count)\r\n" + commands.map(run).joined()
+                let replies = "*\(commands.count)\r\n" + commands.map(run).joined()
+                let drop = keyspace.lock.withLock {
+                    defer { keyspace.dropNextExecReply = false }
+                    return keyspace.dropNextExecReply
+                }
+                if drop { lock.withLock { closed = true }; return "" }
+                return replies
             default:
                 let reply = run(arguments)
                 if name == "GET", watched != nil, let change = keyspace.changeAfterGuardRead {
@@ -127,7 +182,13 @@ final class TransactionalKeyspace: @unchecked Sendable {
                 case "SET":
                     keyspace.values[arguments[1]] = arguments[2]; keyspace.versions[arguments[1], default: 0] += 1
                     return "+OK\r\n"
-                case "PTTL": return keyspace.values[arguments[1]] == nil && keyspace.hashes[arguments[1]] == nil ? ":-2\r\n" : ":-1\r\n"
+                case "PTTL":
+                    let key = arguments[1]
+                    return keyspace.values[key] == nil && keyspace.hashes[key] == nil && keyspace.lists[key] == nil ? ":-2\r\n" : ":-1\r\n"
+                case "LLEN", "LRANGE": return keyspace.runList(arguments)
+                case "LSET", "LREM", "LPUSH", "RPUSH", "LPOP", "RPOP", "LINSERT":
+                    keyspace.versions[arguments[1], default: 0] += 1
+                    return keyspace.runList(arguments)
                 case "HLEN": return ":\(keyspace.hashes[arguments[1]]?.count ?? 0)\r\n"
                 case "HGETALL":
                     let fields = keyspace.hashes[arguments[1]] ?? []
@@ -164,6 +225,7 @@ final class TransactionalKeyspace: @unchecked Sendable {
                 let ready: Result<Data, TransportError>? = lock.withLock {
                     if !pending.isEmpty { return .success(pending.removeFirst()) }
                     if cancelled { return .failure(.cancelled) }
+                    if closed { return .failure(.closed) }
                     receiver = waiter
                     return nil
                 }
