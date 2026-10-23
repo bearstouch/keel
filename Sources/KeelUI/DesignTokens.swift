@@ -20,6 +20,11 @@ enum Tokens {
     static let tabBar = Color(light: 0xF6F8FB, dark: 0x29292B)
     /// The selected segment of the mode switch (on a `soft` track).
     static let segOn = Color(light: 0xFFFFFF, dark: 0x48484A)
+    /// The selected segment's lift: a soft shadow in light, none in dark.
+    static let segShadow = Color(nsColor: NSColor(name: nil) { $0.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? .clear : NSColor(srgbRed: 24 / 255, green: 33 / 255, blue: 47 / 255, alpha: 0.12) })
+    /// The value viewer's panel and its view switch track (08 Design → Editor).
+    static let codeBg = Color(light: 0xF6F8FB, dark: 0x262628)
+    static let segBg = Color(light: 0xE7ECF2, dark: 0x38383A)
     /// The floating unsaved-changes bar and its text (08 Design → `saveBar`).
     static let saveBar = Color(light: 0x18212F, dark: 0xE5E5E7)
     static let onSaveBar = Color(light: 0xFFFFFF, dark: 0x1E1E1E)
@@ -52,6 +57,10 @@ enum Tokens {
         static let muted = NSColor(light: 0x4E5B6D, dark: 0xA1A1A6)
         static let selection = NSColor(light: 0xFCEAE8, dark: 0x3D2826)
         static let soft = NSColor(light: 0xF1F4F8, dark: 0x2C2C2E)
+        /// JSON syntax in the value viewer: keys, strings, and numbers / true / false / null.
+        static let jsonKey = NSColor(light: 0x185AA8, dark: 0x8BB8F0)
+        static let jsonString = NSColor(light: 0x216B3B, dark: 0x8DDAA4)
+        static let jsonLiteral = NSColor(light: 0x805400, dark: 0xF2CC7A)
 
         /// 08 Design → Type badges; `other` (and a type not loaded yet) is `muted` on `soft`.
         static func badge(_ type: KeyType) -> (fg: NSColor, fill: NSColor) {

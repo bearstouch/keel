@@ -30,6 +30,8 @@ struct EditorShell: View {
             content.padding(.top, 28)
         }
         .padding(.horizontal, 36).padding(.top, 28)
+        // Room under the viewer for the floating save bar (48 high, 24 from the bottom) while it shows.
+        .padding(.bottom, session.showsSaveBar ? 88 : 28)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .overlay(alignment: .bottom) {
             if session.showsSaveBar { SaveBar(session: session).padding(.horizontal, 36).padding(.bottom, 24) }
@@ -100,7 +102,11 @@ struct EditorShell: View {
         case .failed(let message):
             Text(message).font(Tokens.interface(12.5)).foregroundStyle(Tokens.danger).fixedSize(horizontal: false, vertical: true)
         default:
-            if session.binding == nil { Notice(type: session.type) }
+            if session.showsWholeValue {
+                ValueViewerPanel(model: session.viewer)
+            } else if session.binding == nil {
+                Notice(type: session.type)
+            }
         }
     }
 }
@@ -137,7 +143,8 @@ struct SaveBar: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Text(session.saveBarText).font(Tokens.interface(12.5)).frame(maxWidth: .infinity, alignment: .leading)
+            Text(session.saveBlock.map { "\(session.saveBarText) · \($0)" } ?? session.saveBarText).font(Tokens.interface(12.5)).lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
             Button("Revert") { session.revert() }
                 .buttonStyle(.plain).font(Tokens.interface(12.5)).padding(.horizontal, 14).frame(height: 32)
                 .help("Revert (⌘Z)")
@@ -148,14 +155,15 @@ struct SaveBar: View {
                     .foregroundStyle(Tokens.onAccent).padding(.horizontal, 16).frame(height: 32)
                     .background(Tokens.accent, in: RoundedRectangle(cornerRadius: 7))
             }
-            .buttonStyle(.plain).disabled(session.phase == .saving).help("Save (⌘S)")
+            .buttonStyle(.plain).disabled(session.phase == .saving || session.saveBlock != nil).opacity(session.saveBlock == nil ? 1 : 0.5)
+            .help(session.saveBlock ?? "Save (⌘S)")
         }
         .foregroundStyle(Tokens.onSaveBar)
         .padding(.leading, 16).padding(.trailing, 8).frame(height: 48)
         .background(Tokens.saveBar, in: RoundedRectangle(cornerRadius: 10))
         .shadow(color: .black.opacity(0.14), radius: 10, y: 6)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(session.saveBarText)
+        .accessibilityLabel(session.saveBlock.map { "\(session.saveBarText). \($0)" } ?? session.saveBarText)
     }
 }
 

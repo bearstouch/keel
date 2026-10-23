@@ -246,6 +246,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         add("Import Connections…", #selector(importConnections(_:)), "", to: fileMenu)
         add("Export Connections…", #selector(exportConnections(_:)), "", to: fileMenu)
         fileItem.submenu = fileMenu
+        // The standard text commands, sent to the first responder (the value viewer, the key filter, sheet fields). No
+        // Undo/Redo: ⌘Z is Revert Changes (03 → Value editors).
+        let editItem = NSMenuItem(); menu.addItem(editItem)
+        let editMenu = NSMenu(title: "Edit")
+        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editItem.submenu = editMenu
         let viewItem = NSMenuItem(); menu.addItem(viewItem)
         let viewMenu = NSMenu(title: "View")
         for (offset, mode) in TabMode.allCases.enumerated() { add(mode.title, #selector(setMode(_:)), mode.keyEquivalent, to: viewMenu).tag = offset }

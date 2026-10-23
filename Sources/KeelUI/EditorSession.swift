@@ -31,14 +31,28 @@ public final class EditorSession: ObservableObject {
     /// Rows that differ from the loaded value (the accent dots); its count is the save bar's.
     @Published public private(set) var changedRows: Set<Data> = []
     @Published public private(set) var details: KeyDetails?
+    /// Why Save is refused while the viewer shows what it shows: invalid JSON in JSON view, Raw text that doesn't parse.
+    @Published public private(set) var saveBlock: String?
+    /// The value viewer (KEEL-028): a string's whole value; collection editors open their selected element in it.
+    public let viewer: ValueViewerModel
 
     let service: DataCommandService
     let context: DataContext
 
-    public init(key: Data, type: KeyType, binding: EditorBinding?, service: DataCommandService, context: DataContext) {
+    /// `viewerChoices` and `separator` place the key under its pattern (`user:*`), whose viewer choice the tab remembers.
+    public init(
+        key: Data, type: KeyType, binding: EditorBinding?, service: DataCommandService, context: DataContext,
+        viewerChoices: ValueViewerChoices = ValueViewerChoices(), separator: NamespaceSeparator = .default
+    ) {
         self.key = key; self.type = type; self.binding = binding; self.service = service; self.context = context
         header = KeyHeader(type: type, readOnly: context.profile.readOnly)
+        viewer = ValueViewerModel(
+            choices: viewerChoices, pattern: ValueViewerMemory.pattern(of: key, separator: separator), isEditable: !context.profile.readOnly)
+        viewer.onChange = { [weak self] state in self?.viewerChanged(state) }
     }
+
+    /// A string is one row, its whole value, shown and edited in the viewer.
+    public var showsWholeValue: Bool { type == .string && binding != nil && loaded != nil }
 
     public var unsavedChangeCount: Int { changedRows.count }
     public var hasUnsavedChanges: Bool { !changedRows.isEmpty }
@@ -69,6 +83,7 @@ public final class EditorSession: ObservableObject {
         guard !isReadOnly, let loaded, phase != .saving else { return }
         draft = rows
         changedRows = EditorChanges.changedRows(loaded: loaded.rows, draft: rows)
+        syncViewer()
     }
 
     /// ⌘Z before saving: back to the loaded value.
@@ -76,6 +91,7 @@ public final class EditorSession: ObservableObject {
         guard let loaded, phase != .saving else { return }
         draft = loaded.rows; changedRows = []
         if phase == .conflict { phase = .ready }
+        syncViewer()
     }
 
     // MARK: - Saving
@@ -94,7 +110,9 @@ public final class EditorSession: ObservableObject {
     public func reload() async { await load() }
 
     private func save(guarded: Bool) async {
-        guard !isReadOnly, let binding, let loaded, phase != .saving, hasUnsavedChanges else { return }
+        // While the viewer prepares a large value its view's complaint isn't known yet (JSON view of invalid JSON).
+        guard !isReadOnly, let binding, let loaded, phase != .saving, hasUnsavedChanges, saveBlock == nil, !(showsWholeValue && viewer.state == nil)
+        else { return }
         let writes = binding.writes(key, loaded.rows, draft)
         guard !writes.isEmpty else { revert(); return }
         phase = .saving
@@ -132,6 +150,25 @@ public final class EditorSession: ObservableObject {
     private func adopt(_ value: LoadedValue) {
         loaded = value; draft = value.rows; changedRows = []
         phase = .ready
+        syncViewer()
+    }
+
+    // MARK: - Viewer
+
+    /// The viewer shows the whole value's draft; a revert, reload or save puts the new one in front of it. Unchanged
+    /// bytes leave it alone, so the user's own edits don't re-render under the cursor.
+    private func syncViewer() {
+        guard type == .string, let row = draft.first, row.value != viewer.state?.bytes else { return }
+        viewer.open(row.value, title: "Value")
+    }
+
+    /// After every viewer change: its bytes become the draft (the save bar counts them), its complaint blocks Save.
+    private func viewerChanged(_ state: ValueViewerState) {
+        saveBlock = state.saveBlock
+        guard type == .string, let row = draft.first, row.value != state.bytes else { return }
+        update([EditorRow(id: row.id, value: state.bytes)])
+        // Refused (typing while a save runs): the viewer shows the draft again, so what's on screen is what saves.
+        if draft.first?.value != state.bytes { syncViewer() }
     }
 
     /// After an unknown outcome: the loaded value becomes the server's, the draft stays so the dots show what differs.
