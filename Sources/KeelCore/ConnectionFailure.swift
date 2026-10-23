@@ -13,6 +13,10 @@ public enum ConnectionErrorCategory: String, Sendable, CaseIterable {
     case tlsHandshakeFailed = "TLS_HANDSHAKE_FAILED"
     /// A TLS server reached without TLS.
     case notTLSExpected = "NOT_TLS_EXPECTED"
+    /// The custom CA file is missing, unreadable or holds no usable certificate (FR-CN04).
+    case tlsCAUnavailable = "TLS_CA_UNAVAILABLE"
+    /// The custom CA file changed and the user didn't accept the new fingerprint (FR-CN04).
+    case tlsCAChanged = "TLS_CA_CHANGED"
     case authFailed = "AUTH_FAILED"
     case permissionDenied = "PERMISSION_DENIED"
     case protocolError = "PROTOCOL_ERROR"
@@ -56,6 +60,36 @@ public struct ConnectionFailure: Error, Equatable, Sendable, CustomStringConvert
                 suggestion: "Check the host, port and firewall, or raise the connect timeout.", phase: .connect)
         default:
             self.init(category: .connectionFailed, message: "Couldn't connect to \(place).", suggestion: "Check the host and port.")
+        }
+    }
+
+    /// A custom CA file that couldn't be used before connecting; no connection was attempted. Names the path (AC3).
+    public init(caFile error: KnownCAError) {
+        switch error {
+        case .missing(let path):
+            self.init(category: .tlsCAUnavailable, message: "The CA file “\(path)” doesn't exist.", suggestion: "Restore the file, or select the CA file again in the connection's TLS settings.")
+        case .unreadable(let path, let code):
+            self.init(
+                category: .tlsCAUnavailable, message: "Couldn't read the CA file “\(path)”: \(Self.reason(code)).",
+                suggestion: "Check that it is a readable PEM file of at most 4 MB, or select another CA file.")
+        case .invalidBundle(let path, .noCertificates):
+            self.init(category: .tlsCAUnavailable, message: "The CA file “\(path)” contains no certificate.", suggestion: "Select a PEM file with one or more “BEGIN CERTIFICATE” blocks.")
+        case .invalidBundle(let path, .unreadableCertificate):
+            self.init(category: .tlsCAUnavailable, message: "The CA file “\(path)” contains a certificate Keel can't read.", suggestion: "Check the file, or export the CA certificate again as PEM.")
+        case .declined(let path):
+            self.init(
+                category: .tlsCAChanged, message: "The CA file “\(path)” changed and the new certificate wasn't accepted.",
+                suggestion: "Connect again to review its fingerprint, or select the CA file you trust.")
+        }
+    }
+
+    private static func reason(_ code: Int32) -> String {
+        switch code {
+        case EACCES, EPERM: return "permission denied"
+        case EISDIR: return "it is a folder"
+        case EFTYPE: return "it isn't a regular file"
+        case EFBIG: return "it is larger than 4 MB"
+        default: return String(cString: strerror(code)).lowercased()
         }
     }
 

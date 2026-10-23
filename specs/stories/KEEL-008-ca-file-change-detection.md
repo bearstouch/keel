@@ -17,9 +17,9 @@ As a security-conscious user, I want Keel to notice when a referenced CA file ch
 
 ## Acceptance criteria
 
-- [ ] **AC1.** Replacing the CA file shows both fingerprints before connecting; declining aborts with no connection attempt.
-- [ ] **AC2.** Accepting updates the stored fingerprint; the next connect doesn't ask again.
-- [ ] **AC3.** A missing CA file fails with a clear message naming the path.
+- [ ] **AC1.** Replacing the CA file shows both fingerprints before connecting; declining aborts with no connection attempt. *(Core observed: `KnownCATests.testChangedFileRequiresAcceptance` — the `CAChange` handed to `confirm` carries the old and new SHA-256, and declining throws `.declined` (`TLS_CA_CHANGED`) before any anchors are returned, so no connection can be opened. **Pending:** the on-screen prompt showing both fingerprints arrives with the connect flow UI (ServerSession / New Connection sheet).)*
+- [x] **AC2.** Accepting updates the stored fingerprint; the next connect doesn't ask again. *(Observed: `KnownCATests.testChangedFileRequiresAcceptance` — `known-ca.json` holds the new fingerprint and a fresh store's next connect doesn't call `confirm`.)*
+- [x] **AC3.** A missing CA file fails with a clear message naming the path. *(Observed: `KnownCATests.testMissingFileIsReported` — `TLS_CA_UNAVAILABLE`, “The CA file “<path>” doesn't exist.”, nothing recorded.)*
 
 ## Unit tests
 
