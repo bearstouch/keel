@@ -77,6 +77,7 @@ sequenceDiagram
 - The policy decides **before** anything is written to the socket. A blocked command leaves the server untouched.
 - Editors don't build raw command strings; they produce typed operations (`.hashSetField(key:field:value:)`) that the service turns into commands, so the same classification runs for them.
 - Multi-command edits (for example renaming a hash field) run as one `MULTI … EXEC`, optionally guarded by `WATCH`, so they apply entirely or not at all.
+- Editor saves go through `DataCommandService.executeTransaction(_:unchanged:context:)`. Every write and guard read passes the policy (origin `.editor`) before the first byte; a guard read must be a read. On the database's browser connection, pinned for the whole save, the service sends `WATCH key`, repeats the guard reads the editor made when it loaded the value and compares the replies: any difference sends `UNWATCH` and fails with `CONFLICT` before anything is queued. `MULTI`, the writes and `EXEC` then go out as **one pipelined write**, so no browser command can be queued inside the transaction; a nil `EXEC` (the key changed after the reads) is also `CONFLICT`. Overwrite runs the same writes without the guard. Saves on one connection run one at a time, because `EXEC` ends every `WATCH` on its connection. `WATCH`, `MULTI`, `EXEC` and `UNWATCH` are the service's framing and stay blocked for every non-console caller.
 
 ### Safety policy
 

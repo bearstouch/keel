@@ -20,6 +20,9 @@ enum Tokens {
     static let tabBar = Color(light: 0xF6F8FB, dark: 0x29292B)
     /// The selected segment of the mode switch (on a `soft` track).
     static let segOn = Color(light: 0xFFFFFF, dark: 0x48484A)
+    /// The floating unsaved-changes bar and its text (08 Design → `saveBar`).
+    static let saveBar = Color(light: 0x18212F, dark: 0xE5E5E7)
+    static let onSaveBar = Color(light: 0xFFFFFF, dark: 0x1E1E1E)
     static let fg = Color(light: 0x18212F, dark: 0xE5E5E7)
     static let muted = Color(light: 0x4E5B6D, dark: 0xA1A1A6)
     static let accent = Color(light: 0xC7302A, dark: 0xFF6F61)

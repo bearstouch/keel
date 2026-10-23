@@ -29,6 +29,12 @@ public enum KeyListCommands {
     public static let databaseKey = "database"
 }
 
+/// File → Save Changes (⌘S) and Revert Changes (⌘Z), posted with the key window: its open editor saves or reverts.
+public enum EditorCommands {
+    public static let saveNotification = Notification.Name("com.bearstouch.keel.saveEdits")
+    public static let revertNotification = Notification.Name("com.bearstouch.keel.revertEdits")
+}
+
 /// One 32 px row (08 Design → Key list): name in mono, then the muted count or TTL, then the type badge. Frames are set
 /// in `layout()` rather than with constraints, so reusing a cell while scrolling costs a few assignments.
 final class KeyListCellView: NSTableCellView {

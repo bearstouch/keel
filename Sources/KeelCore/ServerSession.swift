@@ -104,6 +104,16 @@ public actor ServerSession {
         do throws(RedisError) { return try await connection.send(arguments, mayWrite: mayWrite) } catch { throw .command(error) }
     }
 
+    /// `role`'s ready connection on `database`, for work that must stay on one socket: `WATCH` lives on the connection
+    /// it was sent on, so a guarded save sends every step there and fails rather than continue on a replacement.
+    public func pinnedConnection(for role: ConnectionRole, database: Int) async throws(DataCommandError) -> RedisConnection {
+        let connection: RedisConnection
+        do throws(ConnectionFailure) { connection = try await self.connection(for: role, database: database) } catch { throw .connection(error) }
+        guard connections[role] === connection else { throw .command(.notConnected) }
+        guard databases[role] == database else { throw .invalidRequest("This connection is on another database; run SELECT \(database) first.") }
+        return connection
+    }
+
     /// Closes `role`'s connection (Stop on a stream, a finished job, a closed console).
     public func close(_ role: ConnectionRole) async {
         opening[role]?.cancel(); opening[role] = nil; databases[role] = nil

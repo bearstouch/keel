@@ -155,7 +155,7 @@ public struct ProfileSessionConnector: SessionConnecting {
                 switch error {
                 case .connection(let failure): throw failure
                 case .command(let redisError): throw ConnectionFailure(command: redisError, name: "INFO \(section)", endpoint: endpoint, timeout: timeout)
-                case .refused, .invalidRequest:
+                case .refused, .invalidRequest, .conflict:
                     throw ConnectionFailure(category: .connectionFailed, message: "Keel couldn't ask the server what it is.", suggestion: "Try again.")
                 }
             }

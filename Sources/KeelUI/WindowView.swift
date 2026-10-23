@@ -289,7 +289,7 @@ struct TabContent: View {
     }
 }
 
-/// The key list (380 wide) beside the editor area, which KEEL-027 fills.
+/// The key list (380 wide) beside the editor area.
 private struct BrowserLayout: View {
     @ObservedObject var browser: BrowserModel
 
@@ -303,7 +303,7 @@ private struct BrowserLayout: View {
             }
             .frame(width: 380)
             Tokens.hair.frame(width: 1)
-            Tokens.bg.frame(maxWidth: .infinity, maxHeight: .infinity).accessibilityHidden(true)
+            EditorArea(browser: browser).frame(maxWidth: .infinity, maxHeight: .infinity).background(Tokens.bg)
         }
     }
 }

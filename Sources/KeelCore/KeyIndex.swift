@@ -776,6 +776,7 @@ public actor KeyIndex {
         case .invalidRequest(let message): return message
         case .connection(let failure): return failure.message
         case .command(let error): return "The connection failed during \(command) (\(error.code))."
+        case .conflict: return "The key changed since it was loaded."
         }
     }
 }

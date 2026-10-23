@@ -22,6 +22,7 @@ public final class TabSession: ObservableObject, Identifiable {
     /// Bumped by every connect and disconnect, so a connect that lands after a newer one (or a disconnect) is closed.
     private var attempt = 0
     private var databaseChanges: AnyCancellable?
+    private var editChanges: AnyCancellable?
     /// Status and database changes, for the window that holds the tab.
     var onStatus: ((ConnectionStatus) -> Void)?
     var onDatabase: ((Int) -> Void)?
@@ -50,6 +51,11 @@ public final class TabSession: ObservableObject, Identifiable {
             self.browser = browser
             // The tab saves the database the switcher moves to (FR-AP01 restores it).
             databaseChanges = browser.$database.dropFirst().sink { [weak self] in self?.onDatabase?($0) }
+            // The open editor's draft is the tab's unsaved edits: closing asks first (MAC-06).
+            editChanges = browser.$editor
+                .map { editor in editor.map { $0.$changedRows.map { !$0.isEmpty }.eraseToAnyPublisher() } ?? Just(false).eraseToAnyPublisher() }
+                .switchToLatest().removeDuplicates()
+                .sink { [weak self] in self?.hasUnsavedEdits = $0 }
             set(.connected)
             await browser.start()
         }
@@ -59,7 +65,7 @@ public final class TabSession: ObservableObject, Identifiable {
     public func disconnect() async {
         attempt += 1
         let server = connected
-        connected = nil; browser = nil; self.server = nil; databaseChanges = nil; failure = nil
+        connected = nil; browser = nil; self.server = nil; databaseChanges = nil; editChanges = nil; hasUnsavedEdits = false; failure = nil
         set(.disconnected)
         await server?.close()
     }

@@ -75,7 +75,7 @@ Common rules for all editors:
 - Large values load in bounded pages; partial content is marked "Showing 1–500 of 82,113" and editing operates only on loaded items.
 - Edits are explicit: change → **Save** (⌘S) / **Revert** (⌘Z before save). A floating bar ("1 unsaved change · Revert · Save") appears at the bottom of the editor **only** while there are unsaved changes; changed rows get a small accent dot. Unsaved changes are confirmed on close.
 - Save **preserves TTL** (`SET … KEEPTTL` for strings; collection edits don't touch TTL).
-- Concurrency: whole-value saves use `WATCH key` + `MULTI/EXEC`; if the key changed since it was loaded, the save fails with `CONFLICT` and offers Reload or Overwrite.
+- Concurrency: whole-value saves use `WATCH key` + `MULTI/EXEC`; if the key changed since it was loaded, the save fails with `CONFLICT`, writes nothing and offers Reload (the server's value replaces the draft) or Overwrite (the same writes without the guard). A save whose connection drops reports that its outcome is unknown and re-reads the value; it is never re-sent. ⌘S and ⌘Z are File → Save Changes / Revert Changes, enabled only while the save bar shows.
 - Read-only profiles show editors in view mode: "· Read-only" with a lock in the metadata line, no Add/Save controls, and write actions disabled in the ⋯ menu. Viewing (including the viewer switch) is unchanged.
 
 | ID | Type | Requirement | Acceptance check |

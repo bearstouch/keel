@@ -15,6 +15,10 @@ public enum DataOperation: Sendable, Equatable {
     case databaseSize
     /// `INFO section`; the database switcher asks for `keyspace` (FR-KB08).
     case info(section: Data)
+    /// `OBJECT ENCODING key` for the editor's Details (FR-ED13).
+    case objectEncoding(key: Data)
+    /// The editor's length for the metadata line (`STRLEN`, `HLEN`, `LLEN`, `SCARD`, `ZCARD`, `XLEN`).
+    case length(key: Data, command: LengthCommand)
     // Writes
     case stringSet(key: Data, value: Data, keepTTL: Bool)
     case hashSetField(key: Data, field: Data, value: Data)
@@ -63,6 +67,8 @@ public enum DataOperation: Sendable, Equatable {
         case .get(let key): return [d("GET"), key]
         case .databaseSize: return [d("DBSIZE")]
         case .info(let section): return [d("INFO"), section]
+        case .objectEncoding(let key): return [d("OBJECT"), d("ENCODING"), key]
+        case .length(let key, let command): return [d(command.rawValue), key]
         case .stringSet(let key, let value, let keepTTL): return [d("SET"), key, value] + (keepTTL ? [d("KEEPTTL")] : [])
         case .hashSetField(let key, let field, let value): return [d("HSET"), key, field, value]
         case .hashDeleteFields(let key, let fields): return [d("HDEL"), key] + fields
@@ -131,6 +137,8 @@ public enum DataCommandError: Error, Equatable, Sendable {
     case connection(ConnectionFailure)
     /// The connection failed, timed out or was closed around the command (`OUTCOME_UNKNOWN` for a possible write).
     case command(RedisError)
+    /// A guarded save found the key changed since the editor loaded it; nothing was written.
+    case conflict
 
     public var code: String {
         switch self {
@@ -138,8 +146,19 @@ public enum DataCommandError: Error, Equatable, Sendable {
         case .invalidRequest: return "INVALID_PARAMS"
         case .connection(let failure): return failure.category == .timeout ? "TIMEOUT" : "CONNECTION_FAILED"
         case .command(let error): return error.code
+        case .conflict: return "CONFLICT"
         }
     }
+}
+
+/// What a guarded save expects to find (03 → Value editors, concurrency): the replies `reads` gave when the editor
+/// loaded `key`. The save re-reads them under `WATCH`; any difference is `CONFLICT`.
+public struct WatchGuard: Sendable, Equatable {
+    public var key: Data
+    public var reads: [DataOperation]
+    public var expected: [RESPValue]
+
+    public init(key: Data, reads: [DataOperation], expected: [RESPValue]) { self.key = key; self.reads = reads; self.expected = expected }
 }
 
 public struct DataCommandResult: Sendable, Equatable {
@@ -159,6 +178,11 @@ public actor DataCommandService {
     public let session: ServerSession
     public private(set) var catalog: CommandCatalog
 
+    /// Roles with a transaction in progress, and the transactions waiting for each. `EXEC` ends every `WATCH` on its
+    /// connection, so two saves on the browser connection must not overlap.
+    private var transacting: Set<ConnectionRole> = []
+    private var waitingTransactions: [ConnectionRole: [CheckedContinuation<Void, Never>]] = [:]
+
     public init(session: ServerSession, catalog: CommandCatalog = .bundled) { self.session = session; self.catalog = catalog }
 
     public func execute(_ command: DataCommand, origin: CommandOrigin, context: DataContext) async throws(DataCommandError) -> DataCommandResult {
@@ -175,6 +199,107 @@ public actor DataCommandService {
             // when queued), so they also run while a console's database is unknown.
             bindsDatabase: ![.session, .streaming].contains(safetyClass), selecting: Self.selecting(arguments, info, role))
         return DataCommandResult(reply: reply, safetyClass: safetyClass, role: role)
+    }
+
+    /// An editor's save (03 → Value editors, concurrency): `writes` apply together in one `MULTI … EXEC`. With
+    /// `unchanged`, the key is `WATCH`ed and its reads are repeated first: a reply that differs from what the editor
+    /// loaded, or a change before `EXEC`, writes nothing and throws `CONFLICT`. Without it (Overwrite) the writes still
+    /// apply all or nothing. Every write and read passes the safety policy before the first byte is sent; `WATCH`,
+    /// `MULTI`, `EXEC` and `UNWATCH` are the service's own framing on the browser connection, which callers can't send.
+    ///
+    /// The reply is `EXEC`'s (one reply per write, or `-EXECABORT …`), or a guard read's server error, which stops the
+    /// save before anything is queued.
+    public func executeTransaction(_ writes: [DataOperation], unchanged watch: WatchGuard?, context: DataContext) async throws(DataCommandError)
+        -> DataCommandResult
+    {
+        guard !writes.isEmpty else { throw .invalidRequest("A save needs at least one write.") }
+        if let watch, watch.reads.count != watch.expected.count { throw .invalidRequest("Each guard read needs the reply it expects.") }
+        func evaluate(_ operation: DataOperation, confirmation: CommandConfirmation?) -> SafetyVerdict {
+            let arguments = operation.arguments
+            return SafetyPolicy.evaluate(
+                arguments, command: catalog.resolve(arguments), origin: .editor, profile: context.profile, database: context.database, confirmation: confirmation)
+        }
+        for write in writes {
+            let verdict = evaluate(write, confirmation: context.confirmation)
+            guard verdict.isAllowed else { throw .refused(verdict) }
+        }
+        for read in watch?.reads ?? [] {
+            let verdict = evaluate(read, confirmation: nil)
+            guard case .allow(let safetyClass) = verdict else { throw .refused(verdict) }
+            // Repeating a write to compare its reply would change the key it guards.
+            guard !safetyClass.mayWrite else { throw .invalidRequest("A guard read must not write.") }
+        }
+        let role = ConnectionRole.browser(database: context.database)
+        await beginTransaction(role)
+        defer { endTransaction(role) }
+        let reply = try await transaction(writes, watch, on: try await session.pinnedConnection(for: role, database: context.database))
+        return DataCommandResult(reply: reply, safetyClass: .write, role: role)
+    }
+
+    private func transaction(_ writes: [DataOperation], _ watch: WatchGuard?, on connection: RedisConnection) async throws(DataCommandError) -> RESPValue {
+        func send(_ arguments: [Data]) async throws(DataCommandError) -> RESPValue {
+            do throws(RedisError) { return try await connection.send(arguments, mayWrite: false) } catch { throw .command(error) }
+        }
+        // A WATCH left behind (a mismatch, a cancelled save) would make the next save's EXEC on this connection fail as a
+        // false CONFLICT, so it is dropped before the role is handed on; in its own task, which a cancelled save can't stop.
+        func unwatch() async { await Task { _ = try? await connection.send([d("UNWATCH")], mayWrite: false) }.value }
+        if let watch {
+            do throws(DataCommandError) {
+                let watched = try await send([d("WATCH"), watch.key])
+                if case .error = watched { return watched }
+                for (read, expected) in zip(watch.reads, watch.expected) {
+                    let reply = try await send(read.arguments)
+                    guard reply == expected, !Self.isError(reply) else {
+                        await unwatch()
+                        if Self.isError(reply) { return reply }
+                        throw .conflict
+                    }
+                }
+            } catch {
+                // A dropped connection takes its WATCH with it; a cancelled wait leaves the connection and the WATCH.
+                if error != .conflict { await unwatch() }
+                throw error
+            }
+        }
+        // One write, so nothing else on the browser connection can be queued inside this transaction.
+        let replies: [Result<RESPValue, RedisError>]
+        do throws(RedisError) {
+            replies = try await connection.sendPipeline([[d("MULTI")]] + writes.map(\.arguments) + [[d("EXEC")]], mayWrite: true)
+        } catch {
+            // Thrown only before anything was sent (not connected, cancelled), so the WATCH is still there.
+            if watch != nil { await unwatch() }
+            throw .command(error)
+        }
+        // Without MULTI the writes ran one by one: what happened is unknown, so the editor re-reads.
+        guard case .success(.simpleString) = replies.first else {
+            if case .failure(let error) = replies.first { throw .command(error) }
+            throw .command(.outcomeUnknown)
+        }
+        let exec: RESPValue
+        do throws(RedisError) { exec = try replies[replies.count - 1].get() } catch { throw .command(error) }
+        // A nil EXEC: a watched key changed after the reads, so the server ran none of the writes.
+        if exec.isNull { throw .conflict }
+        return exec
+    }
+
+    private static func isError(_ reply: RESPValue) -> Bool {
+        switch reply {
+        case .error, .blobError: return true
+        default: return false
+        }
+    }
+
+    private func beginTransaction(_ role: ConnectionRole) async {
+        guard !transacting.insert(role).inserted else { return }
+        await withCheckedContinuation { waitingTransactions[role, default: []].append($0) }
+    }
+
+    /// Hands the role to the next waiting transaction, in arrival order.
+    private func endTransaction(_ role: ConnectionRole) {
+        guard var waiting = waitingTransactions[role], !waiting.isEmpty else { transacting.remove(role); return }
+        let next = waiting.removeFirst()
+        waitingTransactions[role] = waiting.isEmpty ? nil : waiting
+        next.resume()
     }
 
     /// Replaces the catalog with the server's own merged over the bundled one (`COMMAND`, `COMMAND DOCS`), sent

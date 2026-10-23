@@ -14,6 +14,8 @@ public final class BrowserModel: ObservableObject {
     @Published public private(set) var database: Int
     /// The selected key when opening it found it gone (FR-KB12); the pane offers to remove it from the list.
     @Published public private(set) var missingKey: Data?
+    /// The selected key, open in the editor shell (KEEL-027) once its presence check named its type.
+    @Published public private(set) var editor: EditorSession?
 
     public let list: KeyListDataSource
     public let filter: KeyFilterModel?
@@ -23,6 +25,8 @@ public final class BrowserModel: ObservableObject {
     public let databaseCount: Int?
     /// Loads the first page after a restart; the tab resumes Auto-page here when that is the mode.
     let startScan: @MainActor (KeyIndex) async -> Void
+    /// The type's editor; nil shows the shell without a value editor (types whose editor isn't built yet).
+    let editorBinding: @MainActor (KeyType) -> EditorBinding?
 
     /// Bumped by every refresh and switch, so counts that land for an earlier one are dropped.
     private var countsRequest = 0
@@ -33,10 +37,11 @@ public final class BrowserModel: ObservableObject {
 
     public init(
         list: KeyListDataSource, filter: KeyFilterModel? = nil, database: Int, serverMode: ServerMode = .standalone, databaseCount: Int? = nil,
-        startScan: @escaping @MainActor (KeyIndex) async -> Void = { _ = await $0.loadMore() }
+        startScan: @escaping @MainActor (KeyIndex) async -> Void = { _ = await $0.loadMore() },
+        editorBinding: @escaping @MainActor (KeyType) -> EditorBinding? = { _ in nil }
     ) {
         self.list = list; self.filter = filter; self.database = database; self.serverMode = serverMode; self.databaseCount = databaseCount
-        self.startScan = startScan
+        self.startScan = startScan; self.editorBinding = editorBinding
         databases = DatabaseList(keyspace: [:], databaseCount: databaseCount, mode: serverMode)
         // Opening a key checks it still exists. The publisher fires before the property changes, hence the value.
         selection = list.$selectedKey.removeDuplicates().sink { [weak self] key in
@@ -63,7 +68,22 @@ public final class BrowserModel: ObservableObject {
                     Task { await self.selectDatabase(database) }
                 }
             })
+        for (name, action) in [(EditorCommands.saveNotification, EditorCommand.save), (EditorCommands.revertNotification, .revert)] {
+            observers.append(
+                center.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+                    let window = note.object as? NSWindow
+                    MainActor.assumeIsolated {
+                        guard let self, self.isShown(in: window), let editor = self.editor else { return }
+                        switch action {
+                        case .save: Task { await editor.save() }
+                        case .revert: editor.revert()
+                        }
+                    }
+                })
+        }
     }
+
+    private enum EditorCommand { case save, revert }
 
     isolated deinit { observers.forEach(NotificationCenter.default.removeObserver) }
 
@@ -130,13 +150,30 @@ public final class BrowserModel: ObservableObject {
         guard request == presenceRequest else { return }
         missingKey = nil
         // The selection's pinned bytes when known: after a removal, row numbers can name a neighbour until the reload.
-        guard let key, list.selectedKey == key, let bytes = await list.selectedKeyName() else { return }
+        guard let key, list.selectedKey == key, let bytes = await list.selectedKeyName() else {
+            if request == presenceRequest { editor = nil }
+            return
+        }
         let presence = await list.index.presence(of: bytes)
         // Only the newest selection reports, and only while that key is still the one selected.
         guard request == presenceRequest, list.selectedKey == key else { return }
-        if presence == .missing { missingKey = bytes }
+        if presence == .missing { missingKey = bytes; editor = nil }
+        if case .exists(let type) = presence { await open(bytes, type: type, request: request) }
         // The row now reads "expired" (or shows its new type); redraw it.
         await list.refreshRows(ofKeys: [key])
+    }
+
+    /// Opens `key` in the editor unless it already is (a refresh re-selects it; the open editor keeps its draft).
+    private func open(_ key: Data, type: KeyType, request: Int) async {
+        let index = list.index
+        let context = await index.context
+        // The same name in another database (after a switch) is another key.
+        if let editor, editor.key == key, editor.type == type, editor.context.database == context.database { return }
+        let editor = EditorSession(key: key, type: type, binding: editorBinding(type), service: await index.service, context: context)
+        // A newer selection while the context was read owns the editor now.
+        guard request == presenceRequest else { return }
+        self.editor = editor
+        await editor.load()
     }
 
     /// "Remove from List": drops the missing key from the loaded keys; nothing is sent to the server.
