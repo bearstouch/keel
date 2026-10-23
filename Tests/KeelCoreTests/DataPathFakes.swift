@@ -16,6 +16,7 @@ final class RecordingTransport: Transport, @unchecked Sendable {
     init(answer: @escaping @Sendable ([String]) -> String = { _ in "+OK\r\n" }) { self.answer = answer }
 
     var sent: [Data] { lock.withLock { frames } }
+    var isClosed: Bool { lock.withLock { cancelled } }
     /// Sent frames decoded back into their arguments.
     var commands: [[String]] { sent.map { Self.decode($0) ?? [] } }
 

@@ -88,10 +88,14 @@ Badges distinguish types, not brand, so they keep their own hues. JSON syntax in
 | Label | Light | Dark |
 | --- | --- | --- |
 | Production | `#C8363C` | `#FF7B7B` |
-| Staging | `#B86200` | `#F2A65A` |
-| Local | `#2E8B4F` | `#8DDAA4` |
+| Staging (orange) | `#B86200` | `#F2A65A` |
+| Yellow | `#8A6D00` | `#F2D36B` |
+| Local (green) | `#2E8B4F` | `#8DDAA4` |
 | Blue | `#2F6FBF` | `#8BB8F0` |
+| Purple | `#7B4FB0` | `#C6A0E8` |
 | Gray | `#7A8596` | `#8E8E93` |
+
+Every FR-CN02 color has a dot; **None** is an empty `muted` ring. The New Connection sheet shows all eight dots, selected one ringed in `accent`, and the selected label's name beside them.
 
 ## Typography
 

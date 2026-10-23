@@ -15,12 +15,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Every SSH tunnel of this run; sessions take it from here. Creates nothing until the first tunnel opens.
     let tunnels: TunnelManager
     private var prompts: SSHPromptCenter?
+    /// The single owner of `connections.json` and the profiles' Keychain items.
+    let profiles: ProfileStore
+    private var connections: ConnectionSheetPresenter?
 
     init(arguments: LaunchArguments, stateDirectory: URL) {
         self.arguments = arguments; self.stateDirectory = stateDirectory
         let relay = promptRelay
         askpass = Bundle.main.executableURL.flatMap { AskpassHelperLocation.find(executable: $0) }.map { AskpassBroker(helperPath: $0, relay: relay) }
         tunnels = TunnelManager(askpass: askpass)
+        profiles = ProfileStore(directory: stateDirectory)
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -32,7 +36,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let prompts = SSHPromptCenter(relay: promptRelay)
         self.prompts = prompts
         Task { await prompts.attach() }
-        let window = MainWindow.make(prompts: prompts)
+        // A file that needs recovery keeps the store read-only; Save then says so (the recovery choice is KEEL-055's).
+        Task { [profiles] in _ = await profiles.load() }
+        let connections = ConnectionSheetPresenter(store: profiles, tester: ConnectionTester(tunnels: tunnels))
+        self.connections = connections
+        let window = MainWindow.make(prompts: prompts, connections: connections)
         window.center()
         window.makeKeyAndOrderFront(nil)
         self.window = window
@@ -51,12 +59,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return .terminateLater
     }
 
+    @objc private func newConnection(_ sender: Any?) { connections?.newConnection() }
+
     private func buildMenus() {
         let menu = NSMenu()
         let appItem = NSMenuItem(); menu.addItem(appItem)
         let appMenu = NSMenu(title: "Keel")
         appMenu.addItem(withTitle: "Quit Keel", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
+        let fileItem = NSMenuItem(); menu.addItem(fileItem)
+        let fileMenu = NSMenu(title: "File")
+        fileMenu.addItem(withTitle: "New Connection…", action: #selector(newConnection(_:)), keyEquivalent: "n").target = self
+        fileItem.submenu = fileMenu
         let windowItem = NSMenuItem(); menu.addItem(windowItem)
         let windowMenu = NSMenu(title: "Window")
         windowMenu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
