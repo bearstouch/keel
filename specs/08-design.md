@@ -144,7 +144,7 @@ Connection name, db picker (`db0 ▾` in mono on `soft`, a menu listing "db3 · 
 
 ### Tab bar
 
-Under the toolbar: one tab per open connection (label dot, name, `×`), `+` for a new tab. The active tab uses `bg` with a hairline border and joins the content; others are flat `muted` text.
+Under the toolbar, 38 high on `tabBar`: one 31 px tab per open connection (7 px label dot, name, `×`), `+` for a new tab (a popover listing the saved connections). The active tab uses `bg` at 600 with a hairline border, radius 8 8 0 0, and covers the bar's bottom hairline so it joins the content; others are flat `muted` text. The context menu holds Connect / Reconnect, Disconnect, Move to New Window and Close Tab. A tab that isn't connected shows its name and "Disconnected · Connect" centered (a failure: "Failed" in `danger`, the message and its suggestion, **Try Again**); connecting shows a small spinner and "Connecting to <name>…". The mode switch is a `soft` track with the selected segment on `segOn` (white in light, `#48484A` in dark).
 
 ### Production strip
 

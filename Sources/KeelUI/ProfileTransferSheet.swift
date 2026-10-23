@@ -207,14 +207,15 @@ private struct ProfileTransferModifier: ViewModifier {
 
     private struct Presenting: ViewModifier {
         @ObservedObject var model: ProfileTransferModel
+        @Environment(\.presentsSharedSheets) private var active
 
         func body(content: Content) -> some View {
             content
                 // Dismissal goes through Cancel / Import, so an import in flight can't lose its sheet.
-                .sheet(item: Binding(get: { model.pending }, set: { _ in })) { pending in
+                .sheet(item: Binding(get: { active ? model.pending : nil }, set: { _ in })) { pending in
                     ProfileImportSheet(model: model, pending: pending).interactiveDismissDisabled()
                 }
-                .alert(model.message ?? "", isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) {
+                .alert(model.message ?? "", isPresented: Binding(get: { active && model.message != nil }, set: { if !$0 { model.message = nil } })) {
                     Button("OK", role: .cancel) {}
                 }
         }

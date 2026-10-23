@@ -139,18 +139,7 @@ public struct ConnectionTester: ConnectionTesting {
     }
 
     func resolve(_ tunnel: TunnelSettings, settings: ConnectionSettings) async throws(ConnectionFailure) -> ResolvedTunnel {
-        switch tunnel {
-        case .inline(let destination, let user, let port, let identityFile):
-            let configuration = SSHTunnelConfiguration(destination: destination, user: user, port: port, identityFile: identityFile, redisHost: settings.host, redisPort: settings.port)
-            return ResolvedTunnel(configuration: configuration, destination: destination)
-        case .savedHost(let id):
-            guard let host = await resolveSavedHost(id) else {
-                throw ConnectionFailure(category: .tunnelFailed, message: "The saved SSH host of this connection no longer exists.", suggestion: "Choose another SSH host in the SSH tunnel settings.")
-            }
-            return ResolvedTunnel(
-                configuration: SSHTunnelConfiguration(host: host, redisHost: settings.host, redisPort: settings.port), destination: host.destination,
-                savedPassword: savedHostPassword(host))
-        }
+        try await tunnel.resolved(settings: settings, resolveSavedHost: resolveSavedHost, savedHostPassword: savedHostPassword)
     }
 
     /// One post-handshake command. An error reply is a failure of the test: `NOPERM` is `PERMISSION_DENIED`.
@@ -196,6 +185,27 @@ extension ConnectionFailure {
             self.init(category: .authFailed, message: "This server requires a password.", suggestion: "Enter the password (and the username for an ACL user).", serverError: serverError)
         default:
             self.init(category: .serverError, message: "The server rejected \(command) (\(code)).", suggestion: "See the server's error in the details.", serverError: serverError)
+        }
+    }
+}
+
+extension TunnelSettings {
+    /// ssh's configuration for this tunnel; a saved host that no longer exists fails as `TUNNEL_FAILED`. Shared by
+    /// Test Connection and a real connect.
+    func resolved(
+        settings: ConnectionSettings, resolveSavedHost: ConnectionTester.ResolveSavedHost, savedHostPassword: ConnectionTester.SavedHostPassword
+    ) async throws(ConnectionFailure) -> ResolvedTunnel {
+        switch self {
+        case .inline(let destination, let user, let port, let identityFile):
+            let configuration = SSHTunnelConfiguration(destination: destination, user: user, port: port, identityFile: identityFile, redisHost: settings.host, redisPort: settings.port)
+            return ResolvedTunnel(configuration: configuration, destination: destination)
+        case .savedHost(let id):
+            guard let host = await resolveSavedHost(id) else {
+                throw ConnectionFailure(category: .tunnelFailed, message: "The saved SSH host of this connection no longer exists.", suggestion: "Choose another SSH host in the SSH tunnel settings.")
+            }
+            return ResolvedTunnel(
+                configuration: SSHTunnelConfiguration(host: host, redisHost: settings.host, redisPort: settings.port), destination: host.destination,
+                savedPassword: savedHostPassword(host))
         }
     }
 }

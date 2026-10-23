@@ -265,6 +265,11 @@ public final class SidebarModel: ObservableObject {
 
     // MARK: Internals
 
+    /// A tab's title: its profile's name ("Deleted connection" for a tab outliving its profile until it closes).
+    public func profileName(_ id: UUID) -> String { profile(id)?.settings.name ?? "Deleted connection" }
+
+    public func profileLabel(_ id: UUID) -> LabelColor { profile(id)?.settings.label ?? .none }
+
     private func profile(_ id: UUID) -> ConnectionProfile? { document.profiles.first { $0.id == id } }
     private func folder(_ id: UUID) -> ProfileFolder? { document.folders.first { $0.id == id } }
 

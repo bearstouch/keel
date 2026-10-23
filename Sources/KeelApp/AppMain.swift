@@ -4,11 +4,10 @@ import KeelSSH
 import KeelUI
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItemValidation {
     private let arguments: LaunchArguments
     private let stateDirectory: URL
-    private var window: NSWindow?
-    /// ssh's prompts other than a saved password, shown in a sheet over the main window (FR-CN07).
+    /// ssh's prompts other than a saved password, shown in a sheet over the key window (FR-CN07).
     let promptRelay = PromptRelay()
     /// Answers `keel-askpass`; nil when the helper isn't built or bundled. Opens its socket on the first tunnel.
     let askpass: AskpassBroker?
@@ -19,8 +18,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let profiles: ProfileStore
     /// The single owner of `hosts.json` and the `Keel SSH Host` Keychain items (FR-CN06).
     let sshHosts: HostLibrary
+    /// The single owner of `known-ca.json` (FR-CN04).
+    let knownCA: KnownCAStore
     private var connections: ConnectionSheetPresenter?
     private var transfer: ProfileTransferModel?
+    /// Every window's tabs and every tab's session; `windows.json` (FR-AP01).
+    private var app: AppModel?
+    /// The native window of each of the model's windows.
+    private var nativeWindows: [UUID: NSWindow] = [:]
+    /// Set on quit: windows closing then are saved as open, not removed.
+    private var terminating = false
+    /// A window whose close the user confirmed despite unsaved edits.
+    private var confirmedClose: Set<UUID> = []
 
     init(arguments: LaunchArguments, stateDirectory: URL) {
         self.arguments = arguments; self.stateDirectory = stateDirectory
@@ -29,6 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         tunnels = TunnelManager(askpass: askpass)
         profiles = ProfileStore(directory: stateDirectory)
         sshHosts = HostLibrary(storage: HostFileStorage(directory: stateDirectory), secrets: KeychainHostSecretStore())
+        knownCA = KnownCAStore(directory: stateDirectory)
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -40,32 +50,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let prompts = SSHPromptCenter(relay: promptRelay)
         self.prompts = prompts
         Task { await prompts.attach() }
-        // A file that needs recovery keeps the store read-only; Save then says so (the recovery choice is KEEL-055's).
-        Task { [profiles] in _ = await profiles.load() }
         // An unreadable hosts.json is kept and the library stays read-only; the picker then says so on Save.
         Task { [sshHosts] in _ = await sshHosts.load() }
         let hosts = sshHosts
-        let tester = ConnectionTester(
-            tunnels: tunnels, resolveSavedHost: { id in await hosts.hosts.first { $0.id == id } },
-            // Touch ID (or the Mac password) is asked for inside the lookup; declining sends ssh's prompt to the person.
-            savedHostPassword: { hosts.savedPassword(for: $0, gate: LocalAuthenticationGate()) })
-        let connections = ConnectionSheetPresenter(store: profiles, tester: tester, hostLibrary: sshHosts)
-        self.connections = connections
-        let sidebar = SidebarModel(store: profiles, tabs: ConnectionTabs(), sheets: connections)
-        let transfer = ProfileTransferModel(store: profiles)
-        self.transfer = transfer
-        let window = MainWindow.make(prompts: prompts, connections: connections, sidebar: sidebar, transfer: transfer)
-        window.center()
-        window.makeKeyAndOrderFront(nil)
-        self.window = window
-        NSApp.activate()
+        let resolveSavedHost: ConnectionTester.ResolveSavedHost = { id in await hosts.hosts.first { $0.id == id } }
+        // Touch ID (or the Mac password) is asked for inside the lookup; declining sends ssh's prompt to the person.
+        let savedHostPassword: ConnectionTester.SavedHostPassword = { hosts.savedPassword(for: $0, gate: LocalAuthenticationGate()) }
+        let tester = ConnectionTester(tunnels: tunnels, resolveSavedHost: resolveSavedHost, savedHostPassword: savedHostPassword)
+        connections = ConnectionSheetPresenter(store: profiles, tester: tester, hostLibrary: sshHosts)
+        transfer = ProfileTransferModel(store: profiles)
+        let connector = ProfileSessionConnector(
+            profiles: profiles, knownCA: knownCA, tunnels: tunnels, resolveSavedHost: resolveSavedHost, savedHostPassword: savedHostPassword,
+            confirmCAChange: { change in await MainActor.run { Self.confirm(change) } })
+        let app = AppModel(profiles: profiles, connector: connector, persistence: Persistence(directory: stateDirectory))
+        app.presentWindow = { [weak self] in self?.show($0, frame: nil) }
+        self.app = app
+        Task {
+            // Tabs restore against the profiles, so they load first. A connections.json that needs recovery keeps the
+            // store read-only (KEEL-055 offers the choice); its tabs then have no profile and aren't restored.
+            _ = await profiles.load()
+            for (window, frame) in await app.restore() { show(window, frame: frame) }
+            NSApp.activate()
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
-    /// No ssh outlives the app (AC3): quitting waits for every tunnel's process group to be terminated (at most ~1 s).
+    /// No ssh outlives the app (AC3): quitting saves the windows, then waits for every tunnel's process group to be
+    /// terminated (at most ~1 s).
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        Task { [tunnels, askpass] in
+        terminating = true
+        Task { [tunnels, askpass, app] in
+            await app?.flush()
             await tunnels.shutdown()
             askpass?.stop()
             NSApp.reply(toApplicationShouldTerminate: true)
@@ -73,6 +89,110 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return .terminateLater
     }
 
+    // MARK: - Windows
+
+    /// Creates the native window for one of the model's windows, at its saved frame when that is still on a display
+    /// (MAC-05), else cascaded from the key window or centered.
+    private func show(_ tabs: ConnectionTabs, frame: SavedFrame?) {
+        guard nativeWindows[tabs.id] == nil, let profiles = app?.profiles else { return }
+        let sidebar = SidebarModel(store: profiles, tabs: tabs, sheets: connections)
+        let window = MainWindow.make(prompts: prompts, connections: connections, sidebar: sidebar, transfer: transfer)
+        window.identifier = NSUserInterfaceItemIdentifier(tabs.id.uuidString)
+        window.delegate = self
+        let screens = NSScreen.screens.map(\.visibleFrame)
+        if let frame, let placed = MainWindow.constrained(frame.rect, to: screens) {
+            window.setFrame(placed, display: false)
+        } else if let key = NSApp.keyWindow {
+            window.setFrameTopLeftPoint(window.cascadeTopLeft(from: NSPoint(x: key.frame.minX, y: key.frame.maxY)))
+        } else {
+            window.center()
+        }
+        nativeWindows[tabs.id] = window
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    private func windowID(_ window: NSWindow?) -> UUID? { window?.identifier.flatMap { UUID(uuidString: $0.rawValue) } }
+
+    /// The key window's tabs, for the menu commands.
+    private var keyTabs: ConnectionTabs? { windowID(NSApp.keyWindow).flatMap { app?.window($0) } }
+
+    func windowDidBecomeKey(_ notification: Notification) {
+        // The app-wide sheets follow the key window, but never while one is up: it stays where it opened.
+        guard let app, NSApp.windows.allSatisfy({ $0.attachedSheet == nil }) else { return }
+        app.sheetWindowID = windowID(notification.object as? NSWindow)
+    }
+
+    func windowDidMove(_ notification: Notification) { saveFrame(notification) }
+    func windowDidEndLiveResize(_ notification: Notification) { saveFrame(notification) }
+
+    private func saveFrame(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow, let id = windowID(window) else { return }
+        app?.setFrame(SavedFrame(window.frame), for: id)
+    }
+
+    /// MAC-06: a window with unsaved edits asks once before closing.
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard let id = windowID(sender), let app, !confirmedClose.contains(id) else { return true }
+        let unsaved = app.unsavedTabs(in: id)
+        guard !unsaved.isEmpty else { return true }
+        let alert = NSAlert()
+        alert.messageText = unsaved.count == 1 ? "Close this window with unsaved changes?" : "Close this window with unsaved changes in \(unsaved.count) tabs?"
+        alert.informativeText = "The unsaved changes will be lost."
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Close Window").hasDestructiveAction = true
+        alert.beginSheetModal(for: sender) { [weak self, weak sender] response in
+            guard response == .alertSecondButtonReturn, let self, let sender else { return }
+            self.confirmedClose.insert(id)
+            sender.close()
+        }
+        return false
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard let id = windowID(notification.object as? NSWindow) else { return }
+        nativeWindows[id] = nil; confirmedClose.remove(id)
+        // The app-wide sheets move to a window that is still open.
+        if app?.sheetWindowID == id { app?.sheetWindowID = nativeWindows.keys.first }
+        // Quitting keeps the window in windows.json, and so does closing the last one (the app quits then, and the
+        // next launch should look the same); closing any other by hand removes it and ends its tabs' sessions.
+        if !terminating, !nativeWindows.isEmpty { app?.closeWindow(id) }
+    }
+
+    /// A changed CA file (FR-CN04): the user decides, and not trusting it is the default (Return).
+    private static func confirm(_ change: CAChange) -> Bool {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "The CA certificate file “\((change.path as NSString).lastPathComponent)” changed."
+        alert.informativeText = "Trust it only if you replaced it yourself. Its SHA-256 is now \(change.current)."
+        alert.addButton(withTitle: "Don't Connect")
+        alert.addButton(withTitle: "Trust New CA")
+        return alert.runModal() == .alertSecondButtonReturn
+    }
+
+    // MARK: - Commands
+
+    @objc private func newWindow(_ sender: Any?) { if let window = app?.newWindow() { show(window, frame: nil) } }
+    @objc private func newTab(_ sender: Any?) { keyTabs?.showsConnectionPicker = true }
+    /// ⌘W: the selected tab (asking first when it has unsaved edits); a window without tabs closes.
+    @objc private func closeTab(_ sender: Any?) {
+        guard let tabs = keyTabs, let selected = tabs.selectedID else { NSApp.keyWindow?.performClose(sender); return }
+        app?.requestClose(selected)
+    }
+    @objc private func closeWindow(_ sender: Any?) { NSApp.keyWindow?.performClose(sender) }
+    @objc private func setMode(_ sender: NSMenuItem) {
+        guard TabMode.allCases.indices.contains(sender.tag) else { return }
+        keyTabs?.setMode(TabMode.allCases[sender.tag])
+    }
+    @objc private func nextTab(_ sender: Any?) { keyTabs?.selectTab(offset: 1) }
+    @objc private func previousTab(_ sender: Any?) { keyTabs?.selectTab(offset: -1) }
+    @objc private func reconnect(_ sender: Any?) {
+        guard let id = keyTabs?.selectedID else { return }
+        Task { await app?.reconnect(id) }
+    }
+    @objc private func disconnect(_ sender: Any?) {
+        guard let id = keyTabs?.selectedID else { return }
+        Task { await app?.disconnect(id) }
+    }
     @objc private func newConnection(_ sender: Any?) { connections?.newConnection() }
     @objc private func importConnections(_ sender: Any?) { Task { await transfer?.beginImport() } }
     @objc private func exportConnections(_ sender: Any?) { Task { await transfer?.exportConnections() } }
@@ -85,6 +205,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.post(name: KeyListCommands.selectDatabaseNotification, object: NSApp.keyWindow, userInfo: [KeyListCommands.databaseKey: sender.tag])
     }
 
+    /// Tab commands need a selected tab; the mode items show the current mode's checkmark.
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        let tab = keyTabs?.selected
+        switch item.action {
+        case #selector(setMode(_:)):
+            item.state = tab.flatMap { TabMode.allCases.firstIndex(of: $0.mode) } == item.tag ? .on : .off
+            return tab != nil
+        case #selector(reconnect(_:)), #selector(disconnect(_:)): return tab != nil
+        case #selector(nextTab(_:)), #selector(previousTab(_:)): return (keyTabs?.tabs.count ?? 0) > 1
+        case #selector(newTab(_:)): return keyTabs != nil
+        default: return true
+        }
+    }
+
     private func buildMenus() {
         let menu = NSMenu()
         let appItem = NSMenuItem(); menu.addItem(appItem)
@@ -93,34 +227,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appItem.submenu = appMenu
         let fileItem = NSMenuItem(); menu.addItem(fileItem)
         let fileMenu = NSMenu(title: "File")
-        fileMenu.addItem(withTitle: "New Connection…", action: #selector(newConnection(_:)), keyEquivalent: "n").target = self
+        // FR-AP02 defaults: ⌘N / ⌘T, ⌘W / ⇧⌘W.
+        add("New Window", #selector(newWindow(_:)), "n", to: fileMenu)
+        add("New Tab", #selector(newTab(_:)), "t", to: fileMenu)
+        add("New Connection…", #selector(newConnection(_:)), "", to: fileMenu)
         fileMenu.addItem(.separator())
-        fileMenu.addItem(withTitle: "Import Connections…", action: #selector(importConnections(_:)), keyEquivalent: "").target = self
-        fileMenu.addItem(withTitle: "Export Connections…", action: #selector(exportConnections(_:)), keyEquivalent: "").target = self
+        add("Close Tab", #selector(closeTab(_:)), "w", to: fileMenu)
+        add("Close Window", #selector(closeWindow(_:)), "w", [.command, .shift], to: fileMenu)
+        fileMenu.addItem(.separator())
+        add("Import Connections…", #selector(importConnections(_:)), "", to: fileMenu)
+        add("Export Connections…", #selector(exportConnections(_:)), "", to: fileMenu)
         fileItem.submenu = fileMenu
         let viewItem = NSMenuItem(); menu.addItem(viewItem)
         let viewMenu = NSMenu(title: "View")
+        for (offset, mode) in TabMode.allCases.enumerated() { add(mode.title, #selector(setMode(_:)), mode.keyEquivalent, to: viewMenu).tag = offset }
+        viewMenu.addItem(.separator())
         // Sent to the first responder: the key list answers it while focused (FR-KB03); the menu item is dimmed otherwise.
         let toggle = viewMenu.addItem(withTitle: "Toggle Tree / Flat", action: KeyListCommands.toggleMode, keyEquivalent: "t")
         toggle.keyEquivalentModifierMask = [.command, .shift]
-        viewMenu.addItem(withTitle: "Filter Keys", action: #selector(focusKeyFilter(_:)), keyEquivalent: "f").target = self
-        viewMenu.addItem(withTitle: "Refresh", action: #selector(refreshKeys(_:)), keyEquivalent: "r").target = self
+        add("Filter Keys", #selector(focusKeyFilter(_:)), "f", to: viewMenu)
+        add("Refresh", #selector(refreshKeys(_:)), "r", to: viewMenu)
         let databaseItem = viewMenu.addItem(withTitle: "Database", action: nil, keyEquivalent: "")
         let databaseMenu = NSMenu(title: "Database")
-        for database in 0...9 {
-            let item = databaseMenu.addItem(withTitle: "db\(database)", action: #selector(selectDatabase(_:)), keyEquivalent: String(database))
-            item.keyEquivalentModifierMask = [.command, .option]; item.target = self; item.tag = database
-        }
+        for database in 0...9 { add("db\(database)", #selector(selectDatabase(_:)), String(database), [.command, .option], to: databaseMenu).tag = database }
         databaseItem.submenu = databaseMenu
         viewItem.submenu = viewMenu
+        let connectionItem = NSMenuItem(); menu.addItem(connectionItem)
+        let connectionMenu = NSMenu(title: "Connection")
+        // FR-CN15: ⇧⌘R / ⇧⌘D.
+        add("Reconnect", #selector(reconnect(_:)), "r", [.command, .shift], to: connectionMenu)
+        add("Disconnect", #selector(disconnect(_:)), "d", [.command, .shift], to: connectionMenu)
+        connectionItem.submenu = connectionMenu
         let windowItem = NSMenuItem(); menu.addItem(windowItem)
         let windowMenu = NSMenu(title: "Window")
-        windowMenu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        windowMenu.addItem(.separator())
+        add("Show Next Tab", #selector(nextTab(_:)), "]", [.command, .shift], to: windowMenu)
+        add("Show Previous Tab", #selector(previousTab(_:)), "[", [.command, .shift], to: windowMenu)
         windowItem.submenu = windowMenu
         NSApp.mainMenu = menu
         NSApp.windowsMenu = windowMenu
     }
+
+    @discardableResult
+    private func add(_ title: String, _ action: Selector, _ key: String, _ modifiers: NSEvent.ModifierFlags = .command, to menu: NSMenu) -> NSMenuItem {
+        let item = menu.addItem(withTitle: title, action: action, keyEquivalent: key)
+        item.keyEquivalentModifierMask = modifiers; item.target = self
+        return item
+    }
+}
+
+extension SavedFrame {
+    init(_ rect: NSRect) { self.init(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height) }
+
+    var rect: NSRect { NSRect(x: x, y: y, width: width, height: height) }
 }
 
 @main

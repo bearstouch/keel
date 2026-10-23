@@ -138,11 +138,12 @@ private struct SSHPromptPresenter: ViewModifier {
 
     private struct Presenting: ViewModifier {
         @ObservedObject var center: SSHPromptCenter
+        @Environment(\.presentsSharedSheets) private var active
 
         func body(content: Content) -> some View {
             // The setter is a no-op: SwiftUI may write nil while swapping to the next queued prompt, which must not
             // answer it. Every sheet has a cancel-action button, and the sheet can't be dismissed any other way.
-            content.sheet(item: Binding(get: { center.current }, set: { _ in })) { prompt in
+            content.sheet(item: Binding(get: { active ? center.current : nil }, set: { _ in })) { prompt in
                 SSHPromptSheet(prompt: prompt) { center.respond($0) }.id(prompt.id).interactiveDismissDisabled()
             }
         }
