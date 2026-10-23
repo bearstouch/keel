@@ -198,6 +198,7 @@ Keel never implements SSH. `TunnelManager` runs, without a shell (`posix_spawn` 
 - SCAN pages (`COUNT` default 1,000) append to the index; with **auto-paging**, the next page is requested while the user is idle or near the end of the list, up to the configured limit (default 1,000,000 loaded keys, configurable to 10,000,000).
 - Type and TTL for visible rows are fetched in pipelined `TYPE` + `PTTL` batches (or from `SCAN … TYPE` filters on 6.0+), debounced as rows scroll into view.
 - The namespace tree is built off the main actor incrementally; each node stores child counts so collapsed nodes are cheap. The UI receives snapshots of the visible range only.
+- `NamespaceTree` lives inside `KeyIndex` and stores no names: a folder is (source key, path end, key count, first child, next sibling) pointing into the key arena, children are one linked list of folders and keys, and a table keyed by a folder's full path finds each level with one hash. Adding a key is O(depth); a folder's children are sorted (folders first, byte order) only when it is expanded. A separator change rebuilds the tree in one pass over the arena; a restart clears it. Measured: 1M keys build in ~0.3 s and a 500,000-child folder expands in ~40 ms (release, Apple silicon).
 - `NSOutlineView`/`NSTableView` with view-based reuse render only visible rows.
 
 ## Threading

@@ -19,7 +19,7 @@ Targets are measured on the reference machines (Apple silicon M1 8 GB and an Int
 
 | ID | Requirement | Acceptance check |
 | --- | --- | --- |
-| NFR-RS01 | Key index memory: ≤ 120 bytes per loaded key on average beyond the key bytes themselves; 1,000,000 keys of ~30 bytes use < 200 MB in total for the index and tree. | Instruments Allocations at 1M keys. |
+| NFR-RS01 | Key index memory: ≤ 120 bytes per loaded key on average beyond the key bytes themselves (the namespace tree is budgeted separately: it depends on how many folders the keys open); 1,000,000 keys of ~30 bytes use < 200 MB in total for the index and tree, even when every key opens folders of its own. | Instruments Allocations at 1M keys. |
 | NFR-RS02 | The configurable loaded-key limit (default 1,000,000, max 10,000,000) is enforced, with a notice; Keel never grows without bound. | |
 | NFR-RS03 | Every reply is bounded: maximum single reply 64 MiB (larger replies fail with `LIMIT_EXCEEDED` and the connection is reset); editor pages, console scrollback and MONITOR buffers have fixed limits (FR-ED, FR-CO). | Fuzz test with a fake server sending an oversized bulk string. |
 | NFR-RS04 | Idle CPU < 0.5% with 10 connected tabs and no auto-refresh. | |
