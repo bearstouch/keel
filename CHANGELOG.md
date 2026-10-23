@@ -65,3 +65,6 @@ and versions follow [Semantic Versioning](https://semver.org/).
   secrets live only in the Keychain (`Keel Connection`, `Keel TLS`), written before the metadata and restored if it can't
   be saved; changing the host, port, username, TLS server name or tunnel, turning TLS off or turning Skip verification
   on removes the saved password (KEEL-014).
+- Connection URLs: `redis://` and `rediss://` parsing with percent-decoded user and password, `[IPv6]` hosts with
+  zone IDs, port and database bounds, ignored query parameters listed by name and inline messages for malformed
+  URLs; profiles copy as a URL without the password (KEEL-015).
