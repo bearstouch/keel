@@ -17,10 +17,10 @@ As a user, I want to export and import my profiles without secrets, so that I ca
 
 ## Acceptance criteria
 
-- [ ] **AC1.** An export contains no password, passphrase, token or `hasPassword`.
-- [ ] **AC2.** Re-importing with Skip changes nothing.
-- [ ] **AC3.** Import is atomic: a failure leaves profiles untouched.
-- [ ] **AC4.** Newer export versions are refused with a clear message.
+- [x] **AC1.** An export contains no password, passphrase, token or `hasPassword`.
+- [x] **AC2.** Re-importing with Skip changes nothing.
+- [x] **AC3.** Import is atomic: a failure leaves profiles untouched.
+- [x] **AC4.** Newer export versions are refused with a clear message.
 
 ## Unit tests
 

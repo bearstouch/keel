@@ -383,6 +383,7 @@ extension ProfileStoreError {
         case .readOnly: "Connections can't be saved right now: they are being recovered or were written by a newer Keel."
         case .persistence: "Couldn't save connections.json; nothing was changed."
         case .secretStore(.keychain(let status)): "The Keychain refused the password (\(status)); nothing was changed."
+        case .invalidImport(let error): error.message
         }
     }
 }

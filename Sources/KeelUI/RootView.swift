@@ -10,9 +10,11 @@ public struct RootView: View {
     let connections: ConnectionSheetPresenter?
     /// The connections sidebar (FR-CN13); nil in previews and tests.
     let sidebar: SidebarModel?
+    /// Import / Export Connections (FR-CN14); nil in previews and tests.
+    let transfer: ProfileTransferModel?
 
-    public init(prompts: SSHPromptCenter? = nil, connections: ConnectionSheetPresenter? = nil, sidebar: SidebarModel? = nil) {
-        self.prompts = prompts; self.connections = connections; self.sidebar = sidebar
+    public init(prompts: SSHPromptCenter? = nil, connections: ConnectionSheetPresenter? = nil, sidebar: SidebarModel? = nil, transfer: ProfileTransferModel? = nil) {
+        self.prompts = prompts; self.connections = connections; self.sidebar = sidebar; self.transfer = transfer
     }
 
     public var body: some View {
@@ -26,6 +28,7 @@ public struct RootView: View {
         }
         .background(Tokens.bg)
         .connectionSheet(connections)
+        .profileTransfer(transfer)
         .sshPrompts(prompts)
     }
 

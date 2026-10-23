@@ -20,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The single owner of `hosts.json` and the `Keel SSH Host` Keychain items (FR-CN06).
     let sshHosts: HostLibrary
     private var connections: ConnectionSheetPresenter?
+    private var transfer: ProfileTransferModel?
 
     init(arguments: LaunchArguments, stateDirectory: URL) {
         self.arguments = arguments; self.stateDirectory = stateDirectory
@@ -51,7 +52,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let connections = ConnectionSheetPresenter(store: profiles, tester: tester, hostLibrary: sshHosts)
         self.connections = connections
         let sidebar = SidebarModel(store: profiles, tabs: ConnectionTabs(), sheets: connections)
-        let window = MainWindow.make(prompts: prompts, connections: connections, sidebar: sidebar)
+        let transfer = ProfileTransferModel(store: profiles)
+        self.transfer = transfer
+        let window = MainWindow.make(prompts: prompts, connections: connections, sidebar: sidebar, transfer: transfer)
         window.center()
         window.makeKeyAndOrderFront(nil)
         self.window = window
@@ -71,6 +74,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func newConnection(_ sender: Any?) { connections?.newConnection() }
+    @objc private func importConnections(_ sender: Any?) { Task { await transfer?.beginImport() } }
+    @objc private func exportConnections(_ sender: Any?) { Task { await transfer?.exportConnections() } }
 
     private func buildMenus() {
         let menu = NSMenu()
@@ -81,6 +86,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let fileItem = NSMenuItem(); menu.addItem(fileItem)
         let fileMenu = NSMenu(title: "File")
         fileMenu.addItem(withTitle: "New Connection…", action: #selector(newConnection(_:)), keyEquivalent: "n").target = self
+        fileMenu.addItem(.separator())
+        fileMenu.addItem(withTitle: "Import Connections…", action: #selector(importConnections(_:)), keyEquivalent: "").target = self
+        fileMenu.addItem(withTitle: "Export Connections…", action: #selector(exportConnections(_:)), keyEquivalent: "").target = self
         fileItem.submenu = fileMenu
         let windowItem = NSMenuItem(); menu.addItem(windowItem)
         let windowMenu = NSMenu(title: "Window")

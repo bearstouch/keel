@@ -11,6 +11,8 @@ public enum ProfileStoreError: Error, Equatable, Sendable {
     case persistence(PersistenceError)
     /// The Keychain refused a read or write; nothing changed.
     case secretStore(SecretStoreError)
+    /// An import's file failed validation; nothing changed.
+    case invalidImport(ProfileImportError)
 }
 
 /// What to do with a profile's saved password in `update`.
@@ -289,6 +291,68 @@ public actor ProfileStore {
     public func setTreatAsProduction(_ color: LabelColor, _ value: Bool) async throws(ProfileStoreError) {
         guard color != .production || value else { throw .invalid(.label) }
         try await updateLabel(color) { $0.treatAsProduction = value }
+    }
+
+    // MARK: Import (FR-CN14)
+
+    /// Applies an export in one commit, so a failure anywhere leaves every profile, folder and Keychain item as it
+    /// was. Records are matched by ID; `policy` decides what a match does. New folders go after the saved ones and
+    /// new profiles at the end of their folder, in file order. An import that changes nothing writes nothing.
+    public func importProfiles(_ export: ProfileExport, policy: ProfileImportPolicy) async throws(ProfileStoreError) -> ProfileImportResult {
+        await acquire(); defer { release() }
+        // `ProfileExport` is public, so a caller-built one gets the same checks as a decoded file.
+        do { _ = try export.validated() } catch { throw .invalidImport(error) }
+        var next = try nextDocument()
+        var result = ProfileImportResult()
+        var undo = Undo()
+        func place(_ profile: ConnectionProfile) { next.profiles.insert(profile, at: Self.insertionIndex(in: next.profiles, folderID: profile.folderID, position: nil)) }
+        for folder in export.folders {
+            guard let index = next.folders.firstIndex(where: { $0.id == folder.id }) else {
+                next.folders.append(ProfileFolder(id: folder.id, name: folder.name, revision: next.revision)); result.foldersAdded += 1; continue
+            }
+            // Skip and Keep both share the saved folder as it is: only profiles are ever duplicated.
+            if policy == .replace, next.folders[index].name != folder.name { next.folders[index].name = folder.name; next.folders[index].revision = next.revision; result.foldersRenamed += 1 }
+        }
+        for imported in export.profiles {
+            guard let index = next.profiles.firstIndex(where: { $0.id == imported.id }) else {
+                place(ConnectionProfile(id: imported.id, settings: imported.settings, folderID: imported.folderID, revision: next.revision)); result.added += 1; continue
+            }
+            switch policy {
+            case .skip: result.skipped += 1
+            case .keepBoth:
+                var settings = imported.settings
+                settings.name = Self.importedName(settings.name)
+                place(ConnectionProfile(id: makeID(), settings: settings, folderID: imported.folderID, revision: next.revision)); result.added += 1
+            case .replace:
+                let current = next.profiles[index]
+                guard current.settings != imported.settings || current.folderID != imported.folderID else { result.skipped += 1; continue }
+                var profile = current
+                profile.settings = imported.settings; profile.revision = next.revision
+                // The same binding as `update`: a different server never gets the saved password. The TLS identity
+                // stays, as it does for an edit.
+                if imported.settings.connectionKey != current.settings.connectionKey || imported.settings.weakensTransport(from: current.settings) {
+                    profile.connectionRevision = next.revision
+                    if current.hasPassword { try stage(.password, nil, profileID: current.id, existed: true, undo: &undo); profile.hasPassword = false }
+                }
+                if profile.folderID == imported.folderID {
+                    next.profiles[index] = profile
+                } else {
+                    profile.folderID = imported.folderID
+                    next.profiles.remove(at: index); place(profile)
+                }
+                result.replaced += 1
+            }
+        }
+        // Skip-only re-imports land here: no revision bump, no write, no change notification.
+        guard next.folders != document.folders || next.profiles != document.profiles else { return result }
+        try await commit(next, undo: undo)
+        return result
+    }
+
+    /// "<name> (imported)", trimmed to the name limit so a long name still validates.
+    static func importedName(_ name: String) -> String {
+        let suffix = " (imported)"
+        return String(name.prefix(ConnectionSettings.nameLimit - suffix.count)) + suffix
     }
 
     // MARK: Internals
