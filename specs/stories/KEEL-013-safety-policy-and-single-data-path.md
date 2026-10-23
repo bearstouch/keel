@@ -19,11 +19,21 @@ As a user of a production server, I want every command — from editors, console
 
 ## Acceptance criteria
 
-- [ ] **AC1.** On a read-only profile, every write path (typed op, console text, bulk job, agent) is rejected and a protocol trace shows nothing sent.
-- [ ] **AC2.** `EVAL_RO`/`FCALL_RO` are allowed on read-only; `EVAL` is blocked.
-- [ ] **AC3.** Multi-key `DEL`, `FLUSHDB`, `FLUSHALL` require confirmation (UI) or approval (agent).
-- [ ] **AC4.** Admin commands, `KEYS`, `MONITOR`, `SUBSCRIBE` and unknown commands are always blocked for agents.
-- [ ] **AC5.** A blocked call returns its error without touching the socket.
+- [x] **AC1.** On a read-only profile, every write path (typed op, console text, bulk job, agent) is rejected and a protocol trace shows nothing sent.
+- [x] **AC2.** `EVAL_RO`/`FCALL_RO` are allowed on read-only; `EVAL` is blocked.
+- [x] **AC3.** Multi-key `DEL`, `FLUSHDB`, `FLUSHALL` require confirmation (UI) or approval (agent).
+- [x] **AC4.** Admin commands, `KEYS`, `MONITOR`, `SUBSCRIBE` and unknown commands are always blocked for agents.
+- [x] **AC5.** A blocked call returns its error without touching the socket.
+
+**Verification (KEEL-013).** AC1–AC5 observed in `SafetyPolicyTests` and `DataCommandServiceTests`.
+- AC1 covers typed editor operations, console argument arrays, bulk `UNLINK` batches and agent commands on a read-only
+  profile. The `RecordingTransport` protocol trace shows no connection opened and no frame written. Console *text* is
+  tokenized by KEEL-040, so its tokens reach this path as arguments.
+- AC3 is observed at the policy level (`CONFIRMATION_REQUIRED` with the FR-SF03 typed text, `APPROVAL_REQUIRED` for
+  agents). The sheets (KEEL-038) and the approval card (KEEL-046) are later stories.
+- Pending against real servers (integration matrix, KEEL-053). Out of scope: MULTI/EXEC for editor multi-step edits
+  (KEEL-027), the stream connection's push handling (KEEL-041), and opening real connections from profiles
+  (KEEL-014/016: `ServerSession` takes an injected opener).
 
 ## Unit tests
 

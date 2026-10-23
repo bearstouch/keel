@@ -1,0 +1,309 @@
+import Foundation
+
+/// Who is asking (02 Architecture → One data path). Origin never relaxes a rule; it selects how a confirmation is
+/// obtained (a sheet for the UI, an approval for agents) and which connection role carries the command.
+public enum CommandOrigin: Sendable, Hashable {
+    case editor, browser, console, bulk
+    case agent(grantID: UUID)
+
+    public var isAgent: Bool { if case .agent = self { return true } else { return false } }
+}
+
+/// What a command does, as far as the policy cares (02 Architecture → Safety policy).
+public enum SafetyClass: String, Sendable, Equatable {
+    /// `readonly` and not `write` (`GET`, `SCAN`, `EVAL_RO`, `SORT_RO`).
+    case read
+    /// `write`, or `may_replicate` without `readonly` (`PUBLISH`).
+    case write
+    /// Multi-key `DEL` / `UNLINK`, `FLUSHDB`, `FLUSHALL`: typed confirmation (UI) or approval (agents).
+    case destructive
+    /// A script or function command that may write (`EVAL`, `EVALSHA`, `FCALL`, `SCRIPT …`, `FUNCTION …`).
+    case script
+    /// `admin`, or `dangerous` and `write` (`SHUTDOWN`, `CONFIG SET`, `MIGRATE`, `SWAPDB`, `RESTORE`, `SORT`).
+    case admin
+    /// `KEYS`: console only, after a confirmation that warns with DBSIZE.
+    case keys
+    /// `MONITOR`, `SUBSCRIBE`, `PSUBSCRIBE`, `SSUBSCRIBE`: console only, on a dedicated `stream` connection.
+    case streaming
+    /// Connection state the console keeps for itself (`SELECT`, `MULTI`/`EXEC`, `WATCH`, `HELLO`, `AUTH`, `RESET`).
+    /// Other origins share connections the service owns, so they never send these.
+    case session
+    /// Known, with no data effect (`PING`, `INFO`, `COMMAND`; `CLIENT LIST` is admin).
+    case neutral
+    /// Never sent: `CLIENT REPLY` would leave Keel's reply queue waiting for replies that never come.
+    case forbidden
+    /// Not in the server's or the bundled catalog, an unknown subcommand, or a module command with no flags.
+    case unknown
+
+    /// Whether an interrupted command reports `OUTCOME_UNKNOWN`: only commands that can't change data are reads.
+    public var mayWrite: Bool {
+        switch self {
+        case .read, .keys, .neutral: return false
+        default: return true
+        }
+    }
+}
+
+/// The user's or an approval's yes to one destructive or console-confirmed command (FR-SF03, API approvals).
+/// The UI creates it after its sheet; KeelControl after the ApprovalCenter has checked the approval (single use,
+/// grant, parameters, expiry). Core checks that it covers the exact command and database.
+public struct CommandConfirmation: Sendable, Equatable {
+    public enum Source: Sendable, Equatable {
+        /// A sheet in Keel (typed when the request had `typedText`). Only UI origins accept it.
+        case user
+        /// An approved agent request. Only the agent origin accepts it.
+        case approval(UUID)
+    }
+
+    public enum Scope: Sendable, Equatable {
+        /// Exactly these arguments, byte for byte.
+        case command([Data])
+        /// `DEL` / `UNLINK` batches whose keys are all in the confirmed selection (FR-SF04).
+        case keys(Set<Data>)
+        /// `DEL` / `UNLINK` batches whose keys all match the confirmed pattern (FR-SF05); `*` never qualifies.
+        case pattern(Data)
+    }
+
+    public var source: Source
+    public var scope: Scope
+    public var database: Int
+
+    public init(source: Source, scope: Scope, database: Int) { self.source = source; self.scope = scope; self.database = database }
+}
+
+/// What the UI (or the approval card) must ask before the command can run.
+public struct ConfirmationRequest: Sendable, Equatable {
+    public enum Operation: Sendable, Equatable {
+        case deleteKeys(count: Int)
+        case flushDatabase(Int)
+        case flushAll
+        /// The command as typed in the console's confirmation sheet ("CONFIG SET").
+        case admin(command: String)
+        /// `KEYS`: the console warns with DBSIZE before asking.
+        case keys
+    }
+
+    public var operation: Operation
+    /// FR-SF03: the text the user must type (key count, `db3`, the profile name); nil for a plain confirmation.
+    public var typedText: String?
+    /// Names the command, profile and database; never a key name or value.
+    public var message: String
+}
+
+/// The policy's answer. Anything but `allow` sends nothing.
+public enum SafetyVerdict: Sendable, Equatable {
+    case allow(SafetyClass)
+    case readOnly(message: String)
+    case blocked(message: String)
+    case confirmationRequired(ConfirmationRequest)
+    case approvalRequired(ConfirmationRequest)
+
+    public var isAllowed: Bool { if case .allow = self { return true } else { return false } }
+
+    /// The shared error code (`specs/05-api.md#errors`); nil when allowed.
+    public var code: String? {
+        switch self {
+        case .allow: return nil
+        case .readOnly: return "READ_ONLY"
+        case .blocked: return "BLOCKED_COMMAND"
+        case .confirmationRequired: return "CONFIRMATION_REQUIRED"
+        case .approvalRequired: return "APPROVAL_REQUIRED"
+        }
+    }
+}
+
+/// The profile facts the policy needs.
+public struct SafetyProfile: Sendable, Equatable {
+    public var name: String
+    public var readOnly: Bool
+
+    public init(name: String, readOnly: Bool) { self.name = name; self.readOnly = readOnly }
+}
+
+/// Classifies every command before it is sent and decides whether it may go (02 Architecture → Safety policy,
+/// FR-SF01, API-04). Pure: the same arguments, catalog entry, origin and context always give the same verdict.
+public enum SafetyPolicy {
+    /// The unsubscribe commands too: one call answers once per channel (pushes on RESP3), which would desynchronise a
+    /// shared connection's reply queue, so they belong with SUBSCRIBE on the console's stream connection.
+    static let streamingNames: Set<String> = ["monitor", "subscribe", "psubscribe", "ssubscribe", "unsubscribe", "punsubscribe", "sunsubscribe"]
+    static let sessionNames: Set<String> = [
+        "select", "hello", "auth", "reset", "quit", "multi", "exec", "discard", "watch", "unwatch", "readonly", "readwrite", "asking", "client|tracking",
+        "client|caching"
+    ]
+    static let forbiddenNames: Set<String> = ["client|reply"]
+
+    /// `command` is the catalog's resolution of `arguments` (nil when unknown).
+    public static func classify(_ arguments: [Data], command: CommandInfo?) -> SafetyClass {
+        guard !arguments.isEmpty else { return .forbidden }
+        guard let command else { return .unknown }
+        let name = command.name, flags = command.flags
+        if forbiddenNames.contains(name) { return .forbidden }
+        // Fixed rules first: MONITOR is also `admin`, KEYS also `readonly`, FLUSHALL also `write`.
+        if streamingNames.contains(name) { return .streaming }
+        if name == "keys" { return .keys }
+        if name == "flushdb" || name == "flushall" { return .destructive }
+        if name == "del" || name == "unlink" { return arguments.count > 2 ? .destructive : .write }
+        if sessionNames.contains(name) { return .session }
+        // `dangerous` alone also marks reads (INFO, ROLE, LASTSAVE, SORT_RO); with `write` it is admin-grade. Before
+        // scripts, so a scripting command a server flags admin stays admin (agents never get it).
+        if flags.contains(.admin) || flags.isSuperset(of: [.dangerous, .write]) { return .admin }
+        if command.docs?.group == "scripting", !flags.contains(.readonly) { return .script }
+        if flags.contains(.write) || (flags.contains(.mayReplicate) && !flags.contains(.readonly)) { return .write }
+        if flags.contains(.readonly) { return .read }
+        // Neither flag: only a core command (it has a group) is harmless. A module or live-only command that declares
+        // nothing may still write, so it fails closed like an unknown one.
+        guard let group = command.docs?.group, group != "module" else { return .unknown }
+        return .neutral
+    }
+
+    public static func evaluate(_ arguments: [Data], command: CommandInfo?, origin: CommandOrigin, profile: SafetyProfile, database: Int, confirmation: CommandConfirmation?)
+        -> SafetyVerdict
+    {
+        let safetyClass = classify(arguments, command: command)
+        let display = command?.displayName ?? "This command"
+        // 1. Agents: never admin, KEYS, MONITOR / SUBSCRIBE, unknown or connection-state commands in v1, whatever the profile.
+        if origin.isAgent, [.admin, .keys, .streaming, .unknown, .session].contains(safetyClass) {
+            let hint = safetyClass == .keys ? " Use key_scan." : ""
+            return .blocked(message: "\(display) isn't available to agents.\(hint)")
+        }
+        // 2. Read-only blocks every possible write, whoever asks (unknown fails closed).
+        if profile.readOnly, [.write, .destructive, .script, .admin, .unknown].contains(safetyClass) {
+            return .readOnly(message: "Write commands are blocked on this connection (\(profile.name) is read-only).")
+        }
+        // 3. What each origin may run.
+        switch safetyClass {
+        case .read, .write, .neutral:
+            return .allow(safetyClass)
+        case .destructive:
+            let request = destructiveRequest(arguments, command: command, origin: origin, profile: profile, database: database)
+            return confirmed(arguments, safetyClass, request, origin: origin, database: database, confirmation: confirmation)
+        case .script:
+            // Editors, the browser and bulk jobs never run scripts; agents also need `command.execute` (KeelControl).
+            return origin == .console || origin.isAgent ? .allow(.script) : consoleOnly(display)
+        case .admin, .keys:
+            guard origin == .console else { return consoleOnly(display) }
+            let request =
+                safetyClass == .keys
+                ? ConfirmationRequest(operation: .keys, typedText: nil, message: "KEYS blocks the server while it walks every key in db\(database).")
+                : ConfirmationRequest(operation: .admin(command: display), typedText: nil, message: "\(display) changes the server \(profile.name).")
+            return confirmed(arguments, safetyClass, request, origin: origin, database: database, confirmation: confirmation)
+        case .streaming, .session, .unknown:
+            // The console runs these on its own (or a dedicated stream) connection; unknown ones with a notice.
+            return origin == .console ? .allow(safetyClass) : consoleOnly(display)
+        case .forbidden:
+            // Not in either deny list above, so it lands here for every origin and profile.
+            return .blocked(message: "\(display) can't be sent from Keel.")
+        }
+    }
+
+    private static func consoleOnly(_ display: String) -> SafetyVerdict { .blocked(message: "\(display) runs only in the console.") }
+
+    private static func destructiveRequest(_ arguments: [Data], command: CommandInfo?, origin: CommandOrigin, profile: SafetyProfile, database: Int)
+        -> ConfirmationRequest
+    {
+        let display = command?.displayName ?? ""
+        let asking = origin.isAgent ? "needs approval in Keel" : "needs a typed confirmation"
+        switch command?.name {
+        case "flushall":
+            return ConfirmationRequest(operation: .flushAll, typedText: profile.name, message: "FLUSHALL on \(profile.name) \(asking).")
+        case "flushdb":
+            return ConfirmationRequest(operation: .flushDatabase(database), typedText: "db\(database)", message: "FLUSHDB on \(profile.name) db\(database) \(asking).")
+        default:
+            let count = arguments.count - 1
+            return ConfirmationRequest(
+                operation: .deleteKeys(count: count), typedText: String(count), message: "\(display) of \(count) keys on \(profile.name) db\(database) \(asking).")
+        }
+    }
+
+    /// Allows when `confirmation` comes from the right source for `origin` and covers this command and database;
+    /// otherwise asks for one the way the origin gets it.
+    private static func confirmed(
+        _ arguments: [Data], _ safetyClass: SafetyClass, _ request: ConfirmationRequest, origin: CommandOrigin, database: Int, confirmation: CommandConfirmation?
+    ) -> SafetyVerdict {
+        if let confirmation, confirmation.database == database, accepts(confirmation.source, from: origin), covers(confirmation.scope, arguments, safetyClass) {
+            return .allow(safetyClass)
+        }
+        return origin.isAgent ? .approvalRequired(request) : .confirmationRequired(request)
+    }
+
+    private static func accepts(_ source: CommandConfirmation.Source, from origin: CommandOrigin) -> Bool {
+        if case .approval = source { return origin.isAgent }
+        return !origin.isAgent
+    }
+
+    private static func covers(_ scope: CommandConfirmation.Scope, _ arguments: [Data], _ safetyClass: SafetyClass) -> Bool {
+        switch scope {
+        case .command(let confirmed):
+            return confirmed == arguments
+        case .keys(let selection):
+            return isKeyDeletion(arguments, safetyClass) && arguments.dropFirst().allSatisfy(selection.contains)
+        case .pattern(let pattern):
+            // `*` deletes everything: that is FLUSHDB, with its own confirmation (FR-SF05).
+            guard pattern != Data("*".utf8), isKeyDeletion(arguments, safetyClass) else { return false }
+            return arguments.dropFirst().allSatisfy { GlobPattern.matches(pattern, $0) }
+        }
+    }
+
+    /// A multi-key `DEL` / `UNLINK`: the only commands a key-set or pattern confirmation can cover.
+    private static func isKeyDeletion(_ arguments: [Data], _ safetyClass: SafetyClass) -> Bool {
+        guard safetyClass == .destructive, let name = arguments.first.map({ String(decoding: $0, as: UTF8.self).lowercased() }) else { return false }
+        return name == "del" || name == "unlink"
+    }
+}
+
+/// Redis glob matching (`stringmatchlen`, case-sensitive) on bytes: `*`, `?`, `[abc]`, `[^a-z]`, `\x`.
+public enum GlobPattern {
+    public static func matches(_ pattern: Data, _ subject: Data) -> Bool {
+        let p = [UInt8](pattern), s = [UInt8](subject)
+        var pi = 0, si = 0
+        // Every token but `*` consumes exactly one byte, so backtracking to the last `*` is enough (no recursion).
+        var starPattern: Int?, starSubject = 0
+        while si < s.count {
+            if pi < p.count, p[pi] == UInt8(ascii: "*") {
+                while pi < p.count, p[pi] == UInt8(ascii: "*") { pi += 1 }
+                starPattern = pi; starSubject = si
+                continue
+            }
+            if pi < p.count, let next = matchOne(p, pi, s[si]) {
+                pi = next; si += 1
+                continue
+            }
+            guard let star = starPattern else { return false }
+            starSubject += 1; si = starSubject; pi = star
+        }
+        while pi < p.count, p[pi] == UInt8(ascii: "*") { pi += 1 }
+        return pi == p.count
+    }
+
+    /// The pattern index after the token at `pi` when it matches `byte`; nil when it doesn't.
+    private static func matchOne(_ p: [UInt8], _ pi: Int, _ byte: UInt8) -> Int? {
+        switch p[pi] {
+        case UInt8(ascii: "?"):
+            return pi + 1
+        case UInt8(ascii: "\\") where pi + 1 < p.count:
+            return p[pi + 1] == byte ? pi + 2 : nil
+        case UInt8(ascii: "["):
+            var i = pi + 1
+            let negate = i < p.count && p[i] == UInt8(ascii: "^")
+            if negate { i += 1 }
+            var matched = false
+            // Like Redis, an unterminated class runs to the end of the pattern.
+            while i < p.count, p[i] != UInt8(ascii: "]") {
+                if p[i] == UInt8(ascii: "\\"), i + 1 < p.count {
+                    if p[i + 1] == byte { matched = true }
+                    i += 2
+                } else if i + 2 < p.count, p[i + 1] == UInt8(ascii: "-"), p[i + 2] != UInt8(ascii: "]") {
+                    let low = min(p[i], p[i + 2]), high = max(p[i], p[i + 2])
+                    if (low...high).contains(byte) { matched = true }
+                    i += 3
+                } else {
+                    if p[i] == byte { matched = true }
+                    i += 1
+                }
+            }
+            return matched != negate ? min(i + 1, p.count) : nil
+        default:
+            return p[pi] == byte ? pi + 1 : nil
+        }
+    }
+}

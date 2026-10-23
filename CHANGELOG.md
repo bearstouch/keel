@@ -54,3 +54,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
   `dangerous`, `blocking` and `pubsub` flags, key positions and argument docs rendered as completion syntax. The
   server's `COMMAND` / `COMMAND DOCS` merge over it per session but can never drop a restrictive flag; unknown commands
   and subcommands classify as unknown, never read (KEEL-012).
+- One data path: every command from editors, the browser, the console, bulk jobs and agents goes through
+  `DataCommandService` and `SafetyPolicy` before anything is sent. Read-only profiles refuse every write, script that
+  may write, admin and unknown command with `READ_ONLY` (`EVAL_RO` / `FCALL_RO` still run); multi-key delete, FLUSHDB
+  and FLUSHALL need a typed confirmation or an agent approval bound to the exact command and database; agents are
+  always refused admin commands, `KEYS`, `MONITOR`, `SUBSCRIBE` and unknown commands. `ServerSession` keeps
+  `browser`, `console`, `stream`, `job` and `agent` connections apart and never replays a command (KEEL-013).
