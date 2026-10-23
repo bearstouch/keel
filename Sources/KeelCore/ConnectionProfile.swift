@@ -214,7 +214,8 @@ public struct ConnectionsDocument: PersistedDocument, Equatable {
         }
         let folderIDs = Set(folders.map(\.id))
         guard
-            folderIDs.count == folders.count, Set(profiles.map(\.id)).count == profiles.count,
+            // Bounded so `revision + 1` can never overflow on a hand-edited file.
+            revision <= UInt64(Int64.max), folderIDs.count == folders.count, Set(profiles.map(\.id)).count == profiles.count,
             // A higher record revision would let a later edit reuse it and defeat stale-editor checks.
             folders.allSatisfy({ $0.revision <= revision && Self.isFolderName($0.name) }),
             profiles.allSatisfy({ $0.revision <= revision && $0.connectionRevision <= $0.revision && ($0.folderID.map(folderIDs.contains) ?? true) }),

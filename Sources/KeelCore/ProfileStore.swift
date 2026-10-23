@@ -65,8 +65,10 @@ public actor ProfileStore {
     public func isProduction(_ profile: ConnectionProfile) -> Bool { document.label(profile.settings.label).treatAsProduction }
 
     /// The saved password for a connect, bound to the connection revision the caller resolved the profile at: nil
-    /// when the profile is gone, has no password or its connection changed since.
-    public func password(profileID: UUID, connectionRevision: UInt64) throws(ProfileStoreError) -> Data? {
+    /// when the profile is gone, has no password or its connection changed since. It waits for an in-flight mutation:
+    /// those write the Keychain before the metadata, so a new connection's password must not reach the old one.
+    public func password(profileID: UUID, connectionRevision: UInt64) async throws(ProfileStoreError) -> Data? {
+        await acquire(); defer { release() }
         guard let profile = profile(profileID), profile.connectionRevision == connectionRevision, profile.hasPassword else { return nil }
         do { return try secrets.read(.password, profileID: profileID) } catch { throw .secretStore(error) }
     }
