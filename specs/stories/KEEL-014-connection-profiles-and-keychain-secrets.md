@@ -14,7 +14,7 @@ As a user, I want to save connection profiles whose passwords live only in the K
 
 - `ConnectionProfile` (name, label, host/port, username, db, TLS, tunnel, read-only, timeouts, separator, SETNAME) and `Folder`; `ProfileStore` actor with revisions
 - `SecretStore` over the Keychain (`Keel Connection`, `Keel TLS`), written before metadata with rollback
-- Connection-revision binding: host/port/user/SNI/tunnel change removes the saved password
+- Connection-revision binding: host/port/user/SNI/tunnel change, TLS off or Skip verification on removes the saved password
 - Color labels with editable names; built-in Production label
 
 ## Acceptance criteria
@@ -30,7 +30,8 @@ injected in-memory Keychain and `Persistence` with a failing write hook.
 - AC1: CRUD, duplicate, folder moves and order reload equal in a fresh store over the same folder. "Survive relaunch"
   is observed at the store level; the editor and sidebar arrive with KEEL-016/017.
 - AC3 covers update, password removal, host change, create, delete and the TLS item; a Keychain failure writes no metadata.
-- AC4 also covers port, username, TLS server name and tunnel changes, and stale connection-revision lookups.
+- AC4 also covers port, username, TLS server name and tunnel changes, turning TLS off or Skip verification on (TLS on
+  and verification back on keep the password), and stale connection-revision lookups.
 - Pending: `KeychainSecretStore` against the real login Keychain (no throwaway-keychain hook yet; tests never touch
   the user's Keychain). Wiring `TLSIdentityImporter` writes through `ProfileStore.setTLSSecret` is left to KEEL-016.
 

@@ -126,7 +126,7 @@ public actor ProfileStore {
         let (index, current) = try locate(id, expectedRevision: expectedRevision)
         let valid = try settings.validated()
         if case .set(let value) = password { try Self.validate(value) }
-        let connectionChanged = valid.connectionKey != current.settings.connectionKey
+        let connectionChanged = valid.connectionKey != current.settings.connectionKey || valid.weakensTransport(from: current.settings)
         // nil: leave the item alone; .some(nil): remove it; .some(data): write it.
         let secretChange: Data??
         switch password {

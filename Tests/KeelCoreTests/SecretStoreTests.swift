@@ -125,6 +125,50 @@ final class SecretStoreTests: XCTestCase {
         XCTAssertEqual(bound, new)
     }
 
+    func testWeakenedTransportDeletesPassword() async throws {
+        let store = await fixture.store()
+        var settings = ConnectionSettings.sample(); settings.tls = TLSSettings()
+        var profile = try await store.create(settings, password: old)
+
+        // Turning Skip verification on, or TLS off, removes the password and advances the connection revision.
+        let weakenings: [(String, (inout ConnectionSettings) -> Void)] = [("skip verification on", { $0.tls?.skipVerification = true }), ("TLS off", { $0.tls = nil })]
+        for (change, weaken) in weakenings {
+            var safe = settings; safe.tls = TLSSettings()
+            profile = try await store.update(profile.id, safe, password: .set(old), expectedRevision: profile.revision)
+            var edited = safe; weaken(&edited)
+            let updated = try await store.update(profile.id, edited, expectedRevision: profile.revision)
+            XCTAssertFalse(updated.hasPassword, change)
+            XCTAssertGreaterThan(updated.connectionRevision, profile.connectionRevision, change)
+            XCTAssertNil(fixture.secrets.item(.password, profile.id), change)
+            profile = updated
+        }
+
+        // The reverse only makes the connection safer and keeps the password.
+        var plain = settings; plain.tls = nil
+        profile = try await store.update(profile.id, plain, password: .set(old), expectedRevision: profile.revision)
+        let strengthenings: [(String, ConnectionSettings)] = [
+            (
+                "TLS on, unverified",
+                {
+                    var s = plain; s.tls = TLSSettings(skipVerification: true); return s
+                }()
+            ),
+            (
+                "verification back on",
+                {
+                    var s = plain; s.tls = TLSSettings(); return s
+                }()
+            )
+        ]
+        for (change, safer) in strengthenings {
+            let updated = try await store.update(profile.id, safer, expectedRevision: profile.revision)
+            XCTAssertTrue(updated.hasPassword, change)
+            XCTAssertEqual(updated.connectionRevision, profile.connectionRevision, change)
+            XCTAssertEqual(fixture.secrets.item(.password, profile.id), old, change)
+            profile = updated
+        }
+    }
+
     func testDeletingAProfileRemovesItsKeychainItems() async throws {
         let store = await fixture.store()
         let profile = try await store.create(.sample(), password: old)

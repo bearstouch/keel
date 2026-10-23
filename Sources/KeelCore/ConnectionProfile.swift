@@ -96,6 +96,15 @@ public struct ConnectionSettings: Codable, Equatable, Sendable {
     }
 
     public var connectionKey: ConnectionKey { ConnectionKey(host: host, port: port, username: username, serverName: tls?.serverName, tunnel: tunnel) }
+
+    /// True when `self` protects the connection less than `previous`: TLS turned off, or **Skip verification** turned
+    /// on. The password would then cross the wire in plaintext or to an unverified server, so it is bound to this too.
+    /// The reverse (TLS on, verification back on) only makes the connection safer and keeps it.
+    public func weakensTransport(from previous: ConnectionSettings) -> Bool {
+        guard let before = previous.tls else { return false }
+        guard let after = tls else { return true }
+        return after.skipVerification && !before.skipVerification
+    }
 }
 
 public enum ProfileField: String, Sendable, CaseIterable {
@@ -162,7 +171,8 @@ public struct ConnectionProfile: Codable, Equatable, Identifiable, Sendable {
     public var folderID: UUID?
     /// Stamped from the store's counter on every change; stale editors get `CONFLICT`.
     public var revision: UInt64
-    /// Advances only when `settings.connectionKey` changes; the saved password and agent approvals bind to it.
+    /// Advances only when `settings.connectionKey` changes or the transport is weakened (`weakensTransport(from:)`); the
+    /// saved password and agent approvals bind to it.
     public var connectionRevision: UInt64
     public var hasPassword: Bool
     public var hasTLSSecret: Bool
