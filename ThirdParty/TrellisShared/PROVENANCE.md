@@ -41,7 +41,7 @@ Ported tests (in Keel's test targets, not here):
 | `Tests/KeelSSHTests/HostLibraryTests.swift` | `Tests/TrellisCoreTests/HostLibraryTests.swift` |
 | `Tests/KeelSSHTests/HostLibraryReviewTests.swift` | `Tests/TrellisCoreTests/HostLibraryReviewTests.swift` |
 | `Tests/KeelSSHTests/HostPasswordTests.swift` | `Tests/TrellisCoreTests/HostPasswordTests.swift` |
-| `Tests/KeelSSHTests/SSHConfigDiscoveryTests.swift` | `Tests/TrellisCoreTests/SSHConfigDiscoveryTests.swift` |
+| `Tests/KeelSSHTests/SSHConfigDiscoveryTests.swift` | `Tests/TrellisCoreTests/SSHConfigDiscoveryTests.swift` (KEEL-018 renamed `testSkipPatternsAndMatch` → `testLiteralAliasesOnly` and `testIncludeHasExplicitLimitation` → `testUnfollowedIncludeIsLabeled`) |
 | `Tests/KeelSSHTests/SSHConfigDiscoveryReviewTests.swift` | `Tests/TrellisCoreTests/SSHConfigDiscoveryReviewTests.swift` |
 | `Tests/KeelSSHTests/AskpassTests.swift` | `Tests/TrellisCoreTests/AskpassTests.swift` |
 | `Tests/KeelMCPTests/HTTPRequestParserTests.swift` | `Tests/TrellisMCPTests/HTTPParserTests.swift` + the duplicate-Host case of `MCPReviewTests.swift` |
@@ -76,6 +76,9 @@ Where comments cited Trellis requirement IDs they now cite Keel's (INT-08, NFR-S
 **`SSHConfigDiscovery.swift`** — unchanged.
 
 **`HostSecrets.swift`** — Keychain service `Keel SSH Host`, item label `Keel SSH host password`.
+KEEL-018: `LocalAuthenticationGate` takes a `makeContext` closure (default `LAContext()`, a fresh one per request)
+returning a `UserPresenceContext` — the one `evaluatePolicy(_:localizedReason:)` method `LAContext` already has — so
+tests inject a context that declines. Behavior with the default is unchanged.
 
 **`AskpassBroker.swift`** — imports `KeelAskpass`; socket folder prefix `keel-askpass-`; thread names `Keel askpass …`.
 KEEL-010: `init(helperPath:relay:)` and `register(parent:destination:password:)` (was `answer:`). A nonce is no longer

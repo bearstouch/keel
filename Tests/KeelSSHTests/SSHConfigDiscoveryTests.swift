@@ -20,7 +20,7 @@ final class SSHConfigDiscoveryTests: XCTestCase {
         XCTAssertEqual(result.warnings, [])
     }
 
-    func testSkipPatternsAndMatch() throws {
+    func testLiteralAliasesOnly() throws {
         let marker = FileManager.default.temporaryDirectory.appendingPathComponent("keel-match-exec-\(UUID().uuidString)")
         let config = """
             Host *
@@ -42,7 +42,7 @@ final class SSHConfigDiscoveryTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
     }
 
-    func testIncludeHasExplicitLimitation() {
+    func testUnfollowedIncludeIsLabeled() {
         let result = SSHConfigDiscovery.parse("Include ~/.ssh/config.d/*\nHost local-only\n")
         XCTAssertEqual(result.aliases.map(\.name), ["local-only"])
         XCTAssertEqual(result.warnings, [.include(line: 1, pattern: "~/.ssh/config.d/*")])

@@ -79,3 +79,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
   context menu with Connect, Edit, Rename, Duplicate, Copy URL (never the password), Move To and Delete. Double-click
   or Return focuses the tab already open for that profile and database (⌥ opens a new one); order, folders and
   collapse state persist across relaunch; VoiceOver reads "payments-prod, Production, connected" (KEEL-017).
+- SSH hosts library in the tunnel section: one picker lists Keel's saved hosts (`hosts.json`) and the literal aliases
+  of `~/.ssh/config` (no wildcards, no `Match`, nothing run; an unfollowed `Include` is labeled). Choosing an alias saves
+  it as a host whose destination is the alias. **Add…** / **Edit…** open a host editor with an optional SSH password
+  saved in the Keychain (`Keel SSH Host`), never shown again, and an optional "Require Touch ID" that, when declined,
+  sends ssh's password prompt to the person instead. Test Connection uses the saved password for saved hosts (KEEL-018).

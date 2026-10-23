@@ -61,11 +61,21 @@ public protocol UserPresenceGate: Sendable {
     func authorize(reason: String) async -> Bool
 }
 
+/// The part of `LAContext` the gate uses, so tests can inject a context that declines.
+public protocol UserPresenceContext {
+    func evaluatePolicy(_ policy: LAPolicy, localizedReason: String) async throws -> Bool
+}
+
+extension LAContext: UserPresenceContext {}
+
 /// Touch ID, falling back to the Mac password. Enforced by Keel, not by the Keychain item:
 /// ad-hoc builds carry no keychain-access-group entitlement for `SecAccessControl`.
 public struct LocalAuthenticationGate: UserPresenceGate {
-    public init() {}
+    private let makeContext: @Sendable () -> any UserPresenceContext
+    /// A fresh context per request, so one approval never covers a later use.
+    public init(makeContext: @escaping @Sendable () -> any UserPresenceContext = { LAContext() }) { self.makeContext = makeContext }
+    /// Declining, cancelling or an unavailable policy all read as "no": the saved password stays unread.
     public func authorize(reason: String) async -> Bool {
-        (try? await LAContext().evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason)) ?? false
+        (try? await makeContext().evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason)) ?? false
     }
 }
