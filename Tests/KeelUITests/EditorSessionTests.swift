@@ -17,6 +17,8 @@ final class TransactionalKeyspace: @unchecked Sendable {
     private var lists: [String: [String]] = [:]
     /// Set keys: members in insertion order; `SSCAN`'s cursor is an offset. An emptied set is removed.
     private var sets: [String: [String]] = [:]
+    /// Sorted set keys in Redis's order (score, then member), answered the way Redis 6 spells scores (`%.17g`).
+    private var zsets: [String: [(member: String, score: Double)]] = [:]
     private var versions: [String: Int] = [:]
     private var sent: [[String]] = []
     /// The next `EXEC` runs its writes, then the connection closes before its reply: the outcome is unknown.
@@ -28,6 +30,72 @@ final class TransactionalKeyspace: @unchecked Sendable {
     init(hashes: [String: [(String, String)]]) { values = [:]; self.hashes = hashes }
     init(lists: [String: [String]]) { values = [:]; self.lists = lists }
     init(sets: [String: [String]]) { values = [:]; self.sets = sets }
+    init(zsets: [String: [(String, Double)]]) {
+        values = [:]
+        self.zsets = zsets.mapValues { members in Self.ordered(members.map { (member: $0.0, score: $0.1) }) }
+    }
+
+    func scores(_ key: String) -> [String: Double]? { lock.withLock { zsets[key].map { Dictionary($0.map { ($0.member, $0.score) }, uniquingKeysWith: { a, _ in a }) } } }
+    /// Another client's `ZADD` / `ZREM`.
+    func zsetWrite(_ arguments: [String]) {
+        lock.withLock {
+            _ = runZSet(arguments); versions[arguments[1], default: 0] += 1
+        }
+    }
+
+    private static func ordered(_ members: [(member: String, score: Double)]) -> [(member: String, score: Double)] {
+        members.sorted { $0.score != $1.score ? $0.score < $1.score : Array($0.member.utf8).lexicographicallyPrecedes(Array($1.member.utf8)) }
+    }
+
+    /// Redis's sorted set commands (`ZRANGE … BYSCORE [REV] … LIMIT`, `ZSCORE`, `ZSCAN`, `ZADD [XX]`, `ZINCRBY`, `ZREM`, `ZCARD`).
+    /// Called with `lock` held.
+    private func runZSet(_ arguments: [String]) -> String {
+        let key = arguments[1]
+        var members = zsets[key] ?? []
+        defer { zsets[key] = members.isEmpty ? nil : Self.ordered(members) }
+        func bulk(_ text: String) -> String { "$\(text.utf8.count)\r\n\(text)\r\n" }
+        func spell(_ score: Double) -> String { score.isInfinite ? (score < 0 ? "-inf" : "inf") : String(format: "%.17g", score) }
+        switch arguments[0] {
+        case "ZCARD": return ":\(members.count)\r\n"
+        case "ZRANGE":
+            let reverse = arguments.contains("REV")
+            let low = Double(arguments[reverse ? 3 : 2])!, high = Double(arguments[reverse ? 2 : 3])!
+            let limit = arguments.firstIndex(of: "LIMIT").map { (Int(arguments[$0 + 1])!, Int(arguments[$0 + 2])!) } ?? (0, Int.max)
+            let inRange = members.filter { $0.score >= low && $0.score <= high }
+            let page = (reverse ? inRange.reversed() : inRange).dropFirst(limit.0).prefix(limit.1)
+            return "*\(page.count * 2)\r\n" + page.map { bulk($0.member) + bulk(spell($0.score)) }.joined()
+        case "ZSCORE": return members.first { $0.member == arguments[2] }.map { bulk(spell($0.score)) } ?? "$-1\r\n"
+        case "ZSCAN":
+            // The cursor is an offset into the order; MATCH takes a prefix pattern (`user:*`) or an exact member.
+            let start = Int(arguments[2])!, count = Int(arguments[arguments.firstIndex(of: "COUNT")! + 1])!
+            let pattern = arguments.firstIndex(of: "MATCH").map { arguments[$0 + 1] }
+            func matches(_ member: String) -> Bool {
+                guard let pattern else { return true }
+                return pattern.hasSuffix("*") ? member.hasPrefix(String(pattern.dropLast())) : member == pattern
+            }
+            let page = members[min(start, members.count)..<min(start + count, members.count)].filter { matches($0.member) }
+            let next = start + count >= members.count ? 0 : start + count
+            return "*2\r\n" + bulk(String(next)) + "*\(page.count * 2)\r\n" + page.map { bulk($0.member) + bulk(spell($0.score)) }.joined()
+        case "ZADD":
+            let xx = arguments[2] == "XX"
+            var rest = Array(arguments.dropFirst(xx ? 3 : 2)), added = 0
+            while rest.count >= 2 {
+                let score = Double(rest[0])!, member = rest[1]
+                rest.removeFirst(2)
+                if let index = members.firstIndex(where: { $0.member == member }) { members[index].score = score } else if !xx { members.append((member, score)); added += 1 }
+            }
+            return ":\(added)\r\n"
+        case "ZINCRBY":
+            let amount = Double(arguments[2])!, member = arguments[3]
+            if let index = members.firstIndex(where: { $0.member == member }) { members[index].score += amount } else { members.append((member, amount)) }
+            return bulk(spell(members.first { $0.member == member }!.score))
+        case "ZREM":
+            let removed = Set(arguments.dropFirst(2)), before = members.count
+            members.removeAll { removed.contains($0.member) }
+            return ":\(before - members.count)\r\n"
+        default: return "-ERR unexpected\r\n"
+        }
+    }
 
     func members(_ key: String) -> Set<String>? { lock.withLock { sets[key].map(Set.init) } }
     /// Another client's `SADD` / `SREM`.
@@ -223,7 +291,7 @@ final class TransactionalKeyspace: @unchecked Sendable {
                 case "PTTL":
                     let key = arguments[1]
                     return keyspace.values[key] == nil && keyspace.hashes[key] == nil && keyspace.lists[key] == nil && keyspace.sets[key] == nil
-                        ? ":-2\r\n" : ":-1\r\n"
+                        && keyspace.zsets[key] == nil ? ":-2\r\n" : ":-1\r\n"
                 case "LLEN", "LRANGE": return keyspace.runList(arguments)
                 case "LSET", "LREM", "LPUSH", "RPUSH", "LPOP", "RPOP", "LINSERT":
                     keyspace.versions[arguments[1], default: 0] += 1
@@ -232,6 +300,10 @@ final class TransactionalKeyspace: @unchecked Sendable {
                 case "SADD", "SREM":
                     keyspace.versions[arguments[1], default: 0] += 1
                     return keyspace.runSet(arguments)
+                case "ZCARD", "ZRANGE", "ZSCORE", "ZSCAN": return keyspace.runZSet(arguments)
+                case "ZADD", "ZINCRBY", "ZREM":
+                    keyspace.versions[arguments[1], default: 0] += 1
+                    return keyspace.runZSet(arguments)
                 case "HLEN": return ":\(keyspace.hashes[arguments[1]]?.count ?? 0)\r\n"
                 case "HGETALL":
                     let fields = keyspace.hashes[arguments[1]] ?? []

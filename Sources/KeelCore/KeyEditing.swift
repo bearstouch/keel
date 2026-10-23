@@ -120,8 +120,8 @@ public struct EditorBinding: Sendable {
     /// Rows are named by position (a list's index): once the value moved, a draft's rows name other items, so a conflict
     /// offers no Overwrite and an unknown outcome replaces the draft with the server's value.
     public var positional: Bool
-    /// False where a row's value is its name (a set member): the viewer shows it read-only, since changing the bytes
-    /// would be a different member, not an edit.
+    /// False where the viewer shows a row's name rather than an editable value (a set member; a sorted set member, whose
+    /// value is its score): it opens the name read-only, since changing the bytes would be a different member.
     public var editsValues: Bool
 
     public init(
@@ -139,6 +139,7 @@ public struct EditorBinding: Sendable {
         case .hash: return HashEditor.binding
         case .list: return ListEditor.binding
         case .set: return SetEditor.binding
+        case .zset: return SortedSetEditor.binding
         default: return nil
         }
     }
