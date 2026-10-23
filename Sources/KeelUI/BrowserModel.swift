@@ -28,6 +28,9 @@ public final class BrowserModel: ObservableObject {
     /// The type's editor; nil shows the shell without a value editor (types whose editor isn't built yet).
     let editorBinding: @MainActor (KeyType) -> EditorBinding?
 
+    /// The viewer choice per key pattern, for every key this tab opens (03 → Value editors).
+    let viewerChoices = ValueViewerChoices()
+
     /// Bumped by every refresh and switch, so counts that land for an earlier one are dropped.
     private var countsRequest = 0
     /// Bumped by every selection, so only the newest presence check reports.
@@ -169,7 +172,9 @@ public final class BrowserModel: ObservableObject {
         let context = await index.context
         // The same name in another database (after a switch) is another key.
         if let editor, editor.key == key, editor.type == type, editor.context.database == context.database { return }
-        let editor = EditorSession(key: key, type: type, binding: editorBinding(type), service: await index.service, context: context)
+        let editor = EditorSession(
+            key: key, type: type, binding: editorBinding(type), service: await index.service, context: context,
+            viewerChoices: viewerChoices, separator: await index.separator)
         // A newer selection while the context was read owns the editor now.
         guard request == presenceRequest else { return }
         self.editor = editor

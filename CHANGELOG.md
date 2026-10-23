@@ -124,6 +124,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
   "· Read-only" with a lock), and a floating save bar only while something is unsaved (⌘S / ⌘Z). Saves run as one
   pipelined `MULTI … EXEC` guarded by `WATCH`; a key changed since loading reports `CONFLICT`, writes nothing and
   offers Reload or Overwrite (KEEL-027).
+- Value viewer under the editor: Text (UTF-8, other bytes escaped as `\xNN`), JSON (chosen automatically for objects
+  and arrays, pretty-printed in key order with syntax colors, "✓ Valid JSON" or the error's line and column), Hex
+  (offset, hex, ASCII, drawn lazily) and Raw (redis-cli quoting); Text and Raw edits save byte-exactly, invalid JSON
+  can't be saved from JSON view, the chosen view is remembered per key pattern for the session, and values over
+  64 KiB are prepared off the main thread. Adds the standard Edit menu (Cut, Copy, Paste, Select All) (KEEL-028).
 
 ### Removed
 
