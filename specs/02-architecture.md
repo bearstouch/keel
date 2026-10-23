@@ -234,6 +234,16 @@ Each file is a flat JSON object with an integer `schemaVersion` beside the docum
 
 All generic passwords use *when unlocked, this device only*. The Keychain is written before metadata; a failed metadata write restores the previous Keychain value. Changing a profile's host, port, username, TLS server name or tunnel removes its saved password (connection-revision binding, as in Trellis FR-H09).
 
+### Profile store
+
+`ProfileStore` (KeelCore actor) is the single owner of `connections.json` and the `Keel Connection` / `Keel TLS` items, through an injected `SecretStore`.
+
+- Every mutation validates first (option-like or spaced hosts, invalid tunnels, out-of-range ports, databases, timeouts and 1–4 byte separators are refused), then writes the Keychain, then the metadata. A failed metadata write undoes the Keychain changes in reverse; a Keychain failure writes no metadata. Mutations are serialized, and `connections.json` is saved immediately rather than debounced, because the rollback depends on the write's outcome.
+- Each change stamps the record with the next store revision; editors pass the revision they started from and a stale one gets `CONFLICT`. An unchanged save keeps the revision. `connectionRevision` advances only when host, port, username, TLS server name or tunnel changes; that removes the saved password unless the same save sets a new one, and a password lookup is bound to the connection revision the connect resolved.
+- The file holds `hasPassword` / `hasTLSSecret` flags only. On load every record is re-validated (unique IDs, revisions not above the document's, folders that exist, valid settings); a file that fails goes through recovery.
+- Duplicate copies the profile's Keychain items to the copy. Delete removes both items first (restored if the metadata write fails); the client identity itself (certificate and key) stays in the Keychain, since other profiles or apps may use it. Deleting a folder moves its profiles to the top level.
+- Labels: one per color (FR-CN02), each with an editable name. Red is the built-in **Production** label and is always treated as production; any other label can be marked "treat as production" (FR-SF02).
+
 ## Errors
 
 Internally every failure is a `KeelError` with a SCREAMING_SNAKE `code` shared with the [API](05-api.md#errors), a sanitized message that names the target and the recovery, and optional server error text (`ERR`, `WRONGTYPE`, `NOPERM`, …) passed through verbatim. Messages never include passwords, tokens or values.

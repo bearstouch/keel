@@ -19,11 +19,20 @@ As a user, I want to save connection profiles whose passwords live only in the K
 
 ## Acceptance criteria
 
-- [ ] **AC1.** Create, edit, duplicate, delete and reorder profiles; they survive relaunch.
-- [ ] **AC2.** `connections.json` contains no password, passphrase or token — only `hasPassword` flags.
-- [ ] **AC3.** A failed metadata write restores the previous Keychain value.
-- [ ] **AC4.** Changing the host removes the saved password; renaming keeps it.
-- [ ] **AC5.** Deleting a profile removes its Keychain items.
+- [x] **AC1.** Create, edit, duplicate, delete and reorder profiles; they survive relaunch.
+- [x] **AC2.** `connections.json` contains no password, passphrase or token — only `hasPassword` flags.
+- [x] **AC3.** A failed metadata write restores the previous Keychain value.
+- [x] **AC4.** Changing the host removes the saved password; renaming keeps it.
+- [x] **AC5.** Deleting a profile removes its Keychain items.
+
+**Verification (KEEL-014).** AC1–AC5 observed in `ProfileStoreTests`, `SecretStoreTests` and `ProfileCodecTests`, using an
+injected in-memory Keychain and `Persistence` with a failing write hook.
+- AC1: CRUD, duplicate, folder moves and order reload equal in a fresh store over the same folder. "Survive relaunch"
+  is observed at the store level; the editor and sidebar arrive with KEEL-016/017.
+- AC3 covers update, password removal, host change, create, delete and the TLS item; a Keychain failure writes no metadata.
+- AC4 also covers port, username, TLS server name and tunnel changes, and stale connection-revision lookups.
+- Pending: `KeychainSecretStore` against the real login Keychain (no throwaway-keychain hook yet; tests never touch
+  the user's Keychain). Wiring `TLSIdentityImporter` writes through `ProfileStore.setTLSSecret` is left to KEEL-016.
 
 ## Unit tests
 
