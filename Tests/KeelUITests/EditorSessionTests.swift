@@ -15,6 +15,8 @@ final class TransactionalKeyspace: @unchecked Sendable {
     private var hashes: [String: [(String, String)]] = [:]
     /// List keys; an emptied list is removed, as on a server.
     private var lists: [String: [String]] = [:]
+    /// Set keys: members in insertion order; `SSCAN`'s cursor is an offset. An emptied set is removed.
+    private var sets: [String: [String]] = [:]
     private var versions: [String: Int] = [:]
     private var sent: [[String]] = []
     /// The next `EXEC` runs its writes, then the connection closes before its reply: the outcome is unknown.
@@ -25,6 +27,42 @@ final class TransactionalKeyspace: @unchecked Sendable {
     init(_ values: [String: String]) { self.values = values }
     init(hashes: [String: [(String, String)]]) { values = [:]; self.hashes = hashes }
     init(lists: [String: [String]]) { values = [:]; self.lists = lists }
+    init(sets: [String: [String]]) { values = [:]; self.sets = sets }
+
+    func members(_ key: String) -> Set<String>? { lock.withLock { sets[key].map(Set.init) } }
+    /// Another client's `SADD` / `SREM`.
+    func setWrite(_ arguments: [String]) {
+        lock.withLock {
+            _ = runSet(arguments); versions[arguments[1], default: 0] += 1
+        }
+    }
+
+    /// Redis's set commands. Called with `lock` held.
+    private func runSet(_ arguments: [String]) -> String {
+        let key = arguments[1]
+        var members = sets[key] ?? []
+        defer { sets[key] = members.isEmpty ? nil : members }
+        func bulk(_ text: String) -> String { "$\(text.utf8.count)\r\n\(text)\r\n" }
+        switch arguments[0] {
+        case "SCARD": return ":\(members.count)\r\n"
+        case "SMEMBERS": return "*\(members.count)\r\n" + members.map(bulk).joined()
+        case "SSCAN":
+            let start = Int(arguments[2])!, count = Int(arguments[4])!
+            let page = members[min(start, members.count)..<min(start + count, members.count)]
+            let next = start + count >= members.count ? 0 : start + count
+            return "*2\r\n" + bulk(String(next)) + "*\(page.count)\r\n" + page.map(bulk).joined()
+        case "SISMEMBER": return members.contains(arguments[2]) ? ":1\r\n" : ":0\r\n"
+        case "SADD":
+            var added = 0
+            for member in arguments.dropFirst(2) where !members.contains(member) { members.append(member); added += 1 }
+            return ":\(added)\r\n"
+        case "SREM":
+            let removed = Set(arguments.dropFirst(2)), before = members.count
+            members.removeAll { removed.contains($0) }
+            return ":\(before - members.count)\r\n"
+        default: return "-ERR unexpected\r\n"
+        }
+    }
 
     func list(_ key: String) -> [String]? { lock.withLock { lists[key] } }
     /// Another client's list write (`LPUSH`, `RPUSH`, `LSET` …).
@@ -184,11 +222,16 @@ final class TransactionalKeyspace: @unchecked Sendable {
                     return "+OK\r\n"
                 case "PTTL":
                     let key = arguments[1]
-                    return keyspace.values[key] == nil && keyspace.hashes[key] == nil && keyspace.lists[key] == nil ? ":-2\r\n" : ":-1\r\n"
+                    return keyspace.values[key] == nil && keyspace.hashes[key] == nil && keyspace.lists[key] == nil && keyspace.sets[key] == nil
+                        ? ":-2\r\n" : ":-1\r\n"
                 case "LLEN", "LRANGE": return keyspace.runList(arguments)
                 case "LSET", "LREM", "LPUSH", "RPUSH", "LPOP", "RPOP", "LINSERT":
                     keyspace.versions[arguments[1], default: 0] += 1
                     return keyspace.runList(arguments)
+                case "SCARD", "SMEMBERS", "SSCAN", "SISMEMBER": return keyspace.runSet(arguments)
+                case "SADD", "SREM":
+                    keyspace.versions[arguments[1], default: 0] += 1
+                    return keyspace.runSet(arguments)
                 case "HLEN": return ":\(keyspace.hashes[arguments[1]]?.count ?? 0)\r\n"
                 case "HGETALL":
                     let fields = keyspace.hashes[arguments[1]] ?? []
