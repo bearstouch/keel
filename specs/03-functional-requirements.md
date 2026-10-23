@@ -40,6 +40,8 @@ Every requirement has a stable ID, a priority and an acceptance check. Unless ma
 | `TLS_HOSTNAME_MISMATCH` | Certificate doesn't match the server name | Expected name and certificate names; suggests SNI override |
 | `TLS_HANDSHAKE_FAILED` | Protocol mismatch, client cert required or refused, or server not speaking TLS | "Server may not be using TLS" when a plain `PING` to the same port gets a RESP reply ([Architecture](02-architecture.md#tls)); "requires a client certificate" when the profile has none, "rejected the client certificate" when it has one; the `errSSL` status |
 | `NOT_TLS_EXPECTED` | TLS server reached without TLS: it answered with a TLS record | Suggests enabling TLS |
+| `TLS_CA_UNAVAILABLE` | The custom CA file is missing, unreadable, not a regular file, over 4 MiB or holds no readable certificate (FR-CN04); nothing is sent | The file's path and the reason |
+| `TLS_CA_CHANGED` | The custom CA file's SHA-256 changed and the user declined the new fingerprint (FR-CN04); nothing is sent | The file's path |
 | `AUTH_FAILED` | `WRONGPASS`, `NOAUTH`, `ERR invalid password`, user disabled | Username (never the password); for `NOAUTH`, that a password is required |
 | `PERMISSION_DENIED` | `NOPERM` during handshake (e.g. `SELECT`, `INFO`) | The command the ACL user can't run |
 | `TUNNEL_FAILED` | ssh exited, forward failed, host key declined | ssh exit status and sanitized last stderr line |

@@ -31,3 +31,6 @@ and versions follow [Semantic Versioning](https://semver.org/).
   (including "Server may not be using TLS" and a required client certificate) and `NOT_TLS_EXPECTED`. Client
   certificates import from `.p12` or a PEM certificate plus an RSA/EC key (PKCS#8, encrypted PKCS#8, PKCS#1, SEC1)
   into the login Keychain; a wrong passphrase imports nothing (KEEL-007).
+- CA file change detection: the SHA-256 of each profile's custom CA file is kept in `known-ca.json`; a changed file
+  shows the old and new fingerprints and connects only once accepted, and a missing or unusable file fails with
+  `TLS_CA_UNAVAILABLE` naming the path (KEEL-008).
