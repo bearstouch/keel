@@ -111,7 +111,7 @@ final class DataCommandServiceTests: XCTestCase {
             (.streamDelete(key: k, ids: [Data("1-0".utf8)]), ["XDEL", "k", "1-0"]), (.rename(key: k, newKey: v, overwrite: true), ["RENAME", "k", "v"]),
             (.rename(key: k, newKey: v, overwrite: false), ["RENAMENX", "k", "v"]), (.expire(key: k, milliseconds: 90_000), ["PEXPIRE", "k", "90000"]),
             (.type(key: k), ["TYPE", "k"]), (.pttl(key: k), ["PTTL", "k"]), (.memoryUsage(key: k), ["MEMORY", "USAGE", "k", "SAMPLES", "0"]), (.flushDatabase(async: true), ["FLUSHDB", "ASYNC"]),
-            (.flushAll(async: false), ["FLUSHALL"])
+            (.flushAll(async: false), ["FLUSHALL"]), (.databaseSize, ["DBSIZE"]), (.info(section: Data("keyspace".utf8)), ["INFO", "keyspace"])
         ]
         for (operation, expected) in table {
             XCTAssertEqual(operation.arguments.map { String(decoding: $0, as: UTF8.self) }, expected, "\(operation)")

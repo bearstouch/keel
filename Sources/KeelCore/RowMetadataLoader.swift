@@ -85,7 +85,7 @@ public actor RowMetadataLoader {
         wanted = Array(keys.prefix(Self.maximumRows))
         var changed: [Int] = []
         while mine == ticket {
-            let (generation, work) = await index.metadataWork(for: wanted, sizes: showsSizes, sizeLimit: Self.maximumSizes)
+            let (generation, context, work) = await index.metadataWork(for: wanted, sizes: showsSizes, sizeLimit: Self.maximumSizes)
             guard mine == ticket, !work.isEmpty else { break }
             // Wait out the interval (or the batch in flight), then look again: the rows in view may have changed.
             let wait = inFlight ? Self.interval : (nextBatch.map { $0 - now() } ?? .zero)
@@ -95,7 +95,7 @@ public actor RowMetadataLoader {
             }
             inFlight = true
             nextBatch = now() + Self.interval
-            let (results, failed) = await fetch(work)
+            let (results, failed) = await fetch(work, context: context)
             inFlight = false
             changed += await index.applyMetadata(results, generation: generation)
             // A failure would fail again at once; stop and let the next scroll or refresh retry.
@@ -105,10 +105,10 @@ public actor RowMetadataLoader {
     }
 
     /// One pipelined batch: every command is sent at once on the browser connection and the replies are matched up.
-    private func fetch(_ work: [RowMetadataWork]) async -> (results: [RowMetadataResult], failed: Bool) {
+    private func fetch(_ work: [RowMetadataWork], context: DataContext) async -> (results: [RowMetadataResult], failed: Bool) {
         enum Ask { case type, ttl, size }
         let sentAt = nowMilliseconds()
-        let service = index.service, context = index.context
+        let service = index.service
         return await withTaskGroup(of: (Int, Ask, Result<RESPValue, DataCommandError>).self) { group in
             for (offset, item) in work.enumerated() {
                 let asks: [(Ask, DataOperation)] = [

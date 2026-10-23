@@ -205,7 +205,7 @@ final class RowMetadataLoaderTests: XCTestCase {
         let fake = MetadataKeyspace(types: Self.types)
         let loader = await fake.loader(Self.names)
         let index = loader.index
-        let (generation, work) = await index.metadataWork(for: [0], sizes: false, sizeLimit: 100)
+        let (generation, _, work) = await index.metadataWork(for: [0], sizes: false, sizeLimit: 100)
         XCTAssertEqual(work, [RowMetadataWork(index: 0, key: Data("user:0".utf8), type: true, ttl: true, size: false)])
         await index.restart()
         await index.ingest([Data("other".utf8)])

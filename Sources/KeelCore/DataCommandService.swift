@@ -11,6 +11,10 @@ public enum DataOperation: Sendable, Equatable {
     /// `MEMORY USAGE key SAMPLES 0`: sent only when the user asks for sizes (FR-KB07).
     case memoryUsage(key: Data)
     case get(key: Data)
+    /// `DBSIZE` for the context's database: the footer's total (FR-KB09).
+    case databaseSize
+    /// `INFO section`; the database switcher asks for `keyspace` (FR-KB08).
+    case info(section: Data)
     // Writes
     case stringSet(key: Data, value: Data, keepTTL: Bool)
     case hashSetField(key: Data, field: Data, value: Data)
@@ -57,6 +61,8 @@ public enum DataOperation: Sendable, Equatable {
         case .pttl(let key): return [d("PTTL"), key]
         case .memoryUsage(let key): return [d("MEMORY"), d("USAGE"), key, d("SAMPLES"), d("0")]
         case .get(let key): return [d("GET"), key]
+        case .databaseSize: return [d("DBSIZE")]
+        case .info(let section): return [d("INFO"), section]
         case .stringSet(let key, let value, let keepTTL): return [d("SET"), key, value] + (keepTTL ? [d("KEEPTTL")] : [])
         case .hashSetField(let key, let field, let value): return [d("HSET"), key, field, value]
         case .hashDeleteFields(let key, let fields): return [d("HDEL"), key] + fields

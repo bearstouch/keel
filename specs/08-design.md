@@ -140,7 +140,7 @@ Profiles outside any folder come first, without a heading; folders follow in the
 
 ### Toolbar
 
-Connection name, db picker (`db0 ▾`), centered **Browser | Console | Info** switch, search icon (⌘K). Info adds the server version beside the name and a refresh button.
+Connection name, db picker (`db0 ▾` in mono on `soft`, a menu listing "db3 · 1,204 keys" for databases with keys and the name alone for empty ones; ⌥⌘0–9), centered **Browser | Console | Info** switch, search icon (⌘K). Info adds the server version beside the name and a refresh button.
 
 ### Tab bar
 
@@ -152,7 +152,7 @@ Under the tab bar, only for production connections: centered "Production · Read
 
 ### Key list
 
-Filter field (glob pattern) on `soft`: the magnifier is a menu that switches the field between **Server pattern** (applied on Return) and **Loaded keys** (live substring); then a `?` that opens the glob help popover (pattern mode) and a quiet type menu ("All types", the six core types, "Other (module types)"). A client-side type filter adds one muted line under the field saying so. ⌘F focuses the field; 32 px tree rows (18 px indent per level) with chevron, name, child count (folders) or short TTL (only for expiring keys) and a 40 px type badge (none until the type is loaded); the selected row is a 7 px rounded `selection` fill with unchanged text; footer "250,000 of 1.2M keys loaded · Load more" with a trailing borderless `⋯` menu (Show Sizes). With sizes on, a key's muted text reads "1m 30s · 4.1 KB".
+Filter field (glob pattern) on `soft`: the magnifier is a menu that switches the field between **Server pattern** (applied on Return) and **Loaded keys** (live substring); then a `?` that opens the glob help popover (pattern mode) and a quiet type menu ("All types", the six core types, "Other (module types)"). A client-side type filter adds one muted line under the field saying so. ⌘F focuses the field; 32 px tree rows (18 px indent per level) with chevron, name, child count (folders) or short TTL (only for expiring keys) and a 40 px type badge (none until the type is loaded); the selected row is a 7 px rounded `selection` fill with unchanged text; footer "250,000 of 1.2M keys loaded · Load more" with a trailing borderless `⋯` menu (Show Sizes). With sizes on, a key's muted text reads "1m 30s · 4.1 KB". A key opened after it was deleted elsewhere adds one `soft` line above the footer: a `warning` triangle, "Key no longer exists" and a **Remove from List** link in `accent` (the words carry the meaning).
 
 ### Editor
 

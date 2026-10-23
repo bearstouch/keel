@@ -74,9 +74,12 @@ final class RecordingTransport: Transport, @unchecked Sendable {
 final class RecordingServer: @unchecked Sendable {
     private let lock = NSLock()
     private var transports: [(ConnectionRole, Int, RecordingTransport)] = []
-    private let answer: @Sendable ([String]) -> String
+    /// Answers with the database the connection was opened on, so one fake can serve several databases.
+    private let answer: @Sendable (_ database: Int, [String]) -> String
 
-    init(answer: @escaping @Sendable ([String]) -> String = { _ in "+OK\r\n" }) { self.answer = answer }
+    init(answer: @escaping @Sendable ([String]) -> String = { _ in "+OK\r\n" }) { self.answer = { answer($1) } }
+
+    init(answerIn answer: @escaping @Sendable (_ database: Int, [String]) -> String) { self.answer = answer }
 
     /// Every connection opened, in order: role, database at open, and its trace.
     var opened: [(role: ConnectionRole, database: Int, transport: RecordingTransport)] { lock.withLock { transports.map { ($0.0, $0.1, $0.2) } } }
@@ -85,7 +88,7 @@ final class RecordingServer: @unchecked Sendable {
 
     func session() -> ServerSession {
         ServerSession { (role: ConnectionRole, database: Int) async throws(ConnectionFailure) -> RedisConnection in
-            let transport = RecordingTransport(answer: self.answer)
+            let transport = RecordingTransport { self.answer(database, $0) }
             self.lock.withLock { self.transports.append((role, database, transport)) }
             let connection = RedisConnection(transport: transport)
             do throws(RedisError) { try await connection.connect() } catch {

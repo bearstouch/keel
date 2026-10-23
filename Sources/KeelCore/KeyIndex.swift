@@ -133,6 +133,17 @@ public enum KeyIndexPhase: Sendable, Equatable {
 
 public enum KeyPagingMode: Sendable, Equatable { case manual, auto }
 
+/// Whether a key the user opens still exists (FR-KB12).
+public enum KeyPresence: Sendable, Equatable {
+    case exists(KeyType)
+    /// Deleted or expired elsewhere: the browser says `missingMessage` and offers to remove it from the list.
+    case missing
+    /// The check itself failed; nothing about the key is known.
+    case failed(KeyIndexError)
+
+    public static let missingMessage = "Key no longer exists"
+}
+
 public struct KeyIndexStatus: Sendable, Equatable {
     public var loadedCount: Int
     public var limit: Int
@@ -207,7 +218,8 @@ public struct KeyIndexFooter: Sendable, Equatable {
 /// Every page is one `SCAN` sent through `DataCommandService` from the `.browser` origin — never `KEYS` (FR-KB01).
 public actor KeyIndex {
     public let service: DataCommandService
-    public let context: DataContext
+    /// The database every command goes to; `switchDatabase` moves it (FR-KB08).
+    public private(set) var context: DataContext
     public private(set) var configuration: KeyIndexConfiguration
 
     // Storage: key i is arena[(i == 0 ? 0 : ends[i - 1]) ..< ends[i]].
@@ -234,8 +246,11 @@ public actor KeyIndex {
     private var mode = KeyPagingMode.manual
     private var inFlight = false
     private var pauseRequested = false
-    /// Bumped by `restart`, so a page still in flight for the previous scan is dropped when it lands; the list reads it
-    /// to notice a restart even when more keys than before are loaded by the time it reloads.
+    /// Bumped by `restart` only, so a page still in flight for the previous scan is dropped when it lands.
+    private var scanEpoch = 0
+    /// Bumped whenever key indices stop meaning what they meant — a restart, or a key removed from the list — so the
+    /// list and metadata answers from before are dropped; the list reads it to notice a restart even when more keys
+    /// than before are loaded by the time it reloads.
     public private(set) var generation = 0
 
     public init(
@@ -277,8 +292,9 @@ public actor KeyIndex {
 
     /// What the visible `indices` still need: `TYPE` while the type is unknown, `PTTL` while the expiry is, and — only
     /// with `sizes` — `MEMORY USAGE` for at most `sizeLimit` keys. Indices past the loaded range and repeats are
-    /// skipped; a gone key needs nothing more. The generation lets `applyMetadata` drop answers from before a restart.
-    public func metadataWork(for indices: [Int], sizes: Bool, sizeLimit: Int) -> (generation: Int, work: [RowMetadataWork]) {
+    /// skipped; a gone key needs nothing more. The generation lets `applyMetadata` drop answers from before a restart;
+    /// the context is the database the work belongs to, so a switch while it is sent can't aim it at another one.
+    public func metadataWork(for indices: [Int], sizes: Bool, sizeLimit: Int) -> (generation: Int, context: DataContext, work: [RowMetadataWork]) {
         var work: [RowMetadataWork] = [], seen = Set<Int>(), sizeCount = 0
         for index in indices where metadata.indices.contains(index) && seen.insert(index).inserted {
             let entry = metadata(at: index)
@@ -288,7 +304,7 @@ public actor KeyIndex {
             let item = RowMetadataWork(index: index, key: key(at: index), type: entry.type == .unknown, ttl: entry.expiry == .unknown, size: size)
             if item.type || item.ttl || item.size { work.append(item) }
         }
-        return (generation, work)
+        return (generation, context, work)
     }
 
     /// Stores fetched metadata unless the index restarted since `metadataWork`; returns the indices that changed.
@@ -387,10 +403,10 @@ public actor KeyIndex {
     @discardableResult
     public func loadMore() async -> KeyIndexStatus {
         mode = .manual; pauseRequested = false
-        let scanGeneration = generation
+        let epoch = scanEpoch
         _ = await scanPage()
         // A restart while the page was in flight owns the phase; only a finished page of this scan settles to idle.
-        if scanGeneration == generation, !inFlight, phase == .scanning { phase = .idle }
+        if epoch == scanEpoch, !inFlight, phase == .scanning { phase = .idle }
         return status
     }
 
@@ -400,11 +416,11 @@ public actor KeyIndex {
     public func autoPage() async -> KeyIndexStatus {
         guard !inFlight else { mode = .auto; return status }
         mode = .auto; pauseRequested = false
-        let scanGeneration = generation
+        let epoch = scanEpoch
         // Load more during the loop switches to manual, which ends the loop after the page in flight.
         while !Task.isCancelled, !pauseRequested, mode == .auto, await scanPage() {}
         // A restart during the loop owns the phase; otherwise a loop that stopped mid-scan is paused or idle.
-        if scanGeneration == generation, !inFlight, phase == .scanning { phase = pauseRequested ? .paused : .idle }
+        if epoch == scanEpoch, !inFlight, phase == .scanning { phase = pauseRequested ? .paused : .idle }
         return status
     }
 
@@ -432,13 +448,21 @@ public actor KeyIndex {
     /// without one the filter is kept, as Refresh wants (FR-KB09).
     public func restart(filter: KeyFilter? = nil) {
         if let filter { configuration.filter = filter }
-        generation += 1
+        scanEpoch += 1; generation += 1
         arena = []; ends = []; metadata = []; sizes = [:]; overflow = []
         slots = ContiguousArray(repeating: 0, count: 1_024)
         treeBuild += 1
         tree = NamespaceTree(separator: tree.separator, build: treeBuild)
         cursor = Data("0".utf8); started = false
         limit = configuration.limit; phase = .idle; inFlight = false; pauseRequested = false
+    }
+
+    /// The database switcher (FR-KB08): the same index, filters and paging mode on another database, starting empty.
+    /// Pages, metadata and checks still in flight for the old database are dropped when they land.
+    public func switchDatabase(_ database: Int) {
+        guard database != context.database else { return }
+        context.database = database
+        restart()
     }
 
     /// Sends one SCAN and adds its keys. Returns whether another page may follow (for the auto-page loop).
@@ -450,7 +474,7 @@ public actor KeyIndex {
         }
         if ends.count >= limit { phase = .limitReached; return false }
         inFlight = true; phase = .scanning
-        let scanGeneration = generation
+        let epoch = scanEpoch
         let filter = configuration.filter
         let operation = filter.scan(cursor: cursor, count: configuration.pageSize)
         var result: Result<Page, KeyIndexError>
@@ -460,11 +484,11 @@ public actor KeyIndex {
             result = .failure(KeyIndexError(code: error.code, message: Self.describe(error, command: "SCAN")))
         }
         // A type SCAN can't select is checked here, before the cursor moves: a failed check retries the same page.
-        if case .success(let page) = result, let wanted = filter.clientSideType, scanGeneration == generation {
-            result = await keys(page.keys, ofType: wanted, generation: scanGeneration).map { Page(cursor: page.cursor, keys: $0) }
+        if case .success(let page) = result, let wanted = filter.clientSideType, epoch == scanEpoch {
+            result = await keys(page.keys, ofType: wanted, epoch: epoch).map { Page(cursor: page.cursor, keys: $0) }
         }
         // A restart while this page was in flight owns the state now; its own scan starts from cursor 0.
-        guard scanGeneration == generation else { return false }
+        guard epoch == scanEpoch else { return false }
         inFlight = false
         switch result {
         case .failure(let error):
@@ -500,7 +524,7 @@ public actor KeyIndex {
     /// The page's keys whose `TYPE` matches, in page order. The `TYPE`s pipeline on the browser connection, at most
     /// `typeCheckWindow` at a time; any failure fails the page, and a failure or a restart stops sending more.
     /// Keys deleted since SCAN (`none`) are left out.
-    private func keys(_ page: [Data], ofType wanted: KeyTypeFilter, generation scanGeneration: Int) async -> Result<[Data], KeyIndexError> {
+    private func keys(_ page: [Data], ofType wanted: KeyTypeFilter, epoch: Int) async -> Result<[Data], KeyIndexError> {
         let replies = await withTaskGroup(of: (Int, Result<RESPValue, DataCommandError>).self) { group in
             var replies = [Result<RESPValue, DataCommandError>?](repeating: nil, count: page.count)
             var next = 0, stop = false
@@ -518,7 +542,7 @@ public actor KeyIndex {
                 replies[offset] = reply
                 // Anything but a type name fails the page, and a restart drops it: either way, send no more.
                 switch reply {
-                case .success(.simpleString), .success(.bulkString): if scanGeneration != generation { stop = true }
+                case .success(.simpleString), .success(.bulkString): if epoch != scanEpoch { stop = true }
                 default: stop = true
                 }
                 send()
@@ -538,6 +562,79 @@ public actor KeyIndex {
             }
         }
         return .success(kept)
+    }
+
+    // MARK: - Database size and missing keys
+
+    /// `DBSIZE` for this index's database: the total the footer shows beside the loaded count (FR-KB09).
+    public func databaseSize() async -> Result<Int, KeyIndexError> {
+        let reply: RESPValue
+        do throws(DataCommandError) { reply = try await service.execute(.operation(.databaseSize), origin: .browser, context: context).reply } catch {
+            return .failure(KeyIndexError(code: error.code, message: Self.describe(error, command: "DBSIZE")))
+        }
+        switch reply {
+        case .integer(let count) where count >= 0: return .success(Int(count))
+        case .error(let text), .blobError(let text): return .failure(Self.serverError(text))
+        default: return .failure(KeyIndexError(code: "PROTOCOL_ERROR", message: "The server's DBSIZE reply wasn't a count."))
+        }
+    }
+
+    /// The loaded key with these bytes; nil when it isn't loaded (after a restart, until its page loads again).
+    public func index(of key: Data) -> Int? {
+        let (slot, found) = probe(key)
+        return found ? Int(slots[slot]) - 1 : nil
+    }
+
+    /// Opening a key checks that it still exists with one `TYPE` (FR-KB12). A missing key is marked stale and gone in
+    /// the list (it reads "expired" until removed or refreshed); an existing one gets its current type. A switch or
+    /// restart while the reply was out leaves the index alone: the answer was about the previous scan.
+    public func presence(of key: Data) async -> KeyPresence {
+        let epoch = scanEpoch
+        let reply: RESPValue
+        do throws(DataCommandError) { reply = try await service.execute(.operation(.type(key: key)), origin: .browser, context: context).reply } catch {
+            return .failed(KeyIndexError(code: error.code, message: Self.describe(error, command: "TYPE")))
+        }
+        let presence: KeyPresence
+        switch reply {
+        // `none`: deleted or expired elsewhere since SCAN listed it.
+        case .simpleString(let name), .bulkString(let name): presence = KeyType(typeName: name).map(KeyPresence.exists) ?? .missing
+        case .error(let text), .blobError(let text): return .failed(Self.serverError(text))
+        default: return .failed(Self.malformedType)
+        }
+        if epoch == scanEpoch, let index = index(of: key) {
+            updateMetadata(at: index) { entry in
+                switch presence {
+                case .exists(let type):
+                    entry.type = type
+                    // Recreated since a PTTL found it gone: it is back, and its TTL is unknown again.
+                    if entry.expiry == .gone { entry.expiry = .unknown; entry.isStale = false }
+                default: entry.expiry = .gone; entry.isStale = true
+                }
+            }
+        }
+        return presence
+    }
+
+    /// "Remove from List" for a missing key (FR-KB12): drops it from the loaded keys without touching the server or
+    /// the scan's cursor. Later keys move down one index, so the generation changes and the list re-reads its rows.
+    /// O(loaded keys) — the arena, the dedup table and the tree are rebuilt — which is fine for one user action.
+    @discardableResult
+    public func remove(key: Data) -> Bool {
+        guard let removed = index(of: key) else { return false }
+        let bytes = range(at: removed)
+        arena.removeSubrange(bytes)
+        ends.remove(at: removed)
+        for later in removed..<ends.count { ends[later] -= bytes.count }
+        metadata.remove(at: removed)
+        var moved: [Int: Int64] = [:]
+        for (index, size) in sizes where index != removed { moved[index > removed ? index - 1 : index] = size }
+        sizes = moved
+        rehash(capacity: slots.count)
+        treeBuild += 1
+        tree = NamespaceTree(separator: tree.separator, build: treeBuild)
+        withKeyBytes { tree.extend(with: $0) }
+        generation += 1
+        return true
     }
 
     // MARK: - Local filter
@@ -657,10 +754,10 @@ public actor KeyIndex {
         return .failure(malformed)
     }
 
-    private static let malformed = KeyIndexError(code: "PROTOCOL_ERROR", message: "The server's SCAN reply wasn't a cursor and a key list.")
-    private static let malformedType = KeyIndexError(code: "PROTOCOL_ERROR", message: "The server's TYPE reply wasn't a type name.")
+    static let malformed = KeyIndexError(code: "PROTOCOL_ERROR", message: "The server's SCAN reply wasn't a cursor and a key list.")
+    static let malformedType = KeyIndexError(code: "PROTOCOL_ERROR", message: "The server's TYPE reply wasn't a type name.")
 
-    private static func serverError(_ text: Data) -> KeyIndexError {
+    static func serverError(_ text: Data) -> KeyIndexError {
         let message = String(decoding: text, as: UTF8.self)
         return KeyIndexError(code: message.hasPrefix("NOPERM") ? "PERMISSION_DENIED" : "SERVER_ERROR", message: message)
     }
@@ -672,7 +769,7 @@ public actor KeyIndex {
         }
     }
 
-    private static func describe(_ error: DataCommandError, command: String) -> String {
+    static func describe(_ error: DataCommandError, command: String) -> String {
         switch error {
         case .refused(.readOnly(let message)), .refused(.blocked(let message)): return message
         case .refused: return "Keel's safety policy refused \(command)."

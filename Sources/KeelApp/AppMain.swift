@@ -78,6 +78,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func exportConnections(_ sender: Any?) { Task { await transfer?.exportConnections() } }
     /// ⌘F: the key window's filter field takes focus (FR-KB05).
     @objc private func focusKeyFilter(_ sender: Any?) { NotificationCenter.default.post(name: KeyListCommands.focusFilterNotification, object: NSApp.keyWindow) }
+    /// ⌘R: the key window's browser rescans (FR-KB09).
+    @objc private func refreshKeys(_ sender: Any?) { NotificationCenter.default.post(name: KeyListCommands.refreshNotification, object: NSApp.keyWindow) }
+    /// ⌥⌘0…⌥⌘9: the key window's browser switches to the item's database (FR-KB08).
+    @objc private func selectDatabase(_ sender: NSMenuItem) {
+        NotificationCenter.default.post(name: KeyListCommands.selectDatabaseNotification, object: NSApp.keyWindow, userInfo: [KeyListCommands.databaseKey: sender.tag])
+    }
 
     private func buildMenus() {
         let menu = NSMenu()
@@ -98,6 +104,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let toggle = viewMenu.addItem(withTitle: "Toggle Tree / Flat", action: KeyListCommands.toggleMode, keyEquivalent: "t")
         toggle.keyEquivalentModifierMask = [.command, .shift]
         viewMenu.addItem(withTitle: "Filter Keys", action: #selector(focusKeyFilter(_:)), keyEquivalent: "f").target = self
+        viewMenu.addItem(withTitle: "Refresh", action: #selector(refreshKeys(_:)), keyEquivalent: "r").target = self
+        let databaseItem = viewMenu.addItem(withTitle: "Database", action: nil, keyEquivalent: "")
+        let databaseMenu = NSMenu(title: "Database")
+        for database in 0...9 {
+            let item = databaseMenu.addItem(withTitle: "db\(database)", action: #selector(selectDatabase(_:)), keyEquivalent: String(database))
+            item.keyEquivalentModifierMask = [.command, .option]; item.target = self; item.tag = database
+        }
+        databaseItem.submenu = databaseMenu
         viewItem.submenu = viewMenu
         let windowItem = NSMenuItem(); menu.addItem(windowItem)
         let windowMenu = NSMenu(title: "Window")
