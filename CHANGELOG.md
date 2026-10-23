@@ -40,3 +40,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
   sanitized last stderr line, a socket that isn't ready in time `TIMEOUT` (tunnel). Signals go to ssh's own process
   group only while it is still the same process; quitting terminates every tunnel and the next launch cleans up
   tunnels a crashed run left behind (KEEL-009).
+- SSH prompts without a terminal: a tunnel's ssh asks through `keel-askpass`, which answers ssh's first password
+  prompt from the host's saved password (bound to the host's connection revision) and shows every other prompt —
+  unknown or changed host key, key passphrase, one-time code, a second password prompt — in a sheet with ssh's own
+  text. Host keys need a click on **Accept**; **Reject** (or 90 s without an answer) fails the connection with "Host
+  key not accepted". Only the bundled helper whose parent is that tunnel's ssh is answered (KEEL-010).

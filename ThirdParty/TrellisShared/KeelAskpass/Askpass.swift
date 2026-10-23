@@ -2,23 +2,42 @@ import Darwin
 import Foundation
 
 /// Wire contract between the app's askpass broker and the `keel-askpass` helper (02 Architecture → Connections).
-/// One request per connection: the nonce line; one reply: `P` + password bytes, or `I`.
+/// One request per connection: the header line `<nonce> <kind> <byte count>\n`, then ssh's prompt text (KEEL-010).
+/// One reply: `P` + answer bytes, `D` (declined: fail the prompt) or `I` (not answered here: ask on the terminal).
 public enum AskpassProtocol {
     /// Not `KEEL_`-prefixed: that prefix is reserved for Keel's own configuration.
     public static let socketVariable = "SSH_ASKPASS_KEEL_SOCKET"
     public static let nonceVariable = "SSH_ASKPASS_KEEL_NONCE"
     public static let helperName = "keel-askpass"
+    /// The header line, newline included.
     public static let requestLimit = 128
+    /// ssh's prompt text; a host-key prompt is a few hundred bytes, a longer one is cut here.
+    public static let promptLimit = 4096
     public static let replyLimit = 4096
     public static let password: UInt8 = 0x50  // "P"
     public static let interactive: UInt8 = 0x49  // "I"
+    public static let declined: UInt8 = 0x44  // "D"
 
-    public static func request(nonce: String) -> Data { Data("\(nonce)\n".utf8) }
+    public struct Header: Equatable, Sendable {
+        public var nonce: String
+        public var kind: AskpassPrompt
+        public var length: Int
+        public init(nonce: String, kind: AskpassPrompt, length: Int) { self.nonce = nonce; self.kind = kind; self.length = length }
+    }
 
-    public static func nonce(from request: Data) -> String? {
-        guard request.count <= requestLimit, request.last == 0x0A else { return nil }
-        let nonce = String(decoding: request.dropLast(), as: UTF8.self)
-        return isValidNonce(nonce) ? nonce : nil
+    public static func request(nonce: String, kind: AskpassPrompt = .password, prompt: String = "") -> Data {
+        let text = Data(prompt.utf8.prefix(promptLimit))
+        return Data("\(nonce) \(kind.code) \(text.count)\n".utf8) + text
+    }
+
+    /// Parses a complete header line; nil for anything malformed, so the broker answers nothing.
+    public static func header(from line: Data) -> Header? {
+        guard line.count <= requestLimit, line.last == 0x0A else { return nil }
+        let fields = String(decoding: line.dropLast(), as: UTF8.self).split(separator: " ", omittingEmptySubsequences: false)
+        guard fields.count == 3, isValidNonce(String(fields[0])), let kind = AskpassPrompt(code: fields[1]), let length = Int(fields[2]),
+            String(length) == fields[2], (0...promptLimit).contains(length)
+        else { return nil }
+        return Header(nonce: String(fields[0]), kind: kind, length: length)
     }
 
     public static func makeNonce() -> String {
@@ -53,11 +72,32 @@ public enum AskpassPrompt: Equatable, Sendable {
         if text.hasSuffix("password:"), !text.contains("new password"), !text.contains("passphrase") { return .password }
         return .typed(echo: false)
     }
+
+    /// One letter on the wire.
+    var code: String {
+        switch self {
+        case .password: return "P"
+        case .typed(let echo): return echo ? "E" : "H"
+        case .confirm: return "C"
+        case .notice: return "N"
+        }
+    }
+
+    init?(code: Substring) {
+        switch code {
+        case "P": self = .password
+        case "E": self = .typed(echo: true)
+        case "H": self = .typed(echo: false)
+        case "C": self = .confirm
+        case "N": self = .notice
+        default: return nil
+        }
+    }
 }
 
-/// The helper ssh runs as `SSH_ASKPASS`. Anything it cannot answer from the broker is
-/// asked on the controlling terminal, so ssh's prompts keep working; with no terminal
-/// (Keel's tunnels) the prompt fails closed until the prompt relay (KEEL-010) takes it.
+/// The helper ssh runs as `SSH_ASKPASS`. Every prompt goes to the broker first: it answers a password prompt once from
+/// the Keychain and relays every other prompt to the person in a sheet (KEEL-010). A prompt the broker doesn't take
+/// (`I`, or no broker) is asked on the controlling terminal; Keel's tunnels have none, so it fails closed.
 public struct AskpassHelper {
     public var arguments: [String]
     public var environment: [String: String]
@@ -70,7 +110,23 @@ public struct AskpassHelper {
 
     public func run() -> Int32 {
         let prompt = arguments.count > 1 ? arguments[1] : ""
-        switch AskpassPrompt.classify(prompt, kind: environment["SSH_ASKPASS_PROMPT"]) {
+        let kind = AskpassPrompt.classify(prompt, kind: environment["SSH_ASKPASS_PROMPT"])
+        if var reply = broker(prompt, kind: kind) {
+            defer { reply.resetBytes(in: 0..<reply.count) }
+            switch reply.first {
+            case AskpassProtocol.password:
+                // ssh reads a confirm answer from the exit status only.
+                if kind == .confirm { return reply.dropFirst() == Data("yes".utf8) ? 0 : 1 }
+                if kind == .notice { return 0 }
+                write(reply.dropFirst() + Data([0x0A]))
+                return 0
+            case AskpassProtocol.declined:
+                return kind == .notice ? 0 : 1
+            default:
+                break  // `I`: not answered by the broker, ask on the terminal below.
+            }
+        }
+        switch kind {
         case .notice:
             terminal.show(prompt)
             return 0
@@ -78,18 +134,18 @@ public struct AskpassHelper {
             guard let answer = terminal.ask(prompt + " (yes/no) ", echo: true) else { return 1 }
             return answer.trimmingCharacters(in: .whitespaces).lowercased() == "yes" ? 0 : 1
         case .password:
-            if let socket = environment[AskpassProtocol.socketVariable], let nonce = environment[AskpassProtocol.nonceVariable],
-                AskpassProtocol.isValidNonce(nonce), var reply = exchange(socket, AskpassProtocol.request(nonce: nonce)),
-                reply.first == AskpassProtocol.password
-            {
-                write(reply.dropFirst() + Data([0x0A]))
-                reply.resetBytes(in: 0..<reply.count)
-                return 0
-            }
             return typed(prompt, echo: false)
         case .typed(let echo):
             return typed(prompt, echo: echo)
         }
+    }
+
+    /// The broker's reply, or nil without broker variables or on any failure.
+    private func broker(_ prompt: String, kind: AskpassPrompt) -> Data? {
+        guard let socket = environment[AskpassProtocol.socketVariable], let nonce = environment[AskpassProtocol.nonceVariable],
+            AskpassProtocol.isValidNonce(nonce)
+        else { return nil }
+        return exchange(socket, AskpassProtocol.request(nonce: nonce, kind: kind, prompt: prompt))
     }
 
     private func typed(_ prompt: String, echo: Bool) -> Int32 {
@@ -102,7 +158,7 @@ public struct AskpassHelper {
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { return nil }
         defer { close(fd) }
-        var timeout = timeval(tv_sec: 120, tv_usec: 0)  // Touch ID may be on screen meanwhile.
+        var timeout = timeval(tv_sec: 120, tv_usec: 0)  // Touch ID or a relayed prompt (at most 90 s) may be on screen meanwhile.
         setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
         var one: Int32 = 1
         setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))

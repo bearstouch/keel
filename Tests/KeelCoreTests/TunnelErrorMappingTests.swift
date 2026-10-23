@@ -27,6 +27,16 @@ final class TunnelErrorMappingTests: XCTestCase {
         XCTAssertEqual(ConnectionFailure(tunnel: .exited(TunnelExit(status: .signaled(9), lastErrorLine: nil)), destination: "ops").message, "ssh to ops was stopped by signal 9.")
     }
 
+    /// KEEL-010 AC2: rejecting ssh's host-key prompt fails the connection with "Host key not accepted".
+    func testRejectedHostKeyIsReportedAsNotAccepted() {
+        let exit = TunnelExit(status: .exited(255), lastErrorLine: "Host key verification failed.")
+        let failure = ConnectionFailure(tunnel: .hostKeyNotAccepted(exit), destination: "bastion")
+        XCTAssertEqual(failure.category, .tunnelFailed)
+        XCTAssertEqual(failure.message, "Host key not accepted for bastion.")
+        XCTAssertTrue(failure.suggestion.contains("fingerprint"))
+        XCTAssertEqual(failure.tunnelExit, exit)
+    }
+
     func testOtherTunnelErrors() {
         let timeout = ConnectionFailure(tunnel: .timeout(.seconds(10)), destination: "ops")
         XCTAssertEqual(timeout.category, .timeout)

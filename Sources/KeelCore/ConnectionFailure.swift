@@ -112,6 +112,10 @@ public struct ConnectionFailure: Error, Equatable, Sendable, CustomStringConvert
             self.init(category: .tunnelFailed, message: "Couldn't create Keel's private folder for tunnel sockets.", suggestion: "Check the permissions of your temporary folder, then try again.")
         case .shutDown:
             self.init(category: .tunnelFailed, message: "The SSH tunnel was closed because Keel is quitting.", suggestion: "Open the connection again.")
+        case .hostKeyNotAccepted(let exit):
+            self.init(
+                category: .tunnelFailed, message: "Host key not accepted for \(destination).",
+                suggestion: "Connect again to review the fingerprint, or check the host's entry in ~/.ssh/known_hosts.", tunnelExit: exit)
         }
     }
 

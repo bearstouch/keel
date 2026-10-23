@@ -8,10 +8,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let arguments: LaunchArguments
     private let stateDirectory: URL
     private var window: NSWindow?
+    /// ssh's prompts other than a saved password, shown in a sheet over the main window (FR-CN07).
+    let promptRelay = PromptRelay()
+    /// Answers `keel-askpass`; nil when the helper isn't built or bundled. Opens its socket on the first tunnel.
+    let askpass: AskpassBroker?
     /// Every SSH tunnel of this run; sessions take it from here. Creates nothing until the first tunnel opens.
-    let tunnels = TunnelManager()
+    let tunnels: TunnelManager
+    private var prompts: SSHPromptCenter?
 
-    init(arguments: LaunchArguments, stateDirectory: URL) { self.arguments = arguments; self.stateDirectory = stateDirectory }
+    init(arguments: LaunchArguments, stateDirectory: URL) {
+        self.arguments = arguments; self.stateDirectory = stateDirectory
+        let relay = promptRelay
+        askpass = Bundle.main.executableURL.flatMap { AskpassHelperLocation.find(executable: $0) }.map { AskpassBroker(helperPath: $0, relay: relay) }
+        tunnels = TunnelManager(askpass: askpass)
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Keel's tabs belong to its own model (MAC-05), never to macOS automatic window tabbing.
@@ -19,7 +29,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // ssh processes a crashed or killed run left behind (NFR-RS05); off the main thread, it only reads small files.
         Task.detached(priority: .utility) { StaleTunnelCleanup().run() }
         buildMenus()
-        let window = MainWindow.make()
+        let prompts = SSHPromptCenter(relay: promptRelay)
+        self.prompts = prompts
+        Task { await prompts.attach() }
+        let window = MainWindow.make(prompts: prompts)
         window.center()
         window.makeKeyAndOrderFront(nil)
         self.window = window
@@ -30,8 +43,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// No ssh outlives the app (AC3): quitting waits for every tunnel's process group to be terminated (at most ~1 s).
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        Task { [tunnels] in
+        Task { [tunnels, askpass] in
             await tunnels.shutdown()
+            askpass?.stop()
             NSApp.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater
