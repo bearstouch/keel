@@ -21,6 +21,12 @@ public enum DataOperation: Sendable, Equatable {
     case objectEncoding(key: Data)
     /// The editor's length for the metadata line (`STRLEN`, `HLEN`, `LLEN`, `SCARD`, `ZCARD`, `XLEN`).
     case length(key: Data, command: LengthCommand)
+    /// `HGETALL key`: a hash of up to 1,000 fields at once (FR-ED02).
+    case hashGetAll(key: Data)
+    /// `HSCAN key cursor COUNT n`: one page of a larger hash.
+    case hashScan(key: Data, cursor: Data, count: Int)
+    /// `HGET key field`: a save's guard read, and the overwrite check for a field not loaded yet.
+    case hashGet(key: Data, field: Data)
     // Writes
     case stringSet(key: Data, value: Data, keepTTL: Bool)
     case hashSetField(key: Data, field: Data, value: Data)
@@ -72,6 +78,9 @@ public enum DataOperation: Sendable, Equatable {
         case .info(let section): return [d("INFO"), section]
         case .objectEncoding(let key): return [d("OBJECT"), d("ENCODING"), key]
         case .length(let key, let command): return [d(command.rawValue), key]
+        case .hashGetAll(let key): return [d("HGETALL"), key]
+        case .hashScan(let key, let cursor, let count): return [d("HSCAN"), key, cursor, d("COUNT"), d(String(count))]
+        case .hashGet(let key, let field): return [d("HGET"), key, field]
         case .stringSet(let key, let value, let keepTTL): return [d("SET"), key, value] + (keepTTL ? [d("KEEPTTL")] : [])
         case .hashSetField(let key, let field, let value): return [d("HSET"), key, field, value]
         case .hashDeleteFields(let key, let fields): return [d("HDEL"), key] + fields
@@ -252,7 +261,8 @@ public actor DataCommandService {
                 if case .error = watched { return watched }
                 for (read, expected) in zip(watch.reads, watch.expected) {
                     let reply = try await send(read.arguments)
-                    guard reply == expected, !Self.isError(reply) else {
+                    // RESP2 and RESP3 spell a missing value differently (`$-1`, `_`): both mean "absent".
+                    guard reply == expected || (reply.isNull && expected.isNull), !Self.isError(reply) else {
                         await unwatch()
                         if Self.isError(reply) { return reply }
                         throw .conflict

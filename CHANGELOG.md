@@ -132,6 +132,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - String editor: values up to 1 MiB open whole; larger ones show their first 1 MiB as "Partial (1 MiB of 2 MiB)",
   read-only until **Load all** (up to 64 MiB); saving sends `SET … KEEPTTL` inside `WATCH`/`MULTI`/`EXEC`, so the TTL
   is kept, and an unchanged value sends nothing (KEEL-029).
+- Hash editor: a Field / Value table sorted by field with a local filter; hashes up to 1,000 fields load with
+  `HGETALL`, larger ones page with `HSCAN … COUNT 500` and **Load more** ("Showing 1–500 of N"). Add, edit (in the
+  value viewer), rename and delete fields; adding or renaming onto an existing field asks first. A save runs its
+  `HSET`s and `HDEL` in one `MULTI`, guarded per touched field, so a rename is all or nothing (KEEL-030).
 
 ### Removed
 

@@ -107,6 +107,8 @@ struct EditorShell: View {
                     if let partial = session.partial { PartialNotice(session: session, partial: partial) }
                     ValueViewerPanel(model: session.viewer)
                 }
+            } else if session.type == .hash, session.binding != nil, session.loaded != nil {
+                HashEditorView(session: session)
             } else if session.binding == nil {
                 Notice(type: session.type)
             }

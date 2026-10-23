@@ -196,9 +196,10 @@ final class StringEditorTests: XCTestCase {
         XCTAssertEqual(server.commands.count, before, "nothing sent")
     }
 
-    func testOnlyStringsHaveAnEditorYet() {
+    func testOnlyBuiltEditorsAreOffered() {
         XCTAssertNotNil(EditorBinding.editor(for: .string))
-        XCTAssertNil(EditorBinding.editor(for: .hash))
+        XCTAssertNotNil(EditorBinding.editor(for: .hash))
+        XCTAssertNil(EditorBinding.editor(for: .list))
         XCTAssertNil(EditorBinding.editor(for: .other))
     }
 }

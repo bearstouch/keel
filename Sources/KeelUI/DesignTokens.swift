@@ -16,6 +16,11 @@ enum Tokens {
     /// The key filter and db picker: like `field` in light, a step darker in dark (08 Design).
     static let soft = Color(light: 0xF1F4F8, dark: 0x2C2C2E)
     static let hair = Color(light: 0xE3E8EE, dark: 0x38383A)
+    /// Table rows (hash fields).
+    static let hairSoft = Color(light: 0xEEF2F6, dark: 0x2C2C2E)
+    static let selection = Color(light: 0xFCEAE8, dark: 0x3D2826)
+    /// A row with an unsaved edit.
+    static let changedRow = Color(light: 0xFDF3F2, dark: 0x2E2423)
     /// The tab bar's strip under the toolbar.
     static let tabBar = Color(light: 0xF6F8FB, dark: 0x29292B)
     /// The selected segment of the mode switch (on a `soft` track).

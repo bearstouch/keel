@@ -50,21 +50,12 @@ public enum StringEditor {
     }
 
     private static func strlen(_ key: Data, _ service: DataCommandService, _ context: DataContext) async throws(DataCommandError) -> Int64 {
-        let reply = try await read(.length(key: key, command: .strlen), service, context)
-        guard case .integer(let length) = reply else { throw unexpected(reply) }
-        return length
+        try await EditorReads.integer(.length(key: key, command: .strlen), service, context, type: "string")
     }
 
     private static func read(_ operation: DataOperation, _ service: DataCommandService, _ context: DataContext) async throws(DataCommandError) -> RESPValue {
-        try await service.execute(.operation(operation), origin: .editor, context: context).reply
+        try await EditorReads.read(operation, service, context)
     }
 
-    /// A nil `GET` means the key went away after it was listed; a server error (`WRONGTYPE`, an ACL refusal) is shown as sent.
-    private static func unexpected(_ reply: RESPValue) -> DataCommandError {
-        switch reply {
-        case .error(let text), .blobError(let text): return .invalidRequest(String(decoding: text.prefix(512), as: UTF8.self))
-        case _ where reply.isNull: return .invalidRequest("The key no longer exists.")
-        default: return .invalidRequest("The server sent an unexpected reply for a string.")
-        }
-    }
+    private static func unexpected(_ reply: RESPValue) -> DataCommandError { EditorReads.unexpected(reply, type: "string") }
 }
