@@ -135,6 +135,8 @@ Both fonts are bundled ([MAC-19](07-macos-support.md#input-and-text)).
 
 Traffic lights; "Connections" heading with `+`; folder groups as small muted headings; one-line rows (label dot, name, link icon when connected); the Keel app icon at 24 px (its two-bar small-size form, [App icon](#app-icon)) and the "Keel" wordmark (Inter 13.5 / 600) at the bottom left.
 
+Profiles outside any folder come first, without a heading; folders follow in their saved order, an empty folder keeps its heading as a drop target. Clicking a heading collapses it, and a collapsed heading adds a small `muted` chevron (an expanded one shows none). Rows are 32 high, radius 7; the selected row is `sidebarSelection` with the name at 600. A profile without a label shows the empty `muted` ring; a failed one shows "Failed" in `danger`. Secondary actions live in the context menu (Connect, Connect in New Tab, Edit, Rename, Duplicate, Copy URL, Move To, Delete); dragging a row onto another row places it before that row, onto a heading at the end of that folder, onto "Connections" at the top level.
+
 ### Toolbar
 
 Connection name, db picker (`db0 ▾`), centered **Browser | Console | Info** switch, search icon (⌘K). Info adds the server version beside the name and a refresh button.

@@ -73,3 +73,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
   handshake (tunnel, TLS, AUTH, SELECT, PING, INFO) without saving anything and reports "✓ Connected" with server,
   version, mode and round trip, or the categorized error, in one line. Cancel writes nothing and wipes the password
   (KEEL-016).
+- Connections sidebar: top-level profiles and one-level folders in a soft red (light) or graphite (dark) sidebar,
+  one-line rows with label dot, name, link icon when connected and "Failed" when failed, host and port in the tooltip;
+  drag to reorder or refile profiles and folders, click a heading to collapse it, `+` for a new connection, and a
+  context menu with Connect, Edit, Rename, Duplicate, Copy URL (never the password), Move To and Delete. Double-click
+  or Return focuses the tab already open for that profile and database (⌥ opens a new one); order, folders and
+  collapse state persist across relaunch; VoiceOver reads "payments-prod, Production, connected" (KEEL-017).

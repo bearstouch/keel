@@ -19,10 +19,30 @@ As a user, I want my connections in folders in a quiet sidebar, so that I can fi
 
 ## Acceptance criteria
 
-- [ ] **AC1.** Moving a profile between folders and collapsing folders survive relaunch.
+- [x] **AC1.** Moving a profile between folders and collapsing folders survive relaunch.
 - [ ] **AC2.** VoiceOver reads name, label and status for each row.
-- [ ] **AC3.** Connecting from the sidebar focuses an existing tab for the same profile and db.
+- [x] **AC3.** Connecting from the sidebar focuses an existing tab for the same profile and db.
 - [ ] **AC4.** The sidebar matches the `Sidebar` board in both themes (manual design review).
+
+**Verification (KEEL-017).** Observed in `SidebarModelTests`, `SidebarModelBehaviorTests` and `SidebarModelReviewTests`
+(`KeelUITests`).
+- AC1: `testDragReorderPersists` reorders within a folder, moves profiles between folders and onto a heading, reorders
+  folders, then opens a fresh `ProfileStore` on the same folder and sees the same groups and order;
+  `testGroupsAndOrderFromStore` does the same for a collapsed folder. Foreign text drops and no-op drops write nothing.
+- AC2 (**pending** manual VoiceOver pass): every row is one accessibility element labeled "payments-prod, Production,
+  connected" (`testAccessibilityLabelIncludesStatus` covers connected, failed, not connected, no label and a renamed
+  label), with the host in the hint, button and selected traits, and an "Open in New Tab" action; folder headings read
+  "<name> folder" with an expanded / collapsed value. VoiceOver in the running app was not exercised.
+- AC3: `testOpenFocusesExistingTab` opens a profile on its database, opens it again and gets the same tab focused;
+  ⌥ (newTab) opens another; Return opens the keyboard selection, never one hidden in a collapsed folder.
+- AC4 (**pending** manual design review): offscreen renders of `SidebarView` in light and dark were compared with the
+  `Sidebar` board (232 wide, 52 px traffic-light band, muted group headings, 32 px rows, `sidebarSelection`, link icon,
+  mark and wordmark); the review in the running app with Inter / JetBrains Mono bundled (KEEL-049) is not done.
+
+Known limits: opening from the sidebar adds or focuses a tab in `ConnectionTabs`, an in-memory registry; the actual
+connect, the tab bar and `windows.json` arrive with KEEL-020 / KEEL-026, so until then no row shows the link icon or
+"Failed" in the app. Search is the ⌘K palette (KEEL-048). Tabs of a profile deleted outside the sidebar (sheet, agent)
+are left to KEEL-026.
 
 ## Unit tests
 

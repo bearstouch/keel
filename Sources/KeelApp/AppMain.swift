@@ -40,7 +40,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { [profiles] in _ = await profiles.load() }
         let connections = ConnectionSheetPresenter(store: profiles, tester: ConnectionTester(tunnels: tunnels))
         self.connections = connections
-        let window = MainWindow.make(prompts: prompts, connections: connections)
+        let sidebar = SidebarModel(store: profiles, tabs: ConnectionTabs(), sheets: connections)
+        let window = MainWindow.make(prompts: prompts, connections: connections, sidebar: sidebar)
         window.center()
         window.makeKeyAndOrderFront(nil)
         self.window = window
