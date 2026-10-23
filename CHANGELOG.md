@@ -84,3 +84,6 @@ and versions follow [Semantic Versioning](https://semver.org/).
   it as a host whose destination is the alias. **Add…** / **Edit…** open a host editor with an optional SSH password
   saved in the Keychain (`Keel SSH Host`), never shown again, and an optional "Require Touch ID" that, when declined,
   sends ssh's password prompt to the person instead. Test Connection uses the saved password for saved hosts (KEEL-018).
+- File → **Import Connections…** / **Export Connections…**: profiles and folders as versioned JSON without any secret
+  or secret flag; import previews counts and collisions with **Skip existing** (preselected), **Replace existing** or
+  **Keep both**, applies in one commit (a failure changes nothing), and refuses files from a newer Keel (KEEL-019).

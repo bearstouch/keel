@@ -139,6 +139,33 @@ takes the host.
 - Values: single-key export to a file (FR-ED15). Multi-key export/import is P1.
 - Importers for other clients (RedisInsight, Another Redis Desktop Manager, Medis) are P2; each must map only the fields it supports and list what it leaves out, and never import passwords into files.
 
+### Profiles export file
+
+File → **Export Connections…** writes one JSON object (`Keel Connections.json`, pretty-printed, sorted keys, at most 4 MiB):
+`format` (`"keel-profiles"`), `schemaVersion` (integer, currently 1), `folders` (`id`, `name`, in display order) and
+`profiles` (`id`, optional `folderID`, `settings` — exactly the editor's `ConnectionSettings`, in display order).
+Nothing else: no password, passphrase, token, client identity, `hasPassword`, `hasTLSSecret`, revisions or collapse
+state. IDs are kept, so a re-import recognises the records it already holds. A saved-SSH-host tunnel keeps the host's
+ID; on another Mac it resolves only if that host exists there. Export is refused while `connections.json` awaits
+recovery or is read-only, so an empty or backup view never overwrites a good export.
+
+File → **Import Connections…** reads the file off the main actor and checks, before anything is shown:
+- a missing or different `format`, or `schemaVersion` < 1 → "This file isn't a Keel connections export.";
+- a higher `schemaVersion` → "This file was exported by a newer version of Keel (format N). Update Keel to import it."
+  (the version is read before the body, so unknown new fields never turn into a damaged-file error);
+- more than 4 MiB → too large; any malformed record, repeated ID, folder reference outside the file or setting that
+  fails the profile editor's validation → "This export is damaged (field), so nothing was imported."
+
+The preview sheet then shows the counts ("3 connections and 1 folder."), the saved records whose IDs collide (at most
+three named), and — only when there are collisions — the policy: **Skip existing** (preselected; never changes a saved
+record), **Replace existing** (saved settings, folder and folder name take the file's values; a changed connection or
+weakened transport removes the saved password, as an edit does; the TLS identity stays) or **Keep both** (the
+imported profile is added with a new ID as "<name> (imported)"; folders are shared, never duplicated). New folders go
+after the saved ones, new profiles at the end of their folder, in file order. Import is one store commit: Keychain
+removals are staged and undone if the metadata write fails, so a failure leaves every profile, folder and Keychain
+item as it was and the sheet stays open with the reason. An import that changes nothing (Skip on a re-import)
+writes nothing and keeps the store revision.
+
 ## Dependencies
 
 | Dependency | Use | Policy |
