@@ -12,13 +12,13 @@ public struct KeyIndexConfiguration: Sendable, Equatable {
     public var pageSize: Int
     /// Loaded keys at which scanning stops with a notice; Continue raises it by this much again, up to `maximumLimit`.
     public var limit: Int
-    public var match: Data?
-    public var type: Data?
+    /// `MATCH` and `TYPE` for every page; a type SCAN can't express is checked per key (FR-KB05).
+    public var filter: KeyFilter
 
-    public init(pageSize: Int = defaultPageSize, limit: Int = defaultLimit, match: Data? = nil, type: Data? = nil) {
+    public init(pageSize: Int = defaultPageSize, limit: Int = defaultLimit, filter: KeyFilter = KeyFilter()) {
         self.pageSize = min(max(pageSize, 1), Self.maximumPageSize)
         self.limit = min(max(limit, 1), Self.maximumLimit)
-        self.match = match; self.type = type
+        self.filter = filter
     }
 }
 
@@ -156,8 +156,9 @@ public actor KeyIndex {
     private var mode = KeyPagingMode.manual
     private var inFlight = false
     private var pauseRequested = false
-    /// Bumped by `restart`, so a page still in flight for the previous scan is dropped when it lands.
-    private var generation = 0
+    /// Bumped by `restart`, so a page still in flight for the previous scan is dropped when it lands; the list reads it
+    /// to notice a restart even when more keys than before are loaded by the time it reloads.
+    public private(set) var generation = 0
 
     public init(
         service: DataCommandService, context: DataContext, configuration: KeyIndexConfiguration = KeyIndexConfiguration(), separator: NamespaceSeparator = .default
@@ -307,9 +308,10 @@ public actor KeyIndex {
         return mode == .auto ? await autoPage() : status
     }
 
-    /// Starts over with new filters (or the same ones, for Refresh): clears every key and drops any page in flight.
-    public func restart(match: Data? = nil, type: Data? = nil) {
-        configuration.match = match; configuration.type = type
+    /// Starts over: clears every key and drops any page in flight. A new filter replaces the current one (AC2);
+    /// without one the filter is kept, as Refresh wants (FR-KB09).
+    public func restart(filter: KeyFilter? = nil) {
+        if let filter { configuration.filter = filter }
         generation += 1
         arena = []; ends = []; metadata = []; overflow = []
         slots = ContiguousArray(repeating: 0, count: 1_024)
@@ -329,17 +331,22 @@ public actor KeyIndex {
         if ends.count >= limit { phase = .limitReached; return false }
         inFlight = true; phase = .scanning
         let scanGeneration = generation
-        let operation = DataOperation.scan(cursor: cursor, match: configuration.match, count: configuration.pageSize, type: configuration.type)
-        let result: Result<RESPValue, KeyIndexError>
+        let filter = configuration.filter
+        let operation = filter.scan(cursor: cursor, count: configuration.pageSize)
+        var result: Result<Page, KeyIndexError>
         do throws(DataCommandError) {
-            result = .success(try await service.execute(.operation(operation), origin: .browser, context: context).reply)
+            result = Self.parse(try await service.execute(.operation(operation), origin: .browser, context: context).reply)
         } catch {
-            result = .failure(KeyIndexError(code: error.code, message: Self.describe(error)))
+            result = .failure(KeyIndexError(code: error.code, message: Self.describe(error, command: "SCAN")))
+        }
+        // A type SCAN can't select is checked here, before the cursor moves: a failed check retries the same page.
+        if case .success(let page) = result, let wanted = filter.clientSideType, scanGeneration == generation {
+            result = await keys(page.keys, ofType: wanted, generation: scanGeneration).map { Page(cursor: page.cursor, keys: $0) }
         }
         // A restart while this page was in flight owns the state now; its own scan starts from cursor 0.
         guard scanGeneration == generation else { return false }
         inFlight = false
-        switch result.flatMap(Self.parse) {
+        switch result {
         case .failure(let error):
             phase = .failed(error)
             return false
@@ -367,6 +374,74 @@ public actor KeyIndex {
 
     private var isCursorDone: Bool { started && cursor == Data("0".utf8) }
 
+    /// TYPE checks in flight at once for a client-side type filter: enough to pipeline, bounded however large the page.
+    static let typeCheckWindow = 256
+
+    /// The page's keys whose `TYPE` matches, in page order. The `TYPE`s pipeline on the browser connection, at most
+    /// `typeCheckWindow` at a time; any failure fails the page, and a failure or a restart stops sending more.
+    /// Keys deleted since SCAN (`none`) are left out.
+    private func keys(_ page: [Data], ofType wanted: KeyTypeFilter, generation scanGeneration: Int) async -> Result<[Data], KeyIndexError> {
+        let replies = await withTaskGroup(of: (Int, Result<RESPValue, DataCommandError>).self) { group in
+            var replies = [Result<RESPValue, DataCommandError>?](repeating: nil, count: page.count)
+            var next = 0, stop = false
+            func send() {
+                guard !stop, next < page.count else { return }
+                let offset = next, key = page[offset]; next += 1
+                group.addTask { [service, context] in
+                    do throws(DataCommandError) {
+                        return (offset, .success(try await service.execute(.operation(.type(key: key)), origin: .browser, context: context).reply))
+                    } catch { return (offset, .failure(error)) }
+                }
+            }
+            for _ in 0..<Self.typeCheckWindow { send() }
+            for await (offset, reply) in group {
+                replies[offset] = reply
+                // Anything but a type name fails the page, and a restart drops it: either way, send no more.
+                switch reply {
+                case .success(.simpleString), .success(.bulkString): if scanGeneration != generation { stop = true }
+                default: stop = true
+                }
+                send()
+            }
+            return replies
+        }
+        var kept: [Data] = []
+        for (key, reply) in zip(page, replies) {
+            switch reply {
+            case .success(.simpleString(let name))?, .success(.bulkString(let name))?:
+                if KeyType(typeName: name) == wanted.keyType { kept.append(key) }
+            // Never sent after a stop; every sent reply was awaited, so the failure that stopped it is reported below.
+            case nil: continue
+            case .failure(let error)?: return .failure(KeyIndexError(code: error.code, message: Self.describe(error, command: "TYPE")))
+            case .success(.error(let text))?, .success(.blobError(let text))?: return .failure(Self.serverError(text))
+            case .success?: return .failure(Self.malformedType)
+            }
+        }
+        return .success(kept)
+    }
+
+    // MARK: - Local filter
+
+    /// Keys searched per call, so the first results of a local filter over a million keys show within the budget (AC3).
+    public static let localSearchChunk = 131_072
+
+    /// The loaded keys from `start` on whose bytes contain `query`, searching at most `chunk` keys. The caller asks
+    /// again from `searchedThrough` until it reaches `count`; pages loaded meanwhile are searched by the next call.
+    public func localMatches(_ query: LocalKeyQuery, from start: Int = 0, chunk: Int = localSearchChunk) -> LocalKeyMatches {
+        let lower = min(max(start, 0), ends.count), upper = min(lower + max(chunk, 1), ends.count)
+        guard !query.isEmpty else { return LocalKeyMatches(indices: Array(lower..<upper), searchedThrough: upper) }
+        var indices: [Int] = []
+        arena.withUnsafeBytes { arena in
+            var keyStart = lower == 0 ? 0 : ends[lower - 1]
+            for index in lower..<upper {
+                let keyEnd = ends[index]
+                if query.matches(UnsafeRawBufferPointer(rebasing: arena[keyStart..<keyEnd])) { indices.append(index) }
+                keyStart = keyEnd
+            }
+        }
+        return LocalKeyMatches(indices: indices, searchedThrough: upper)
+    }
+
     // MARK: - Storage
 
     /// Adds new keys until `room` new ones were added; duplicates take no room. Returns the keys left over.
@@ -390,7 +465,8 @@ public actor KeyIndex {
         guard !found else { return false }
         arena.append(contentsOf: key)
         ends.append(arena.count)
-        metadata.append(KeyMetadata())
+        // Under a type filter every key added has that type, so its badge needs no TYPE of its own.
+        metadata.append(KeyMetadata(type: configuration.filter.type?.keyType ?? .unknown))
         slots[slot] = UInt32(ends.count)
         // Keep the load factor under 3/4 so probes stay short.
         if ends.count * 4 > slots.count * 3 { rehash(capacity: slots.count * 2) }
@@ -441,9 +517,7 @@ public actor KeyIndex {
     /// `SCAN` answers `[cursor, [key, …]]` on RESP2 and RESP3; anything else is a server or protocol error.
     static func parse(_ reply: RESPValue) -> Result<Page, KeyIndexError> {
         switch reply {
-        case .error(let text), .blobError(let text):
-            let message = String(decoding: text, as: UTF8.self)
-            return .failure(KeyIndexError(code: message.hasPrefix("NOPERM") ? "PERMISSION_DENIED" : "SERVER_ERROR", message: message))
+        case .error(let text), .blobError(let text): return .failure(serverError(text))
         case .array(let items) where items.count == 2:
             guard let cursor = bytes(items[0]), !cursor.isEmpty, cursor.allSatisfy({ (0x30...0x39).contains($0) }) else { break }
             let list: [RESPValue]
@@ -464,6 +538,12 @@ public actor KeyIndex {
     }
 
     private static let malformed = KeyIndexError(code: "PROTOCOL_ERROR", message: "The server's SCAN reply wasn't a cursor and a key list.")
+    private static let malformedType = KeyIndexError(code: "PROTOCOL_ERROR", message: "The server's TYPE reply wasn't a type name.")
+
+    private static func serverError(_ text: Data) -> KeyIndexError {
+        let message = String(decoding: text, as: UTF8.self)
+        return KeyIndexError(code: message.hasPrefix("NOPERM") ? "PERMISSION_DENIED" : "SERVER_ERROR", message: message)
+    }
 
     private static func bytes(_ value: RESPValue) -> Data? {
         switch value {
@@ -472,13 +552,13 @@ public actor KeyIndex {
         }
     }
 
-    private static func describe(_ error: DataCommandError) -> String {
+    private static func describe(_ error: DataCommandError, command: String) -> String {
         switch error {
         case .refused(.readOnly(let message)), .refused(.blocked(let message)): return message
-        case .refused: return "Keel's safety policy refused SCAN."
+        case .refused: return "Keel's safety policy refused \(command)."
         case .invalidRequest(let message): return message
         case .connection(let failure): return failure.message
-        case .command(let error): return "The connection failed during SCAN (\(error.code))."
+        case .command(let error): return "The connection failed during \(command) (\(error.code))."
         }
     }
 }

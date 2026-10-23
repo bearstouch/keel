@@ -66,6 +66,8 @@ public final class KeyListDataSource: NSObject, ObservableObject {
     private let root = KeyListItem(child: .folder(.root))
     private var expanded: Set<NamespaceFolderID> = []
     private var keyCount = 0
+    /// The index's restart count at the last reload: a restart invalidates cached rows and local matches by index.
+    private var indexGeneration = 0
     /// Flat rows by key index with their stamp; cleared past `flatCacheLimit` so it never grows with the database.
     private var flatRows: [Int: (row: KeyListRow, stamp: Int)] = [:]
     /// Bumped by every `reload`, so content fetched for an older state is shown but refreshed.
@@ -77,6 +79,15 @@ public final class KeyListDataSource: NSObject, ObservableObject {
     private var selectedKeyBytes: Data?
     /// True while the model itself changes the views' selection, so the delegate doesn't echo it back.
     private var applyingSelection = false
+    /// The local filter's text as typed; empty when it's off (FR-KB05).
+    @Published public private(set) var localQuery = ""
+    /// Keys matching the local filter so far, in index order; nil when it's off. While on, the flat table lists
+    /// only these, whatever the mode, since a filtered tree would hide matches inside collapsed folders.
+    private(set) var localMatches: [Int]?
+    /// Keys `0..<localSearched` have been searched; the next chunk starts here.
+    private var localSearched = 0
+    /// Bumped by every new search; a chunk landing for an older one is dropped.
+    private var localSearchID = 0
 
     static let rowHeight: CGFloat = 32
     static let fetchMargin = 64
@@ -126,8 +137,12 @@ public final class KeyListDataSource: NSObject, ObservableObject {
         return column
     }
 
-    /// The view on screen for the current mode.
-    public var activeView: NSTableView { mode == .tree ? outlineView : tableView }
+    /// The view on screen: the flat table in flat mode or while the local filter is on, the outline otherwise.
+    public var activeView: NSTableView { showsTable ? tableView : outlineView }
+
+    private var showsTable: Bool { mode == .flat || localMatches != nil }
+    /// The layout on screen, which differs from `mode` while the local filter forces the flat table.
+    private var shownMode: Mode { showsTable ? .flat : .tree }
 
     /// Rows the active view lists: every visible tree row (expanded folders' children included), or every key.
     public var visibleRowCount: Int { activeView.numberOfRows }
@@ -141,6 +156,8 @@ public final class KeyListDataSource: NSObject, ObservableObject {
         let reloadStamp = stamp
         let status = await index.status
         let count = await index.count
+        // Read after the count: a restart between the two resets here, and the next reload re-reads the count.
+        let generation = await index.generation
         let rootChildren = await index.namespaceChildren(of: .root)
         var loaded: [NamespaceFolderID: [NamespaceChild]] = [:]
         for id in expanded { loaded[id] = await index.namespaceChildren(of: id) }
@@ -149,9 +166,13 @@ public final class KeyListDataSource: NSObject, ObservableObject {
         guard reloadStamp == stamp else { return }
 
         footer = KeyIndexFooter(status: status)
-        // Fewer keys than before means a restart: the cached names belong to other keys now.
-        if count < keyCount { flatRows.removeAll() }
-        keyCount = count
+        // After a restart the cached names belong to other keys, and earlier local matches point at other keys too,
+        // so the local search starts over. The index may already hold more keys than before by now.
+        if count < keyCount || generation != indexGeneration {
+            flatRows.removeAll()
+            if localMatches != nil { localMatches = []; localSearched = 0 }
+        }
+        keyCount = count; indexGeneration = generation
         root.setChildren(rootChildren)
         // Re-expand only folders still reachable from the root; IDs from an earlier tree drop out here. Collapsed
         // folders forget their children, which this reload didn't refresh.
@@ -177,6 +198,72 @@ public final class KeyListDataSource: NSObject, ObservableObject {
             expandRestored(root)
         }
         applySelection()
+        // Pages loaded since the last search are searched now; a search still running is superseded and resumes here.
+        if localMatches != nil { await searchLocally() }
+    }
+
+    // MARK: - Local filter
+
+    /// The quick local filter (FR-KB05): substring over the loaded keys, ASCII case ignored, never sent to the server.
+    /// Matches show chunk by chunk, so the first ones appear long before a million keys are searched (AC3).
+    public func setLocalFilter(_ text: String) async {
+        guard text != localQuery else { return }
+        localQuery = text
+        let wasOn = localMatches != nil
+        localMatches = LocalKeyQuery(text).isEmpty ? nil : []
+        localSearched = 0
+        if wasOn != (localMatches != nil) { showActiveView() }
+        tableView.reloadData()
+        applySelection()
+        // Turning the filter off bumps the search ID so a chunk still in flight is dropped.
+        if localMatches != nil { await searchLocally() } else { localSearchID += 1 }
+    }
+
+    /// Searches from `localSearched` to the loaded count, one chunk per call to the index, showing matches as they come.
+    private func searchLocally() async {
+        localSearchID += 1
+        let searchID = localSearchID
+        let query = LocalKeyQuery(localQuery)
+        while localSearchID == searchID, localSearched < keyCount {
+            // Never past `keyCount`: keys the index loaded since the last reload aren't rows yet; the next reload resumes
+            // the search from here and finds them.
+            let chunk = await index.localMatches(query, from: localSearched, chunk: min(KeyIndex.localSearchChunk, keyCount - localSearched))
+            // A newer search or a cleared filter owns the list now.
+            // A restart since the last reload leaves fewer keys than `keyCount`: stop rather than spin; the reload
+            // that follows starts the search over.
+            guard localSearchID == searchID, localMatches != nil, chunk.searchedThrough > localSearched else { return }
+            localMatches?.append(contentsOf: chunk.indices)
+            localSearched = chunk.searchedThrough
+            withSelectionApplied { tableView.noteNumberOfRowsChanged() }
+            applySelection()
+        }
+    }
+
+    /// Puts the active view in the scroll view, keeping its focus.
+    private func showActiveView() {
+        guard scrollView.documentView !== activeView else { return }
+        let hadFocus = scrollView.documentView.map { $0.window?.firstResponder === $0 } ?? false
+        scrollView.documentView = activeView
+        activeView.sizeLastColumnToFit()
+        if hadFocus { activeView.window?.makeFirstResponder(activeView) }
+    }
+
+    /// The key a flat row shows: the row itself, or the row-th local match.
+    private func flatKey(atRow row: Int) -> Int? {
+        guard row >= 0 else { return nil }
+        if let localMatches { return row < localMatches.count ? localMatches[row] : nil }
+        return row < keyCount ? row : nil
+    }
+
+    /// The flat row showing `key`; matches are in index order, so a binary search finds it.
+    private func flatRow(ofKey key: Int) -> Int? {
+        guard let localMatches else { return key < keyCount ? key : nil }
+        var low = 0, high = localMatches.count
+        while low < high {
+            let mid = (low + high) / 2
+            if localMatches[mid] < key { low = mid + 1 } else { high = mid }
+        }
+        return low < localMatches.count && localMatches[low] == key ? low : nil
     }
 
     private func isSelectionValid() async -> Bool {
@@ -215,12 +302,9 @@ public final class KeyListDataSource: NSObject, ObservableObject {
 
     public func setMode(_ mode: Mode) async {
         guard mode != self.mode else { return }
-        let hadFocus = activeView.window?.firstResponder === activeView
         if mode == .flat { selectedFolder = nil }
         self.mode = mode
-        scrollView.documentView = activeView
-        activeView.sizeLastColumnToFit()
-        if hadFocus { activeView.window?.makeFirstResponder(activeView) }
+        showActiveView()
         await reveal()
     }
 
@@ -236,7 +320,7 @@ public final class KeyListDataSource: NSObject, ObservableObject {
 
     /// Makes the selected key visible: in the tree, expands its folders first.
     private func reveal() async {
-        if mode == .tree, let key = selectedKey {
+        if !showsTable, let key = selectedKey {
             var parent = root
             for folder in await index.namespaceAncestors(ofKey: key) {
                 guard let item = parent.item(for: .folder(folder)) else { break }
@@ -252,9 +336,9 @@ public final class KeyListDataSource: NSObject, ObservableObject {
     /// Shows the model's selection in the active view (nothing selected when it isn't visible).
     private func applySelection() {
         var row = -1
-        switch mode {
+        switch shownMode {
         case .flat:
-            if let key = selectedKey, key < tableView.numberOfRows { row = key }
+            if let key = selectedKey, let keyRow = flatRow(ofKey: key), keyRow < tableView.numberOfRows { row = keyRow }
         case .tree:
             if let target = selectedKey.map(NamespaceChild.key) ?? selectedFolder.map(NamespaceChild.folder), let item = treeItem(for: target) {
                 row = outlineView.row(forItem: item)
@@ -301,18 +385,12 @@ public final class KeyListDataSource: NSObject, ObservableObject {
 
     func child(atRow row: Int) -> NamespaceChild? {
         guard row >= 0 else { return nil }
-        switch mode {
-        case .flat: return row < keyCount ? .key(row) : nil
-        case .tree: return (outlineView.item(atRow: row) as? KeyListItem)?.child
-        }
+        return showsTable ? flatKey(atRow: row).map(NamespaceChild.key) : (outlineView.item(atRow: row) as? KeyListItem)?.child
     }
 
     /// The cached content of a row in the active view; nil until fetched.
     func row(at row: Int) -> KeyListRow? {
-        switch mode {
-        case .flat: return flatRows[row]?.row
-        case .tree: return (outlineView.item(atRow: row) as? KeyListItem)?.row
-        }
+        showsTable ? flatKey(atRow: row).flatMap { flatRows[$0]?.row } : (outlineView.item(atRow: row) as? KeyListItem)?.row
     }
 
     // MARK: - Content
@@ -337,19 +415,22 @@ public final class KeyListDataSource: NSObject, ObservableObject {
         let rows = max(visible.location - Self.fetchMargin, 0)..<min(visible.location + max(visible.length, 1) + Self.fetchMargin, view.numberOfRows)
         guard !rows.isEmpty else { return }
         let fetchStamp = stamp
-        switch mode {
+        switch shownMode {
         case .flat:
-            let missing = rows.filter { flatRows[$0]?.stamp != fetchStamp }
+            // The cache is by key, so rows keep their content when the local filter changes which row shows a key.
+            let missing = rows.compactMap(flatKey(atRow:)).filter { flatRows[$0]?.stamp != fetchStamp }
             guard !missing.isEmpty else { return }
             let entries = await index.namespaceEntries(missing.map(NamespaceChild.key), fullNames: true)
             if flatRows.count + entries.count > Self.flatCacheLimit { flatRows.removeAll(keepingCapacity: true) }
-            var changed = IndexSet()
             for entry in entries {
                 guard case .key(let key) = entry.child else { continue }
-                flatRows[key] = (KeyListRow(entry), fetchStamp); changed.insert(key)
+                flatRows[key] = (KeyListRow(entry), fetchStamp)
             }
-            // The user may have toggled views while the fetch was out; the other view reloads on its own.
-            if mode == .flat { tableView.reloadData(forRowIndexes: changed.filteredIndexSet { $0 < tableView.numberOfRows }, columnIndexes: [0]) }
+            // The user may have toggled views or changed the local filter while the fetch was out: redraw the rows that
+            // show a fetched key now; the other view reloads on its own.
+            guard showsTable else { return }
+            let changed = IndexSet(rows.filter { row in flatKey(atRow: row).map { flatRows[$0]?.stamp == fetchStamp } ?? false })
+            tableView.reloadData(forRowIndexes: changed.filteredIndexSet { $0 < tableView.numberOfRows }, columnIndexes: [0])
         case .tree:
             let missing = rows.compactMap { row in (outlineView.item(atRow: row) as? KeyListItem).map { (row, $0) } }.filter { $0.1.rowStamp != fetchStamp }
             guard !missing.isEmpty else { return }
@@ -362,9 +443,9 @@ public final class KeyListDataSource: NSObject, ObservableObject {
                 item.row = KeyListRow(entry); item.rowStamp = fetchStamp
                 // `row(forItem:)` is slow in a large outline; a row that moved while the fetch was out is redrawn when it
                 // scrolls back into view, since its content is cached on the item.
-                if mode == .tree, row < outlineView.numberOfRows, outlineView.item(atRow: row) as? KeyListItem === item { changed.insert(row) }
+                if !showsTable, row < outlineView.numberOfRows, outlineView.item(atRow: row) as? KeyListItem === item { changed.insert(row) }
             }
-            if mode == .tree { outlineView.reloadData(forRowIndexes: changed, columnIndexes: [0]) }
+            if !showsTable { outlineView.reloadData(forRowIndexes: changed, columnIndexes: [0]) }
         }
     }
 
@@ -471,11 +552,11 @@ extension KeyListDataSource: NSOutlineViewDataSource, NSOutlineViewDelegate {
 extension KeyListDataSource: NSTableViewDataSource, NSTableViewDelegate {
     public func numberOfRows(in tableView: NSTableView) -> Int {
         // NSOutlineView is an NSTableView too, but it asks its own data source methods.
-        tableView === self.tableView ? keyCount : 0
+        tableView === self.tableView ? localMatches?.count ?? keyCount : 0
     }
 
     public func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        let cached = flatRows[row]
+        let cached = flatKey(atRow: row).flatMap { flatRows[$0] }
         return cell(in: tableView, row: cached?.row, stale: cached?.stamp != stamp)
     }
 

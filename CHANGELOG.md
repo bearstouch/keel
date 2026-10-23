@@ -99,3 +99,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
   name, folder count or TTL and a text type badge, names fetched only for visible rows, View → Toggle Tree / Flat
   (⇧⌘T) keeping the selected key (the tree expands to reveal it), native keyboard navigation, a context menu to copy a
   key name, a redis-cli argument or a folder path, and VoiceOver labels with name, type and TTL (KEEL-022).
+- Key filters: a glob pattern sent as `SCAN … MATCH` (applied on Return, with a syntax help popover) and a type menu
+  sent as `SCAN … TYPE`; module types ("Other") are checked with a pipelined `TYPE` per key and the bar says so.
+  Changing a filter restarts the scan and clears the list at once; Refresh keeps it. The same field also filters the
+  loaded keys by substring, live and without the server, showing matches flat; View → Filter Keys (⌘F) focuses it
+  (KEEL-023).

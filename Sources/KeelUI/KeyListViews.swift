@@ -19,6 +19,9 @@ public final class KeyListTableView: NSTableView {
 public enum KeyListCommands {
     /// View → Toggle Tree / Flat (⇧⌘T), sent to the first responder.
     public static let toggleMode = #selector(KeyListOutlineView.toggleKeyListMode(_:))
+    /// View → Filter Keys (⌘F) posts this with the key window; that window's filter field takes focus. A notification
+    /// rather than the responder chain, so ⌘F works wherever the focus is in the window, the filter field included.
+    public static let focusFilterNotification = Notification.Name("com.bearstouch.keel.focusKeyFilter")
 }
 
 /// One 32 px row (08 Design → Key list): name in mono, then the muted count or TTL, then the type badge. Frames are set
@@ -137,19 +140,22 @@ struct KeyListHost: NSViewRepresentable {
     func updateNSView(_ view: NSScrollView, context: Context) {}
 }
 
-/// The key list with its one-line footer ("250,000 of 1.2M keys loaded · Load more"). The filter field above it
-/// arrives with KEEL-023; the browser that owns the scan (KEEL-025/026) calls `reload()` after each page.
+/// The key list with the filter field above it and its one-line footer ("250,000 of 1.2M keys loaded · Load more").
+/// The browser that owns the scan (KEEL-025/026) calls `reload()` after each page.
 public struct KeyListPane: View {
     @ObservedObject var dataSource: KeyListDataSource
+    /// The filter field's model; nil hides the field.
+    let filter: KeyFilterModel?
     /// Runs the footer's action (Load more, Continue, Retry) on the index; the pane reloads afterwards.
     let perform: (KeyIndexFooter.Action) async -> Void
 
-    public init(dataSource: KeyListDataSource, perform: @escaping (KeyIndexFooter.Action) async -> Void) {
-        self.dataSource = dataSource; self.perform = perform
+    public init(dataSource: KeyListDataSource, filter: KeyFilterModel? = nil, perform: @escaping (KeyIndexFooter.Action) async -> Void) {
+        self.dataSource = dataSource; self.filter = filter; self.perform = perform
     }
 
     public var body: some View {
         VStack(spacing: 0) {
+            if let filter { KeyFilterBar(model: filter) }
             KeyListHost(dataSource: dataSource)
             footer
         }

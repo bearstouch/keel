@@ -1,0 +1,37 @@
+import Foundation
+import XCTest
+
+@testable import KeelCore
+
+final class KeyFilterReviewTests: XCTestCase {
+    /// A page far larger than the TYPE window is checked in full, never with more than the window in flight.
+    func testClientSideTypeChecksAreBoundedAndComplete() async {
+        let keys = (0..<600).map { ("k:\($0)", $0.isMultiple(of: 3) ? "ReJSON-RL" : "hash") }
+        let fake = TypedKeyspace(pages: [keys])
+        let index = fake.index(KeyFilter(type: .other))
+        let status = await index.loadMore()
+        XCTAssertEqual(status.phase, .complete)
+        let count = await index.count
+        XCTAssertEqual(count, 200)
+        XCTAssertEqual(fake.commands.filter { $0.first == "TYPE" }.count, 600)
+    }
+
+    /// The first failed TYPE stops further checks, and the page reports that failure rather than the unsent keys.
+    func testFailedTypeCheckStopsSendingAndReportsTheFailure() async {
+        let keys = (0..<600).map { ("k:\($0)", "hash") }
+        let fake = TypedKeyspace(pages: [keys], typeError: "NOPERM this user has no permissions to run the 'type' command")
+        let index = fake.index(KeyFilter(type: .other))
+        let status = await index.loadMore()
+        guard case .failed(let error) = status.phase else { return XCTFail("\(status.phase)") }
+        XCTAssertEqual(error.code, "PERMISSION_DENIED")
+        XCTAssertLessThanOrEqual(fake.commands.filter { $0.first == "TYPE" }.count, KeyIndex.typeCheckWindow)
+    }
+
+    func testRestartBumpsTheGeneration() async {
+        let index = TypedKeyspace(pages: []).index()
+        let before = await index.generation
+        await index.restart()
+        let after = await index.generation
+        XCTAssertEqual(after, before + 1)
+    }
+}

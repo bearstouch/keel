@@ -13,6 +13,8 @@ enum Tokens {
     static let sidebarSelection = Color(light: 0xF4D2CD, dark: 0x3D2826)
     static let sidebarHair = Color(light: 0xF1DAD7, dark: 0x333335)
     static let field = Color(light: 0xF1F4F8, dark: 0x38383A)
+    /// The key filter and db picker: like `field` in light, a step darker in dark (08 Design).
+    static let soft = Color(light: 0xF1F4F8, dark: 0x2C2C2E)
     static let hair = Color(light: 0xE3E8EE, dark: 0x38383A)
     static let fg = Color(light: 0x18212F, dark: 0xE5E5E7)
     static let muted = Color(light: 0x4E5B6D, dark: 0xA1A1A6)
