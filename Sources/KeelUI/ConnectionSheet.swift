@@ -171,18 +171,15 @@ public struct ConnectionSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             Picker("Tunnel", selection: $model.tunnelKind) {
                 ForEach(ConnectionSheetModel.TunnelKind.allCases, id: \.self) { kind in
-                    // A saved host needs the SSH hosts library; with none saved the option is hidden.
-                    if kind != .savedHost || !model.sshHosts.isEmpty { Text(kind.rawValue).tag(kind) }
+                    // A saved host needs the SSH hosts library; without one the option is hidden (unless already chosen).
+                    if kind != .savedHost || model.hosts != nil || model.tunnelKind == .savedHost { Text(kind.rawValue).tag(kind) }
                 }
             }
             .pickerStyle(.segmented)
             switch model.tunnelKind {
             case .none: EmptyView()
             case .savedHost:
-                Picker("SSH host", selection: $model.tunnelHostID) {
-                    Text("Choose…").tag(UUID?.none)
-                    ForEach(model.sshHosts) { host in Text(host.name).tag(Optional(host.id)) }
-                }
+                if let hosts = model.hosts { HostPickerSection(sheet: model, hosts: hosts) } else { Text("SSH hosts aren't available.").foregroundStyle(Tokens.muted) }
             case .inline:
                 Grid(horizontalSpacing: 14, verticalSpacing: 12) {
                     GridRow {
@@ -272,7 +269,7 @@ public struct ConnectionSheet: View {
 // MARK: - Components
 
 /// A labeled field on `field` (36 high, radius 8). The visible label is the accessibility label.
-private struct SheetTextField: View {
+struct SheetTextField: View {
     let label: String
     var placeholder: String = ""
     @Binding var text: String
@@ -289,7 +286,7 @@ private struct SheetTextField: View {
     }
 }
 
-private struct FieldStyle: ViewModifier {
+struct FieldStyle: ViewModifier {
     let mono: Bool
 
     func body(content: Content) -> some View {
@@ -367,7 +364,7 @@ private struct SectionRow: View {
 }
 
 /// Footer buttons: Save on `accent` (600), Cancel on `field`; 34 high, radius 8.
-private struct SheetButtonStyle: ButtonStyle {
+struct SheetButtonStyle: ButtonStyle {
     let primary: Bool
     @Environment(\.isEnabled) private var isEnabled
 

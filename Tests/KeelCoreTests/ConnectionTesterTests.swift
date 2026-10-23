@@ -1,5 +1,6 @@
 import Foundation
 import KeelRESP
+import KeelSSH
 import XCTest
 
 @testable import KeelCore
@@ -105,6 +106,21 @@ final class ConnectionTesterTests: XCTestCase {
         guard case .failure(let failure) = result else { return XCTFail("Expected a failure") }
         XCTAssertEqual(failure.category, .tunnelFailed)
         XCTAssertTrue(connections.all.isEmpty)
+    }
+
+    /// FR-CN06: a saved host's password lookup reaches the tunnel launch; an inline destination never gets one.
+    func testSavedHostTunnelCarriesItsPasswordLookup() async throws {
+        let host = SavedHost(id: UUID(), draft: try HostDraft(name: "Bastion", destination: "bastion").validated(isRegularFile: { _ in true }), revision: 1)
+        let secret = Data("s3cret".utf8)
+        let tester = ConnectionTester(resolveSavedHost: { $0 == host.id ? host : nil }, savedHostPassword: { saved in saved.id == host.id ? { @Sendable in secret } : nil })
+        let settings = ConnectionSettings(name: "x", tunnel: .savedHost(id: host.id))
+        let resolved = try await tester.resolve(.savedHost(id: host.id), settings: settings)
+        XCTAssertEqual(resolved.destination, "bastion")
+        let lookup = try XCTUnwrap(resolved.savedPassword)
+        let value = await lookup()
+        XCTAssertEqual(value, secret)
+        let inline = try await tester.resolve(.inline(destination: "bastion", user: nil, port: nil, identityFile: nil), settings: settings)
+        XCTAssertNil(inline.savedPassword)
     }
 
     func testSubMillisecondRoundTripReadsLessThanOne() {

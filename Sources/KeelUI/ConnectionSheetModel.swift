@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import KeelCore
 import KeelSSH
@@ -45,7 +46,9 @@ public final class ConnectionSheetModel: ObservableObject {
 
     public let mode: Mode
     public let labels: [ProfileLabel]
-    public let sshHosts: [SavedHost]
+    /// The SSH host picker; nil without a host library (tests, previews), which hides the saved-host option.
+    public let hosts: HostPickerModel?
+    public var sshHosts: [SavedHost] { hosts?.saved ?? [] }
 
     // MARK: Fields, in sheet order
 
@@ -98,10 +101,25 @@ public final class ConnectionSheetModel: ObservableObject {
     private var lastURLText = ""
     /// What the last finished test ran with, so its line disappears as soon as a field changes.
     private var testedDraft: Draft?
+    private var hostChanges: AnyCancellable?
+    /// Bumped by every host choice, so an alias import that finishes late never overrides a later choice.
+    private(set) var hostChoice = 0
 
-    public init(mode: Mode, labels: [ProfileLabel] = ProfileLabel.defaults, sshHosts: [SavedHost] = [], tester: any ConnectionTesting, store: any ProfileSaving) {
-        self.mode = mode; self.labels = labels; self.sshHosts = sshHosts; self.tester = tester; self.store = store
+    public init(mode: Mode, labels: [ProfileLabel] = ProfileLabel.defaults, hosts: HostPickerModel? = nil, tester: any ConnectionTesting, store: any ProfileSaving) {
+        self.mode = mode; self.labels = labels; self.hosts = hosts; self.tester = tester; self.store = store
         if case .edit(let profile) = mode { load(profile.settings) }
+        // The collapsed tunnel row names the chosen host, so the sheet redraws when the host list changes.
+        hostChanges = hosts?.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+    }
+
+    /// Picks `entry` as the tunnel's SSH host; a `~/.ssh/config` alias is saved to the host library first.
+    /// nil clears the choice ("Choose…").
+    public func useHost(_ entry: HostPickerModel.Entry?) async {
+        hostChoice += 1
+        let choice = hostChoice
+        guard let entry else { tunnelHostID = nil; return }
+        guard let host = await hosts?.choose(entry), choice == hostChoice else { return }
+        tunnelKind = .savedHost; tunnelHostID = host.id
     }
 
     public var title: String { isEditing ? "Edit Connection" : "New Connection" }

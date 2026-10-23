@@ -10,13 +10,17 @@ public final class ConnectionSheetPresenter: ObservableObject {
     @Published public private(set) var model: ConnectionSheetModel?
     private let store: ProfileStore
     private let tester: any ConnectionTesting
-    private let sshHosts: @MainActor () async -> [SavedHost]
+    /// Keel's saved SSH hosts; nil leaves the tunnel section without the saved-host option.
+    private let hostLibrary: HostLibrary?
+    private let discover: HostPickerModel.Discover
     private var finished: AnyCancellable?
     /// Set while a sheet is being prepared, so a second ⌘N during the awaits can't build (and orphan) another one.
     private var presenting = false
 
-    public init(store: ProfileStore, tester: any ConnectionTesting, sshHosts: @escaping @MainActor () async -> [SavedHost] = { [] }) {
-        self.store = store; self.tester = tester; self.sshHosts = sshHosts
+    public init(
+        store: ProfileStore, tester: any ConnectionTesting, hostLibrary: HostLibrary? = nil, discover: @escaping HostPickerModel.Discover = HostPickerModel.discoverUserConfig
+    ) {
+        self.store = store; self.tester = tester; self.hostLibrary = hostLibrary; self.discover = discover
     }
 
     public func newConnection(folderID: UUID? = nil) { Task { await present(.create(folderID: folderID)) } }
@@ -34,8 +38,10 @@ public final class ConnectionSheetPresenter: ObservableObject {
         presenting = true
         defer { presenting = false }
         let labels = await store.labels
-        let hosts = await sshHosts()
-        let sheet = ConnectionSheetModel(mode: mode, labels: labels, sshHosts: hosts, tester: tester, store: store)
+        // Fresh per sheet: ~/.ssh/config and hosts.json are read again each time the sheet opens.
+        let hosts = hostLibrary.map { HostPickerModel(library: $0, discover: discover) }
+        await hosts?.reload()
+        let sheet = ConnectionSheetModel(mode: mode, labels: labels, hosts: hosts, tester: tester, store: store)
         finished = sheet.$outcome.compactMap { $0 }.sink { [weak self] _ in
             self?.model = nil; self?.finished = nil
         }

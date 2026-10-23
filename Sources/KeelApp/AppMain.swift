@@ -17,6 +17,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var prompts: SSHPromptCenter?
     /// The single owner of `connections.json` and the profiles' Keychain items.
     let profiles: ProfileStore
+    /// The single owner of `hosts.json` and the `Keel SSH Host` Keychain items (FR-CN06).
+    let sshHosts: HostLibrary
     private var connections: ConnectionSheetPresenter?
 
     init(arguments: LaunchArguments, stateDirectory: URL) {
@@ -25,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         askpass = Bundle.main.executableURL.flatMap { AskpassHelperLocation.find(executable: $0) }.map { AskpassBroker(helperPath: $0, relay: relay) }
         tunnels = TunnelManager(askpass: askpass)
         profiles = ProfileStore(directory: stateDirectory)
+        sshHosts = HostLibrary(storage: HostFileStorage(directory: stateDirectory), secrets: KeychainHostSecretStore())
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -38,7 +41,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { await prompts.attach() }
         // A file that needs recovery keeps the store read-only; Save then says so (the recovery choice is KEEL-055's).
         Task { [profiles] in _ = await profiles.load() }
-        let connections = ConnectionSheetPresenter(store: profiles, tester: ConnectionTester(tunnels: tunnels))
+        // An unreadable hosts.json is kept and the library stays read-only; the picker then says so on Save.
+        Task { [sshHosts] in _ = await sshHosts.load() }
+        let hosts = sshHosts
+        let tester = ConnectionTester(
+            tunnels: tunnels, resolveSavedHost: { id in await hosts.hosts.first { $0.id == id } },
+            // Touch ID (or the Mac password) is asked for inside the lookup; declining sends ssh's prompt to the person.
+            savedHostPassword: { hosts.savedPassword(for: $0, gate: LocalAuthenticationGate()) })
+        let connections = ConnectionSheetPresenter(store: profiles, tester: tester, hostLibrary: sshHosts)
         self.connections = connections
         let sidebar = SidebarModel(store: profiles, tabs: ConnectionTabs(), sheets: connections)
         let window = MainWindow.make(prompts: prompts, connections: connections, sidebar: sidebar)

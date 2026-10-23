@@ -52,24 +52,27 @@ public struct ConnectionTester: ConnectionTesting {
     public typealias MakeConnection = @Sendable (RedisEndpoint, TLSConfiguration?, RedisConnection.Options) -> RedisConnection
     /// Resolves a saved SSH host (KEEL-018's library); nil means it is gone.
     public typealias ResolveSavedHost = @Sendable (UUID) async -> SavedHost?
+    /// The saved SSH password lookup for one launch through a saved host (`HostLibrary.savedPassword(for:gate:)`).
+    public typealias SavedHostPassword = @Sendable (SavedHost) -> (@Sendable () async -> Data?)?
 
     public static let defaultConnectTimeout = Duration.seconds(10)
     public static let defaultCommandTimeout = Duration.seconds(30)
 
     private let tunnels: TunnelManager?
     private let resolveSavedHost: ResolveSavedHost
+    private let savedHostPassword: SavedHostPassword
     private let clientIdentity: @Sendable (UUID) -> TLSClientIdentity?
     private let readCAFile: @Sendable (String) throws(KnownCAError) -> Data
     private let makeConnection: MakeConnection
     private let detector: ServerDetector
 
     public init(
-        tunnels: TunnelManager? = nil, resolveSavedHost: @escaping ResolveSavedHost = { _ in nil },
+        tunnels: TunnelManager? = nil, resolveSavedHost: @escaping ResolveSavedHost = { _ in nil }, savedHostPassword: @escaping SavedHostPassword = { _ in nil },
         clientIdentity: @escaping @Sendable (UUID) -> TLSClientIdentity? = { try? TLSIdentityImporter().clientIdentity(profileID: $0) },
         readCAFile: @escaping @Sendable (String) throws(KnownCAError) -> Data = { path throws(KnownCAError) in try CAFile.read(path) },
         makeConnection: @escaping MakeConnection = { RedisConnection(endpoint: $0, tls: $1, options: $2) }, detector: ServerDetector = ServerDetector()
     ) {
-        self.tunnels = tunnels; self.resolveSavedHost = resolveSavedHost; self.clientIdentity = clientIdentity; self.readCAFile = readCAFile
+        self.tunnels = tunnels; self.resolveSavedHost = resolveSavedHost; self.savedHostPassword = savedHostPassword; self.clientIdentity = clientIdentity; self.readCAFile = readCAFile
         self.makeConnection = makeConnection; self.detector = detector
     }
 
@@ -135,7 +138,7 @@ public struct ConnectionTester: ConnectionTesting {
         return TLSConfiguration(serverName: serverName, anchorCertificates: anchors, clientIdentity: profileID.flatMap(clientIdentity), skipVerification: tls.skipVerification)
     }
 
-    private func resolve(_ tunnel: TunnelSettings, settings: ConnectionSettings) async throws(ConnectionFailure) -> ResolvedTunnel {
+    func resolve(_ tunnel: TunnelSettings, settings: ConnectionSettings) async throws(ConnectionFailure) -> ResolvedTunnel {
         switch tunnel {
         case .inline(let destination, let user, let port, let identityFile):
             let configuration = SSHTunnelConfiguration(destination: destination, user: user, port: port, identityFile: identityFile, redisHost: settings.host, redisPort: settings.port)
@@ -144,7 +147,9 @@ public struct ConnectionTester: ConnectionTesting {
             guard let host = await resolveSavedHost(id) else {
                 throw ConnectionFailure(category: .tunnelFailed, message: "The saved SSH host of this connection no longer exists.", suggestion: "Choose another SSH host in the SSH tunnel settings.")
             }
-            return ResolvedTunnel(configuration: SSHTunnelConfiguration(host: host, redisHost: settings.host, redisPort: settings.port), destination: host.destination)
+            return ResolvedTunnel(
+                configuration: SSHTunnelConfiguration(host: host, redisHost: settings.host, redisPort: settings.port), destination: host.destination,
+                savedPassword: savedHostPassword(host))
         }
     }
 

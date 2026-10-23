@@ -1,3 +1,6 @@
+import Darwin
+import KeelAskpass
+import LocalAuthentication
 import XCTest
 @testable import KeelSSH
 
@@ -43,5 +46,58 @@ final class HostSecretsTests: XCTestCase {
         let value = await library.savedPassword(for: saved, gate: FixedGate(allow: false))?()
         XCTAssertNil(value)
         XCTAssertEqual(secrets.reads, 0)
+    }
+
+    /// AC3: Touch ID declined (through an injected LAContext) leaves the Keychain unread, and ssh's password prompt
+    /// goes to the person through the prompt relay instead.
+    func testTouchIDDeclineFallsBack() async throws {
+        let secrets = MemoryHostSecrets()
+        let library = HostLibrary(storage: MemoryHostStorage(), secrets: secrets)
+        let host = try await library.create(HostDraft(name: "Bastion", destination: "bastion", user: "deploy"))
+        let saved = try await library.setPassword(id: host.id, .save(secret, requiresUserPresence: true), expectedRevision: host.revision)
+        let context = DecliningContext()
+        let lookup = try XCTUnwrap(library.savedPassword(for: saved, gate: LocalAuthenticationGate(makeContext: { context })))
+
+        let relay = PromptRelay()
+        let typed = Data("typed-by-person".utf8)
+        let screen = PromptScreen { _ in .text(typed) }
+        await screen.attach(to: relay)
+        let broker = AskpassBroker(helperPath: "/fixture/keel-askpass", relay: relay)
+        broker.peerProcess = { _ in ("/fixture/keel-askpass", 4242) }
+        defer { broker.stop() }
+        let registration = try XCTUnwrap(broker.register(parent: { 4242 }, destination: "bastion", password: lookup))
+        let prompt = "deploy@bastion's password: "
+        let answer = AskpassHelper.exchange(registration.socketPath, AskpassProtocol.request(nonce: registration.nonce, kind: .password, prompt: prompt))
+
+        XCTAssertEqual(answer, Data([AskpassProtocol.password]) + typed, "The person's answer, not the saved password")
+        XCTAssertEqual(screen.shown.map(\.kind), [.password])
+        XCTAssertEqual(context.reasons.count, 1, "Touch ID was asked once")
+        XCTAssertTrue(context.reasons[0].contains("Bastion"))
+        XCTAssertEqual(secrets.reads, 0, "A declined check never reads the Keychain")
+        XCTAssertEqual(secrets[saved.id], secret, "Declining doesn't remove the saved password")
+    }
+
+    func testTouchIDApprovalReadsThePasswordOnce() async throws {
+        let (library, secrets, host) = try await savedHost()
+        let required = try await library.setPassword(id: host.id, .policy(requiresUserPresence: true), expectedRevision: host.revision)
+        let context = DecliningContext(allow: true)
+        let value = await library.savedPassword(for: required, gate: LocalAuthenticationGate(makeContext: { context }))?()
+        XCTAssertEqual(value, secret)
+        XCTAssertEqual(context.reasons.count, 1)
+        XCTAssertEqual(secrets.reads, 1)
+    }
+}
+
+/// An `LAContext` stand-in: records each request, then approves or fails with `userCancel` like a declined Touch ID.
+final class DecliningContext: UserPresenceContext, @unchecked Sendable {
+    private let lock = NSLock()
+    private var log: [String] = []
+    let allow: Bool
+    init(allow: Bool = false) { self.allow = allow }
+    var reasons: [String] { lock.withLock { log } }
+    func evaluatePolicy(_ policy: LAPolicy, localizedReason: String) async throws -> Bool {
+        lock.withLock { log.append(localizedReason) }
+        guard allow else { throw LAError(.userCancel) }
+        return true
     }
 }
