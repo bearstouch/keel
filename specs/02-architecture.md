@@ -194,7 +194,7 @@ Keel never implements SSH. `TunnelManager` runs, without a shell (`posix_spawn` 
 
 ## Key index and virtualization
 
-- `KeyIndex` is an actor holding keys as compact `ContiguousArray<UInt8>` slices in an arena plus a parallel metadata array (type, TTL, size when requested, staleness). Display strings are computed lazily for visible rows only.
+- `KeyIndex` is an actor holding keys as compact `ContiguousArray<UInt8>` slices in an arena plus a parallel metadata array (type, TTL, size when requested, staleness). An open-addressing table of indices deduplicates keys SCAN repeats. Display strings are computed lazily for visible rows only. Each page is one `SCAN` through `DataCommandService` from the `.browser` origin; a page that lands after a restart (filter change, refresh) is dropped.
 - SCAN pages (`COUNT` default 1,000) append to the index; with **auto-paging**, the next page is requested while the user is idle or near the end of the list, up to the configured limit (default 1,000,000 loaded keys, configurable to 10,000,000).
 - Type and TTL for visible rows are fetched in pipelined `TYPE` + `PTTL` batches (or from `SCAN … TYPE` filters on 6.0+), debounced as rows scroll into view.
 - The namespace tree is built off the main actor incrementally; each node stores child counts so collapsed nodes are cheap. The UI receives snapshots of the visible range only.
