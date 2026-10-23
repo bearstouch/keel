@@ -88,13 +88,19 @@ public final class KeyListDataSource: NSObject, ObservableObject {
     private var localSearched = 0
     /// Bumped by every new search; a chunk landing for an older one is dropped.
     private var localSearchID = 0
+    /// Fills types, TTLs and sizes for the rows in view (FR-KB06, FR-KB07); nil lists names only.
+    public let metadataLoader: RowMetadataLoader?
+    /// ⋯ → Show Sizes: measures the visible rows with `MEMORY USAGE` (FR-KB07). Off until asked for.
+    @Published public private(set) var showsSizes = false
+    /// Redraws visible TTLs once a second from their deadlines; it never sends a command (NFR-PF07).
+    private var countdown: Task<Void, Never>?
 
     static let rowHeight: CGFloat = 32
     static let fetchMargin = 64
     static let flatCacheLimit = 4_096
 
-    public init(index: KeyIndex, mode: Mode = .tree) {
-        self.index = index; self.mode = mode
+    public init(index: KeyIndex, mode: Mode = .tree, metadataLoader: RowMetadataLoader? = nil) {
+        self.index = index; self.mode = mode; self.metadataLoader = metadataLoader
         footer = KeyIndexFooter(status: KeyIndexStatus(loadedCount: 0, limit: KeyIndexConfiguration.defaultLimit, phase: .idle, mode: .manual))
         super.init()
         configure(outlineView); configure(tableView)
@@ -111,6 +117,19 @@ public final class KeyListDataSource: NSObject, ObservableObject {
         scrollView.backgroundColor = Tokens.NS.bg
         scrollView.documentView = activeView
         scrollView.setAccessibilityLabel("Keys")
+        if metadataLoader != nil {
+            // Rows scrolled in from the fetch margin are cached already and ask for no content, so scrolling itself
+            // asks for their metadata (FR-KB06).
+            scrollView.contentView.postsBoundsChangedNotifications = true
+            NotificationCenter.default.addObserver(self, selector: #selector(visibleRowsMoved), name: NSView.boundsDidChangeNotification, object: scrollView.contentView)
+            // Holds the list weakly: once it is gone, the loop ends at its next tick.
+            countdown = Task { [weak self] in
+                while (try? await Task.sleep(for: .seconds(1))) != nil {
+                    guard let self else { return }
+                    self.tickCountdowns()
+                }
+            }
+        }
     }
 
     private func configure(_ view: NSTableView) {
@@ -388,7 +407,8 @@ public final class KeyListDataSource: NSObject, ObservableObject {
         return showsTable ? flatKey(atRow: row).map(NamespaceChild.key) : (outlineView.item(atRow: row) as? KeyListItem)?.child
     }
 
-    /// The cached content of a row in the active view; nil until fetched.
+    /// The cached content of a row in the active view; nil until fetched. Its TTL and size are as stored, not as shown
+    /// (`presented`).
     func row(at row: Int) -> KeyListRow? {
         showsTable ? flatKey(atRow: row).flatMap { flatRows[$0]?.row } : (outlineView.item(atRow: row) as? KeyListItem)?.row
     }
@@ -412,6 +432,7 @@ public final class KeyListDataSource: NSObject, ObservableObject {
         }
         let view = activeView
         let visible = view.rows(in: view.visibleRect)
+        requestMetadata(forRows: Self.onScreen(view))
         let rows = max(visible.location - Self.fetchMargin, 0)..<min(visible.location + max(visible.length, 1) + Self.fetchMargin, view.numberOfRows)
         guard !rows.isEmpty else { return }
         let fetchStamp = stamp
@@ -451,9 +472,98 @@ public final class KeyListDataSource: NSObject, ObservableObject {
 
     private func cell(in view: NSTableView, row: KeyListRow?, stale: Bool) -> NSView {
         let cell = view.makeView(withIdentifier: KeyListCellView.identifier, owner: nil) as? KeyListCellView ?? KeyListCellView()
-        cell.show(row)
+        cell.show(row.map(presented))
         if row == nil || stale { requestContent() }
         return cell
+    }
+
+    // MARK: - Row metadata
+
+    /// A cached row as shown now: TTL counted down to this moment, size only while Show Sizes is on.
+    private func presented(_ row: KeyListRow) -> KeyListRow {
+        row.presented(at: metadataLoader?.nowMilliseconds() ?? 0, showsSizes: showsSizes)
+    }
+
+    /// The keys among `rows` of the active view; folders need no metadata.
+    func keys(inRows rows: Range<Int>) -> [Int] {
+        rows.clamped(to: 0..<activeView.numberOfRows).compactMap { row in if case .key(let key)? = child(atRow: row) { key } else { nil } }
+    }
+
+    /// Asks the loader for the visible keys' metadata — only rows on screen, not the fetch margin (FR-KB07) — and
+    /// redraws the rows it changed. The loader throttles and coalesces, and sends nothing when they are all known.
+    private func requestMetadata(forRows rows: Range<Int>) {
+        guard let metadataLoader else { return }
+        let keys = keys(inRows: rows)
+        guard !keys.isEmpty else { return }
+        // Cached rows still missing metadata the index may hold by now (fetched while they were off screen) are
+        // redrawn too. Redrawing never asks again, so a failing server isn't asked in a loop.
+        let behind = rows.clamped(to: 0..<activeView.numberOfRows).compactMap { row -> Int? in
+            guard let cached = self.row(at: row), case .key(let key) = cached.child, cached.needsMetadata(showsSizes: showsSizes) else { return nil }
+            return key
+        }
+        Task {
+            let changed = Set(await metadataLoader.load(keys)).union(behind)
+            if !changed.isEmpty { await refreshRows(ofKeys: changed) }
+        }
+    }
+
+    @objc private func visibleRowsMoved(_ notification: Notification) { requestMetadata(forRows: Self.onScreen(activeView)) }
+
+    /// Re-reads the index for the cached rows showing `keys` and redraws those on screen.
+    func refreshRows(ofKeys keys: Set<Int>) async {
+        let fetchStamp = stamp
+        let entries = await index.namespaceEntries(keys.sorted().map(NamespaceChild.key), fullNames: true)
+        // Only what changed is copied in, so a row keeps its tree name and a reload in between still wins.
+        guard fetchStamp == stamp else { return }
+        var changedRows = IndexSet()
+        for entry in entries {
+            guard case .key(let key) = entry.child else { continue }
+            let fresh = KeyListRow(entry)
+            flatRows[key]?.row.adopt(metadataOf: fresh)
+            if showsTable, let row = flatRow(ofKey: key) { changedRows.insert(row) }
+        }
+        if !showsTable {
+            for row in Self.onScreen(outlineView) {
+                guard let item = outlineView.item(atRow: row) as? KeyListItem, case .key(let key) = item.child, keys.contains(key),
+                    let entry = entries.first(where: { $0.child == item.child })
+                else { continue }
+                item.row?.adopt(metadataOf: KeyListRow(entry))
+                changedRows.insert(row)
+            }
+        }
+        let view = activeView
+        view.reloadData(forRowIndexes: changedRows.filteredIndexSet { $0 < view.numberOfRows }, columnIndexes: [0])
+    }
+
+    /// ⋯ → Show Sizes. On, the visible rows are measured; off, sizes hide and nothing is sent.
+    public func setShowsSizes(_ on: Bool) async {
+        guard on != showsSizes else { return }
+        showsSizes = on
+        await metadataLoader?.setShowsSizes(on)
+        redrawVisibleRows()
+        if on { requestContent() }
+    }
+
+    /// Once a second: re-derives the visible rows' TTLs from their deadlines, locally (AC2). Expiring rows only.
+    func tickCountdowns() {
+        let view = activeView
+        for row in Self.onScreen(view) {
+            guard let cached = self.row(at: row), case .expires = cached.expiry,
+                let cell = view.view(atColumn: 0, row: row, makeIfNecessary: false) as? KeyListCellView
+            else { continue }
+            cell.show(presented(cached))
+        }
+    }
+
+    private func redrawVisibleRows() {
+        let view = activeView
+        view.reloadData(forRowIndexes: IndexSet(integersIn: Self.onScreen(view)), columnIndexes: [0])
+    }
+
+    /// The rows inside the view's visible rect: no fetch margin.
+    private static func onScreen(_ view: NSTableView) -> Range<Int> {
+        let visible = view.rows(in: view.visibleRect)
+        return visible.location..<visible.location + visible.length
     }
 
     // MARK: - Context menu

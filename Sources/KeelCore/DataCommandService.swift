@@ -8,6 +8,8 @@ public enum DataOperation: Sendable, Equatable {
     case scan(cursor: Data, match: Data?, count: Int, type: Data?)
     case type(key: Data)
     case pttl(key: Data)
+    /// `MEMORY USAGE key SAMPLES 0`: sent only when the user asks for sizes (FR-KB07).
+    case memoryUsage(key: Data)
     case get(key: Data)
     // Writes
     case stringSet(key: Data, value: Data, keepTTL: Bool)
@@ -53,6 +55,7 @@ public enum DataOperation: Sendable, Equatable {
             return args
         case .type(let key): return [d("TYPE"), key]
         case .pttl(let key): return [d("PTTL"), key]
+        case .memoryUsage(let key): return [d("MEMORY"), d("USAGE"), key, d("SAMPLES"), d("0")]
         case .get(let key): return [d("GET"), key]
         case .stringSet(let key, let value, let keepTTL): return [d("SET"), key, value] + (keepTTL ? [d("KEEPTTL")] : [])
         case .hashSetField(let key, let field, let value): return [d("HSET"), key, field, value]

@@ -22,18 +22,91 @@ public struct KeyIndexConfiguration: Sendable, Equatable {
     }
 }
 
-/// A key's type as `TYPE` / `SCAN … TYPE` name it; `unknown` until fetched (KEEL-024 fills it for visible rows).
+/// A key's type as `TYPE` / `SCAN … TYPE` name it; `unknown` until fetched (`RowMetadataLoader` fills it for visible rows).
 public enum KeyType: UInt8, Sendable, Equatable, CaseIterable {
     case unknown, string, hash, list, set, zset, stream, other
 }
 
-/// Per-key metadata kept beside the arena; deliberately tiny so a million keys stay inside NFR-RS01.
+/// A key row's expiry as `PTTL` last reported it, on a monotonic clock so it can count down (FR-KB06). Editors read
+/// wall-clock expiries with `KeyExpiry` instead.
+public enum RowExpiry: Sendable, Equatable {
+    /// Not fetched yet.
+    case unknown
+    /// No expiry (`PTTL` -1): the row shows nothing.
+    case persistent
+    /// The deadline in milliseconds on the loader's monotonic clock; the row counts down to it locally (NFR-PF07).
+    case expires(atMilliseconds: Int64)
+    /// The key no longer exists (`PTTL` -2, `TYPE` none): "expired" until the next refresh drops it.
+    case gone
+}
+
+/// A key's memory size, fetched only on request (FR-KB07).
+public enum KeySize: Sendable, Equatable {
+    case unknown
+    case bytes(Int64)
+    /// The server refused or couldn't answer (`NOPERM`, no `MEMORY` on the server, the key is gone): not asked again.
+    case unavailable
+}
+
+/// Per-key metadata as the index hands it out; it stores it packed (`PackedKeyMetadata`).
 public struct KeyMetadata: Sendable, Equatable {
     public var type: KeyType
     /// The key was reported missing or changed elsewhere and is waiting for the next refresh (FR-KB12).
     public var isStale: Bool
+    public var expiry: RowExpiry
+    public var size: KeySize
 
-    public init(type: KeyType = .unknown, isStale: Bool = false) { self.type = type; self.isStale = isStale }
+    public init(type: KeyType = .unknown, isStale: Bool = false, expiry: RowExpiry = .unknown, size: KeySize = .unknown) {
+        self.type = type; self.isStale = isStale; self.expiry = expiry; self.size = size
+    }
+}
+
+/// `KeyMetadata` as `KeyIndex` stores it: 8 bytes a key, so a million keys stay inside NFR-RS01. The deadline is kept
+/// in tenths of a second, rounded up (a countdown shown in seconds loses nothing); one more than 13 years from launch
+/// is clamped there. Measured sizes live in a side table: only rows measured on request have one.
+struct PackedKeyMetadata {
+    var type: KeyType
+    /// Bit 0 stale; bits 1–2 the expiry kind (unknown, persistent, expires, gone); bits 3–4 the size kind (unknown,
+    /// bytes, unavailable).
+    var flags: UInt8
+    var deadline: UInt32
+
+    init(_ metadata: KeyMetadata) {
+        type = metadata.type; deadline = 0
+        var flags: UInt8 = metadata.isStale ? 1 : 0
+        switch metadata.expiry {
+        case .unknown: break
+        case .persistent: flags |= 1 << 1
+        case .expires(let milliseconds):
+            flags |= 2 << 1
+            deadline = UInt32(clamping: (max(milliseconds, 0) + 99) / 100)
+        case .gone: flags |= 3 << 1
+        }
+        switch metadata.size {
+        case .unknown: break
+        case .bytes: flags |= 1 << 3
+        case .unavailable: flags |= 2 << 3
+        }
+        self.flags = flags
+    }
+
+    /// `size` is the side table's entry, used when the kind says bytes.
+    func unpacked(size: Int64?) -> KeyMetadata {
+        let expiry: RowExpiry =
+            switch flags >> 1 & 3 {
+            case 1: .persistent
+            case 2: .expires(atMilliseconds: Int64(deadline) * 100)
+            case 3: .gone
+            default: .unknown
+            }
+        let keySize: KeySize =
+            switch flags >> 3 & 3 {
+            case 1: size.map(KeySize.bytes) ?? .unknown
+            case 2: .unavailable
+            default: .unknown
+            }
+        return KeyMetadata(type: type, isStale: flags & 1 != 0, expiry: expiry, size: keySize)
+    }
 }
 
 /// Why a SCAN page didn't load. The keys already loaded and the cursor are kept, so Load more retries the same page.
@@ -140,7 +213,12 @@ public actor KeyIndex {
     // Storage: key i is arena[(i == 0 ? 0 : ends[i - 1]) ..< ends[i]].
     private var arena = ContiguousArray<UInt8>()
     private var ends = ContiguousArray<Int>()
-    private var metadata = ContiguousArray<KeyMetadata>()
+    private var metadata = ContiguousArray<PackedKeyMetadata>()
+    /// Sizes measured on request (FR-KB07), by key index; usually a few screens' worth, so a table is cheaper than a
+    /// column. Bounded by `sizeTableLimit` (NFR-RS01): past it the table starts over and dropped rows read as unknown,
+    /// so they are measured again only if they come back into view with Show sizes on.
+    private var sizes: [Int: Int64] = [:]
+    static let sizeTableLimit = 65_536
     /// Open addressing with linear probing; a slot holds index + 1, 0 is empty. Capacity is a power of two.
     private var slots = ContiguousArray<UInt32>(repeating: 0, count: 1_024)
     private var tree: NamespaceTree
@@ -181,16 +259,58 @@ public actor KeyIndex {
         range.clamped(to: 0..<ends.count).map(key(at:))
     }
 
-    public func metadata(at index: Int) -> KeyMetadata { metadata[index] }
+    public func metadata(at index: Int) -> KeyMetadata { metadata[index].unpacked(size: sizes[index]) }
 
     public func updateMetadata(at index: Int, _ update: @Sendable (inout KeyMetadata) -> Void) {
         guard metadata.indices.contains(index) else { return }
-        update(&metadata[index])
+        var entry = metadata(at: index)
+        update(&entry)
+        store(entry, at: index)
+    }
+
+    private func store(_ entry: KeyMetadata, at index: Int) {
+        metadata[index] = PackedKeyMetadata(entry)
+        guard case .bytes(let bytes) = entry.size else { sizes[index] = nil; return }
+        if sizes[index] == nil, sizes.count >= Self.sizeTableLimit { sizes.removeAll(keepingCapacity: true) }
+        sizes[index] = bytes
+    }
+
+    /// What the visible `indices` still need: `TYPE` while the type is unknown, `PTTL` while the expiry is, and — only
+    /// with `sizes` — `MEMORY USAGE` for at most `sizeLimit` keys. Indices past the loaded range and repeats are
+    /// skipped; a gone key needs nothing more. The generation lets `applyMetadata` drop answers from before a restart.
+    public func metadataWork(for indices: [Int], sizes: Bool, sizeLimit: Int) -> (generation: Int, work: [RowMetadataWork]) {
+        var work: [RowMetadataWork] = [], seen = Set<Int>(), sizeCount = 0
+        for index in indices where metadata.indices.contains(index) && seen.insert(index).inserted {
+            let entry = metadata(at: index)
+            guard entry.expiry != .gone else { continue }
+            let size = sizes && entry.size == .unknown && sizeCount < sizeLimit
+            if size { sizeCount += 1 }
+            let item = RowMetadataWork(index: index, key: key(at: index), type: entry.type == .unknown, ttl: entry.expiry == .unknown, size: size)
+            if item.type || item.ttl || item.size { work.append(item) }
+        }
+        return (generation, work)
+    }
+
+    /// Stores fetched metadata unless the index restarted since `metadataWork`; returns the indices that changed.
+    public func applyMetadata(_ results: [RowMetadataResult], generation resultGeneration: Int) -> [Int] {
+        guard resultGeneration == generation else { return [] }
+        var changed: [Int] = []
+        for result in results where metadata.indices.contains(result.index) {
+            let previous = metadata(at: result.index)
+            var entry = previous
+            if let type = result.type { entry.type = type }
+            if let expiry = result.expiry { entry.expiry = expiry }
+            if let size = result.size { entry.size = size }
+            // A key reported gone waits for the next refresh to leave the list (FR-KB06, FR-KB12).
+            if entry.expiry == .gone { entry.isStale = true }
+            if entry != previous { store(entry, at: result.index); changed.append(result.index) }
+        }
+        return changed
     }
 
     /// Bytes the index holds in its buffers (capacity, not just use) — the figure NFR-RS01 budgets.
     public var storageBytes: Int {
-        arena.capacity + ends.capacity * MemoryLayout<Int>.stride + metadata.capacity * MemoryLayout<KeyMetadata>.stride
+        arena.capacity + ends.capacity * MemoryLayout<Int>.stride + metadata.capacity * MemoryLayout<PackedKeyMetadata>.stride
             + slots.capacity * MemoryLayout<UInt32>.stride
     }
 
@@ -227,7 +347,7 @@ public actor KeyIndex {
                 case .folder(let id) where hasFolder(id):
                     return NamespaceEntry(child: child, name: Data(tree.name(of: child, keys)), keyCount: Int(tree.folders[id.rawValue].keyCount))
                 case .key(let index) where ends.indices.contains(index):
-                    return NamespaceEntry(child: child, name: Data(fullNames ? keys[index] : tree.name(of: child, keys)), keyCount: 1, metadata: metadata[index])
+                    return NamespaceEntry(child: child, name: Data(fullNames ? keys[index] : tree.name(of: child, keys)), keyCount: 1, metadata: metadata(at: index))
                 default: return nil
                 }
             }
@@ -313,7 +433,7 @@ public actor KeyIndex {
     public func restart(filter: KeyFilter? = nil) {
         if let filter { configuration.filter = filter }
         generation += 1
-        arena = []; ends = []; metadata = []; overflow = []
+        arena = []; ends = []; metadata = []; sizes = [:]; overflow = []
         slots = ContiguousArray(repeating: 0, count: 1_024)
         treeBuild += 1
         tree = NamespaceTree(separator: tree.separator, build: treeBuild)
@@ -466,7 +586,7 @@ public actor KeyIndex {
         arena.append(contentsOf: key)
         ends.append(arena.count)
         // Under a type filter every key added has that type, so its badge needs no TYPE of its own.
-        metadata.append(KeyMetadata(type: configuration.filter.type?.keyType ?? .unknown))
+        metadata.append(PackedKeyMetadata(KeyMetadata(type: configuration.filter.type?.keyType ?? .unknown)))
         slots[slot] = UInt32(ends.count)
         // Keep the load factor under 3/4 so probes stay short.
         if ends.count * 4 > slots.count * 3 { rehash(capacity: slots.count * 2) }
