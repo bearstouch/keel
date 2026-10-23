@@ -199,7 +199,8 @@ final class StringEditorTests: XCTestCase {
     func testOnlyBuiltEditorsAreOffered() {
         XCTAssertNotNil(EditorBinding.editor(for: .string))
         XCTAssertNotNil(EditorBinding.editor(for: .hash))
-        XCTAssertNil(EditorBinding.editor(for: .list))
+        XCTAssertNotNil(EditorBinding.editor(for: .list))
+        XCTAssertNil(EditorBinding.editor(for: .set))
         XCTAssertNil(EditorBinding.editor(for: .other))
     }
 }

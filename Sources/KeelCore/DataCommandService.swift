@@ -27,6 +27,8 @@ public enum DataOperation: Sendable, Equatable {
     case hashScan(key: Data, cursor: Data, count: Int)
     /// `HGET key field`: a save's guard read, and the overwrite check for a field not loaded yet.
     case hashGet(key: Data, field: Data)
+    /// `LRANGE key start stop` (inclusive): a page of a list, and a list save's guard read (FR-ED03).
+    case listRange(key: Data, start: Int, stop: Int)
     // Writes
     case stringSet(key: Data, value: Data, keepTTL: Bool)
     case hashSetField(key: Data, field: Data, value: Data)
@@ -34,6 +36,10 @@ public enum DataOperation: Sendable, Equatable {
     case listPush(key: Data, values: [Data], atHead: Bool)
     case listSet(key: Data, index: Int, value: Data)
     case listRemove(key: Data, count: Int, value: Data)
+    /// `LPOP` / `RPOP key`: one item from the head or the tail.
+    case listPop(key: Data, atHead: Bool)
+    /// `LINSERT key BEFORE|AFTER pivot value`: the list editor's pivot is a unique sentinel, so the place is exact.
+    case listInsert(key: Data, before: Bool, pivot: Data, value: Data)
     case setAdd(key: Data, members: [Data])
     case setRemove(key: Data, members: [Data])
     case sortedSetAdd(key: Data, members: [ScoredMember])
@@ -81,12 +87,15 @@ public enum DataOperation: Sendable, Equatable {
         case .hashGetAll(let key): return [d("HGETALL"), key]
         case .hashScan(let key, let cursor, let count): return [d("HSCAN"), key, cursor, d("COUNT"), d(String(count))]
         case .hashGet(let key, let field): return [d("HGET"), key, field]
+        case .listRange(let key, let start, let stop): return [d("LRANGE"), key, d(String(start)), d(String(stop))]
         case .stringSet(let key, let value, let keepTTL): return [d("SET"), key, value] + (keepTTL ? [d("KEEPTTL")] : [])
         case .hashSetField(let key, let field, let value): return [d("HSET"), key, field, value]
         case .hashDeleteFields(let key, let fields): return [d("HDEL"), key] + fields
         case .listPush(let key, let values, let atHead): return [d(atHead ? "LPUSH" : "RPUSH"), key] + values
         case .listSet(let key, let index, let value): return [d("LSET"), key, d(String(index)), value]
         case .listRemove(let key, let count, let value): return [d("LREM"), key, d(String(count)), value]
+        case .listPop(let key, let atHead): return [d(atHead ? "LPOP" : "RPOP"), key]
+        case .listInsert(let key, let before, let pivot, let value): return [d("LINSERT"), key, d(before ? "BEFORE" : "AFTER"), pivot, value]
         case .setAdd(let key, let members): return [d("SADD"), key] + members
         case .setRemove(let key, let members): return [d("SREM"), key] + members
         case .sortedSetAdd(let key, let members): return [d("ZADD"), key] + members.flatMap { [d(Self.score($0.score)), $0.member] }

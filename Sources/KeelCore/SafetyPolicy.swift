@@ -102,8 +102,10 @@ public enum SafetyVerdict: Sendable, Equatable {
 public struct SafetyProfile: Sendable, Equatable {
     public var name: String
     public var readOnly: Bool
+    /// The profile's label is treated as production (FR-SF02): some actions that are plain elsewhere ask first (a list pop).
+    public var production: Bool
 
-    public init(name: String, readOnly: Bool) { self.name = name; self.readOnly = readOnly }
+    public init(name: String, readOnly: Bool, production: Bool = false) { self.name = name; self.readOnly = readOnly; self.production = production }
 }
 
 /// Classifies every command before it is sent and decides whether it may go (02 Architecture → Safety policy,
