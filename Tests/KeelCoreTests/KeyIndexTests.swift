@@ -37,9 +37,9 @@ final class KeyIndexTests: XCTestCase {
 
     func testNeverSendsKeys() async {
         let fake = ScanServer(pages: [keys("user", 0..<10), keys("user", 10..<20), keys("order", 0..<5)])
-        let index = fake.index(KeyIndexConfiguration(match: Data("user:*".utf8)))
+        let index = fake.index(KeyIndexConfiguration(filter: KeyFilter(pattern: "user:*")))
         await index.autoPage()
-        await index.restart(match: nil, type: Data("hash".utf8))
+        await index.restart(filter: KeyFilter(type: .hash))
         await index.loadMore()
         await index.loadMore()
 

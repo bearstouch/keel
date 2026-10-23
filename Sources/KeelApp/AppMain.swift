@@ -76,6 +76,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func newConnection(_ sender: Any?) { connections?.newConnection() }
     @objc private func importConnections(_ sender: Any?) { Task { await transfer?.beginImport() } }
     @objc private func exportConnections(_ sender: Any?) { Task { await transfer?.exportConnections() } }
+    /// ⌘F: the key window's filter field takes focus (FR-KB05).
+    @objc private func focusKeyFilter(_ sender: Any?) { NotificationCenter.default.post(name: KeyListCommands.focusFilterNotification, object: NSApp.keyWindow) }
 
     private func buildMenus() {
         let menu = NSMenu()
@@ -95,6 +97,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Sent to the first responder: the key list answers it while focused (FR-KB03); the menu item is dimmed otherwise.
         let toggle = viewMenu.addItem(withTitle: "Toggle Tree / Flat", action: KeyListCommands.toggleMode, keyEquivalent: "t")
         toggle.keyEquivalentModifierMask = [.command, .shift]
+        viewMenu.addItem(withTitle: "Filter Keys", action: #selector(focusKeyFilter(_:)), keyEquivalent: "f").target = self
         viewItem.submenu = viewMenu
         let windowItem = NSMenuItem(); menu.addItem(windowItem)
         let windowMenu = NSMenu(title: "Window")
