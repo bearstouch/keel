@@ -21,8 +21,8 @@ let package = Package(
         .target(name: "KeelAskpass"),
         .executableTarget(name: "KeelAskpassMain", dependencies: ["KeelAskpass"]),
         .target(name: "KeelSSH", dependencies: ["KeelAskpass"]),
-        // Resources: data-driven server detection rules (INT-02).
-        .target(name: "KeelCore", dependencies: ["KeelRESP", "KeelSSH"], resources: [.copy("Resources/ServerDetection.json")]),
+        // Resources: data-driven server detection rules (INT-02) and the bundled command catalog (INT-03).
+        .target(name: "KeelCore", dependencies: ["KeelRESP", "KeelSSH"], resources: [.copy("Resources/ServerDetection.json"), .copy("Resources/Commands")]),
         .target(name: "KeelControl", dependencies: ["KeelCore"]),
         .target(name: "KeelMCP", dependencies: ["KeelControl", "KeelCore"]),
         .target(name: "KeelUI", dependencies: ["KeelCore", "KeelControl", "KeelSSH"]),

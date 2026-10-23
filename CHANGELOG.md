@@ -49,3 +49,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
   else "Redis-compatible (unrecognized)"), mode from `redis_mode` / `role` with the cluster banner flag, Redis below
   6.0 refused with `UNSUPPORTED_SERVER`, and FR-CN12 capability probes cached per session that pick editor fallbacks
   (`ZRANGEBYSCORE`, `PTTL`, inclusive stream paging) (KEEL-011).
+- Command catalog: a bundled catalog of 388 commands and subcommands generated from the Redis 7.4 and Valkey 8
+  sources and checked against Valkey 9 (`Resources/Commands`, versioned), with `write`, `readonly`, `admin`,
+  `dangerous`, `blocking` and `pubsub` flags, key positions and argument docs rendered as completion syntax. The
+  server's `COMMAND` / `COMMAND DOCS` merge over it per session but can never drop a restrictive flag; unknown commands
+  and subcommands classify as unknown, never read (KEEL-012).

@@ -18,10 +18,18 @@ As the safety policy and the console, I want every command's flags, arity, key p
 
 ## Acceptance criteria
 
-- [ ] **AC1.** Every command used by Keel's editors is present and classified.
-- [ ] **AC2.** `SET` is write, `GET` read, `FLUSHALL` write+dangerous, `SUBSCRIBE` pubsub, `BLPOP` blocking.
-- [ ] **AC3.** Unknown commands resolve to `.unknown` (never to read).
-- [ ] **AC4.** Docs give argument syntax for completion hints.
+- [x] **AC1.** Every command used by Keel's editors is present and classified.
+- [x] **AC2.** `SET` is write, `GET` read, `FLUSHALL` write+dangerous, `SUBSCRIBE` pubsub, `BLPOP` blocking.
+- [x] **AC3.** Unknown commands resolve to `.unknown` (never to read).
+- [x] **AC4.** Docs give argument syntax for completion hints.
+
+**Verification (KEEL-012).** AC1–AC4 observed in `CommandCatalogTests` against the bundled catalog (388 commands,
+generated from Redis 7.4.11 and Valkey 8.1.10, checked against Valkey 9.0.6). AC1 uses the browser and editor command
+list from 03 Functional requirements; it grows as the editors land (KEEL-028 onward). The bundled key ranges and
+flags were compared with a local Redis 7.2.1 `COMMAND` reply (370 commands, identical arity and key ranges; only
+`WAIT`/`WAITAOF` differ: 7.4 flags them `blocking`, 7.2.1 doesn't), and the live parser runs on captured Redis 7.2
+`COMMAND INFO` / `COMMAND DOCS` frames over RESP2 and RESP3 (`Tests/Fixtures/Commands`). Live loading against Valkey
+and Dragonfly is **pending** the integration matrix (KEEL-053).
 
 ## Unit tests
 
