@@ -56,6 +56,10 @@ public final class KeyListDataSource: NSObject, ObservableObject {
     /// The selected folder (tree only; the flat view has no folders, so toggling drops it).
     @Published public private(set) var selectedFolder: NamespaceFolderID?
     @Published public private(set) var footer: KeyIndexFooter
+    /// The database's `DBSIZE`, shown in the footer beside the loaded count (FR-KB09); nil until known.
+    @Published public private(set) var totalKeys: Int?
+    /// The index's status at the last reload, which the footer shows.
+    private var status = KeyIndexStatus(loadedCount: 0, limit: KeyIndexConfiguration.defaultLimit, phase: .idle, mode: .manual)
 
     public let outlineView = KeyListOutlineView()
     public let tableView = KeyListTableView()
@@ -77,6 +81,9 @@ public final class KeyListDataSource: NSObject, ObservableObject {
     private var fetchAgain = false
     /// The selected key's bytes, to notice a restart that put another key at the same index.
     private var selectedKeyBytes: Data?
+    /// A key to select once a page loads it: Refresh (⌘R) keeps the selection when the key comes back (FR-KB09).
+    /// Any other selection, by the user or the model, drops it.
+    private var pendingSelection: Data?
     /// True while the model itself changes the views' selection, so the delegate doesn't echo it back.
     private var applyingSelection = false
     /// The local filter's text as typed; empty when it's off (FR-KB05).
@@ -101,7 +108,7 @@ public final class KeyListDataSource: NSObject, ObservableObject {
 
     public init(index: KeyIndex, mode: Mode = .tree, metadataLoader: RowMetadataLoader? = nil) {
         self.index = index; self.mode = mode; self.metadataLoader = metadataLoader
-        footer = KeyIndexFooter(status: KeyIndexStatus(loadedCount: 0, limit: KeyIndexConfiguration.defaultLimit, phase: .idle, mode: .manual))
+        footer = KeyIndexFooter(status: status)
         super.init()
         configure(outlineView); configure(tableView)
         outlineView.indentationPerLevel = 18
@@ -181,10 +188,13 @@ public final class KeyListDataSource: NSObject, ObservableObject {
         var loaded: [NamespaceFolderID: [NamespaceChild]] = [:]
         for id in expanded { loaded[id] = await index.namespaceChildren(of: id) }
         let selectionStillValid = await isSelectionValid()
+        let pending = pendingSelection
+        let found = if let pending { await index.index(of: pending) } else { Int?.none }
         // A newer reload started while this one awaited the index; it owns the views now.
         guard reloadStamp == stamp else { return }
 
-        footer = KeyIndexFooter(status: status)
+        self.status = status
+        footer = KeyIndexFooter(status: status, totalKeys: totalKeys)
         // After a restart the cached names belong to other keys, and earlier local matches point at other keys too,
         // so the local search starts over. The index may already hold more keys than before by now.
         if count < keyCount || generation != indexGeneration {
@@ -210,15 +220,51 @@ public final class KeyListDataSource: NSObject, ObservableObject {
         restore(root)
         expanded = stillExpanded
         if !selectionStillValid { selectedKey = nil; selectedKeyBytes = nil; selectedFolder = nil }
+        // The pending key is loaded now (and nothing else was selected meanwhile): it becomes the selection.
+        if let pending, let found, pendingSelection == pending, found < count {
+            pendingSelection = nil
+            selectedKey = found; selectedKeyBytes = pending; selectedFolder = nil
+        }
 
         withSelectionApplied {
             tableView.reloadData()
             outlineView.reloadData()
             expandRestored(root)
         }
-        applySelection()
+        // A pending key that just became the selection may sit in a collapsed folder or off screen: reveal it.
+        if let pending, found != nil, selectedKeyBytes == pending { await reveal() } else { applySelection() }
         // Pages loaded since the last search are searched now; a search still running is superseded and resumes here.
         if localMatches != nil { await searchLocally() }
+    }
+
+    /// The footer's total: the database's `DBSIZE`, or nil when it isn't known (a failed or refused `DBSIZE`).
+    public func setTotalKeys(_ total: Int?) {
+        totalKeys = total
+        footer = KeyIndexFooter(status: status, totalKeys: total)
+    }
+
+    /// Selects the key with these bytes: now if it is loaded, otherwise as soon as a reload finds it (a refresh keeps
+    /// the selection this way, FR-KB09). Nil clears the selection and any pending key.
+    public func select(keyBytes: Data?) async {
+        guard let keyBytes else {
+            pendingSelection = nil; selectedKey = nil; selectedKeyBytes = nil; selectedFolder = nil
+            applySelection()
+            return
+        }
+        if let found = await index.index(of: keyBytes), found < keyCount {
+            await select(key: found)
+        } else {
+            selectedKey = nil; selectedKeyBytes = nil; selectedFolder = nil
+            pendingSelection = keyBytes
+            applySelection()
+        }
+    }
+
+    /// The selected key's bytes, read from the index; nil when nothing or a folder is selected.
+    public func selectedKeyName() async -> Data? {
+        guard let key = selectedKey else { return nil }
+        if let selectedKeyBytes { return selectedKeyBytes }
+        return await loadedKey(key)
     }
 
     // MARK: - Local filter
@@ -329,7 +375,7 @@ public final class KeyListDataSource: NSObject, ObservableObject {
 
     /// Selects a key and reveals it in the active view.
     public func select(key: Int) async {
-        selectedKey = key; selectedFolder = nil; selectedKeyBytes = nil
+        selectedKey = key; selectedFolder = nil; selectedKeyBytes = nil; pendingSelection = nil
         let bytes = await bytes(of: .key(key))
         // A click during the await owns the selection now; don't pin this key's bytes to it.
         guard selectedKey == key else { return }
@@ -388,6 +434,7 @@ public final class KeyListDataSource: NSObject, ObservableObject {
     /// The user moved the selection with the mouse or keyboard.
     private func selectionChanged(in view: NSTableView) {
         guard !applyingSelection, view === activeView else { return }
+        pendingSelection = nil
         let child = self.child(atRow: view.selectedRow)
         switch child {
         case .key(let key)?: selectedKey = key; selectedFolder = nil

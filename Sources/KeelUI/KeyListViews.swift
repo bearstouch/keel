@@ -22,6 +22,11 @@ public enum KeyListCommands {
     /// View → Filter Keys (⌘F) posts this with the key window; that window's filter field takes focus. A notification
     /// rather than the responder chain, so ⌘F works wherever the focus is in the window, the filter field included.
     public static let focusFilterNotification = Notification.Name("com.bearstouch.keel.focusKeyFilter")
+    /// View → Refresh (⌘R), posted with the key window: its browser rescans keeping filters and selection (FR-KB09).
+    public static let refreshNotification = Notification.Name("com.bearstouch.keel.refreshKeys")
+    /// View → Database → db0…db9 (⌥⌘0…⌥⌘9), posted with the key window and the index under `databaseKey` (FR-KB08).
+    public static let selectDatabaseNotification = Notification.Name("com.bearstouch.keel.selectDatabase")
+    public static let databaseKey = "database"
 }
 
 /// One 32 px row (08 Design → Key list): name in mono, then the muted count or TTL, then the type badge. Frames are set

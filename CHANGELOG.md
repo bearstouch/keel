@@ -108,3 +108,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
   Mac and reads "expired" when the key is gone. Types and TTLs are fetched for the rows on screen in pipelined
   `TYPE` + `PTTL` batches, at most one per 100 ms, so an idle list sends nothing. ⋯ → Show Sizes measures the visible
   rows with `MEMORY USAGE … SAMPLES 0`, at most 100 a batch, and only while it is on (KEEL-024).
+- Database switcher (`db0 ▾`, View → Database → ⌥⌘0–9) listing db0–db15 or the server's `databases` count, with
+  key counts from `INFO keyspace`; cluster servers offer db0 only. Switching keeps the tab and filters and clears
+  the list. View → Refresh (⌘R) rescans with the same filters and selects the same key again once it loads; the
+  footer shows `DBSIZE` beside the loaded count. Opening a key deleted elsewhere says "Key no longer exists" and
+  offers **Remove from List** (KEEL-025).
