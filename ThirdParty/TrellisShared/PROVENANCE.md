@@ -112,3 +112,11 @@ them and extends this file:
 - The grant store and authorization pattern (`AutomationGrant.swift`, `Authorization.swift`), including the
   `Keel Automation` Keychain service — KEEL-043.
 - Trellis's default terminal colors for the console — KEEL-041 (design tokens, not code).
+
+## Keel code derived from Trellis
+
+Not vendored (it lives in `Sources/`), but adapted from Trellis at the same commit:
+
+- `Sources/KeelSSH/OwnedProcessIdentity.swift` (KEEL-009): `OwnedProcessIdentity` and its `permitsSignal` rule from
+  `Sources/TrellisCore/SessionClosure.swift`; the identity is read with `proc_pidinfo` in Swift instead of Trellis's
+  `trellis_read_process_identity` C helper. `OwnedProcessGroup` (signal and reap under one lock) is Keel's own.
