@@ -23,9 +23,9 @@ import sys
 
 FORMAT_VERSION = 1
 # Keel's safety flags (CommandFlags). `dangerous` follows Redis's implicit ACL rule: ADMIN implies @dangerous.
-SAFETY_FLAGS = ["write", "readonly", "admin", "dangerous", "blocking", "pubsub"]
+SAFETY_FLAGS = ["write", "readonly", "admin", "dangerous", "blocking", "pubsub", "may_replicate"]
 # A server may add these but never remove them; `readonly` only relaxes, so it isn't merged up.
-RESTRICTIVE = {"write", "admin", "dangerous", "blocking", "pubsub"}
+RESTRICTIVE = {"write", "admin", "dangerous", "blocking", "pubsub", "may_replicate"}
 OUTPUT = os.path.join(os.path.dirname(__file__), "..", "Sources", "KeelCore", "Resources", "Commands", "commands.json")
 
 
@@ -55,6 +55,8 @@ def flags_of(spec):
     if "DANGEROUS" in acl: flags.add("dangerous")
     if "BLOCKING" in command_flags: flags.add("blocking")
     if "PUBSUB" in command_flags: flags.add("pubsub")
+    # Not a write but may change what replicas see (EVAL, FCALL, PUBLISH): the policy treats it as one unless readonly.
+    if "MAY_REPLICATE" in command_flags: flags.add("may_replicate")
     return flags
 
 

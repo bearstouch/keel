@@ -13,12 +13,16 @@ public struct CommandFlags: OptionSet, Sendable, Hashable {
     public static let dangerous = CommandFlags(rawValue: 1 << 3)
     public static let blocking = CommandFlags(rawValue: 1 << 4)
     public static let pubsub = CommandFlags(rawValue: 1 << 5)
+    /// `may_replicate`: not flagged `write`, but may change what replicas see (`EVAL`, `FCALL`, `PUBLISH`); without
+    /// `readonly` the safety policy treats it as a write.
+    public static let mayReplicate = CommandFlags(rawValue: 1 << 6)
 
     /// Flags a server may add to a bundled command but never take away; `readonly` only relaxes, so it isn't one.
-    public static let restrictive: CommandFlags = [.write, .admin, .dangerous, .blocking, .pubsub]
+    public static let restrictive: CommandFlags = [.write, .admin, .dangerous, .blocking, .pubsub, .mayReplicate]
 
     static let names: [(String, CommandFlags)] = [
-        ("write", .write), ("readonly", .readonly), ("admin", .admin), ("dangerous", .dangerous), ("blocking", .blocking), ("pubsub", .pubsub)
+        ("write", .write), ("readonly", .readonly), ("admin", .admin), ("dangerous", .dangerous), ("blocking", .blocking), ("pubsub", .pubsub),
+        ("may_replicate", .mayReplicate)
     ]
 
     /// Bundled names, or a live `COMMAND` reply's flags and ACL categories (`@dangerous`, and `@blocking` on 6.x,

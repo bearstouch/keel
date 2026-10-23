@@ -81,7 +81,8 @@ final class CommandCatalogTests: XCTestCase {
             ("DEBUG", .other, [.admin, .dangerous]),
             ("SWAPDB", .write, [.write, .dangerous]),
             ("MIGRATE", .write, [.write, .dangerous]),
-            ("EVAL", .other, []),
+            ("EVAL", .other, [.mayReplicate]),
+            ("PUBLISH", .other, [.pubsub, .mayReplicate]),
             ("EVAL_RO", .read, [.readonly]),
             ("FCALL_RO", .read, [.readonly])
         ]
