@@ -5,14 +5,10 @@ import Foundation
 public struct LaunchArguments: Equatable, Sendable {
     /// Absolute folder that replaces Application Support for this launch.
     public var stateDirectory: URL?
-    /// Never start the MCP listener (FR-RC01).
-    public var noMCP = false
-    /// Isolated demo state; also never listens for MCP.
+    /// Isolated demo state in a fresh temporary folder.
     public var fixture = false
 
-    public init(stateDirectory: URL? = nil, noMCP: Bool = false, fixture: Bool = false) {
-        self.stateDirectory = stateDirectory; self.noMCP = noMCP; self.fixture = fixture
-    }
+    public init(stateDirectory: URL? = nil, fixture: Bool = false) { self.stateDirectory = stateDirectory; self.fixture = fixture }
 
     public enum ParseError: Error, Equatable, CustomStringConvertible {
         case unknownArgument(String)
@@ -28,9 +24,6 @@ public struct LaunchArguments: Equatable, Sendable {
         }
     }
 
-    /// Whether this launch may start the MCP server at all; fixture launches are always offline.
-    public var mcpAllowed: Bool { !noMCP && !fixture }
-
     /// Parses the arguments after the executable path (`CommandLine.arguments.dropFirst()`).
     public static func parse<S: Sequence>(_ arguments: S) throws -> LaunchArguments where S.Element == String {
         var result = LaunchArguments()
@@ -45,8 +38,7 @@ public struct LaunchArguments: Equatable, Sendable {
                 // Relative paths (and `~`, which the shell didn't expand) would depend on the launch's working directory.
                 guard path.hasPrefix("/") else { throw ParseError.relativeStateDirectory(path) }
                 result.stateDirectory = URL(fileURLWithPath: (path as NSString).standardizingPath, isDirectory: true)
-            // Switches take no value; `--no-mcp=yes` is refused rather than guessed at.
-            case "--no-mcp" where inline == nil: result.noMCP = true
+            // Switches take no value; `--fixture=yes` is refused rather than guessed at.
             case "--fixture" where inline == nil: result.fixture = true
             default:
                 if flag.hasPrefix("--") { throw ParseError.unknownArgument(argument) }

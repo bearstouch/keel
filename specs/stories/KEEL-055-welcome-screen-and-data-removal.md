@@ -13,7 +13,7 @@ As a new or leaving user, I want a friendly start screen and a clean way to remo
 ## Scope
 
 - Welcome (no tabs): recent connections, New Connection, Paste URL, Import
-- Help → Remove Keel Data…: lists and deletes the state directory and the four Keychain services after confirmation
+- Help → Remove Keel Data…: lists and deletes the state directory and the three Keychain services (`Keel Connection`, `Keel TLS`, `Keel SSH Host`) after confirmation
 
 ## Acceptance criteria
 

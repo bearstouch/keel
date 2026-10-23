@@ -2,7 +2,7 @@
 
 A calm, native Redis client for macOS by Bearstouch. Keel browses millions of keys with SCAN only, edits every core
 type, has a redis-cli-style console and a server overview, keeps production safe with read-only connections and
-typed confirmations, and can let agents work with your data through an optional MCP server under the same rules.
+typed confirmations.
 
 Supports Redis 6.0+, Valkey and Dragonfly on macOS 14 or later.
 
@@ -10,7 +10,7 @@ Supports Redis 6.0+, Valkey and Dragonfly on macOS 14 or later.
 
 ## Documentation
 
-- [Specifications](specs/README.md): the behavior contract (overview, architecture, requirements, agent API,
+- [Specifications](specs/README.md): the behavior contract (overview, architecture, requirements,
   integrations, macOS support, design).
 - [Stories and plan](specs/stories/README.md): implementation stories, sprint plan and definition of done.
 - [CLAUDE.md](CLAUDE.md): contributor and agent guidance.

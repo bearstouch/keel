@@ -13,7 +13,7 @@ As a user, I want Keel's settings and profiles saved safely, so that a crash or 
 ## Scope
 
 - `Persistence` actor: atomic owner-only writes (temp `O_EXCL|O_NOFOLLOW` 0600, fsync, rename, fsync dir), dirs 0700, single writer, sequence-gated, 300 ms debounce, immediate flush on quit
-- Versioned Codable envelopes for `connections.json`, `hosts.json`, `windows.json`, `settings.json`, `grants.json`, `known-ca.json`; last-known-good backups
+- Versioned Codable envelopes for `connections.json`, `hosts.json`, `windows.json`, `settings.json`, `known-ca.json`; last-known-good backups
 - Load results `.missing` / `.loaded` / `.recovery(reason, backup?)`; corrupt files preserved as `*.corrupt.<UUID>.json`; newer versions open read-only
 - Reads capped at 4 MiB and 128 nesting levels
 

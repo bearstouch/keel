@@ -85,7 +85,7 @@ public struct ConnectionSettings: Codable, Equatable, Sendable {
         self.reconnectOnLaunch = reconnectOnLaunch
     }
 
-    /// The fields a saved password and agent approvals are bound to (02 Architecture → Keychain items, 05 API).
+    /// The fields a saved password is bound to (02 Architecture → Keychain items).
     /// Changing any of them reaches a different server, so the password is never offered to it.
     public struct ConnectionKey: Hashable, Sendable {
         public var host: String
@@ -172,7 +172,7 @@ public struct ConnectionProfile: Codable, Equatable, Identifiable, Sendable {
     /// Stamped from the store's counter on every change; stale editors get `CONFLICT`.
     public var revision: UInt64
     /// Advances only when `settings.connectionKey` changes or the transport is weakened (`weakensTransport(from:)`); the
-    /// saved password and agent approvals bind to it.
+    /// saved password binds to it.
     public var connectionRevision: UInt64
     public var hasPassword: Bool
     public var hasTLSSecret: Bool

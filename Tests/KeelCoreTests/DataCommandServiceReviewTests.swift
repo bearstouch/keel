@@ -45,7 +45,7 @@ final class DataCommandServiceReviewTests: XCTestCase {
         let service = DataCommandService(session: server.session())
         let console = writable.consoleID!
         var db0 = writable
-        db0.confirmation = CommandConfirmation(source: .user, scope: .command(args("FLUSHDB")), database: 0)
+        db0.confirmation = CommandConfirmation(scope: .command(args("FLUSHDB")), database: 0)
         _ = try await service.execute(.raw(args("PING")), origin: .console, context: db0)
         _ = try await service.execute(.raw(args("SELECT", "5")), origin: .console, context: db0)
         let stale = await code(service, .raw(args("FLUSHDB")), .console, db0)
@@ -54,7 +54,7 @@ final class DataCommandServiceReviewTests: XCTestCase {
 
         var db5 = writable
         db5.database = 5
-        db5.confirmation = CommandConfirmation(source: .user, scope: .command(args("FLUSHDB")), database: 5)
+        db5.confirmation = CommandConfirmation(scope: .command(args("FLUSHDB")), database: 5)
         _ = try await service.execute(.raw(args("FLUSHDB")), origin: .console, context: db5)
         // A refused SELECT leaves the database as it was.
         _ = try await service.execute(.raw(args("SELECT", "99")), origin: .console, context: db5)
@@ -78,7 +78,7 @@ final class DataCommandServiceReviewTests: XCTestCase {
         _ = try await service.execute(.raw(args("SCAN", "0")), origin: .bulk, context: writable)
         var db3 = writable
         db3.database = 3
-        db3.confirmation = CommandConfirmation(source: .user, scope: .keys([Data("a".utf8), Data("b".utf8)]), database: 3)
+        db3.confirmation = CommandConfirmation(scope: .keys([Data("a".utf8), Data("b".utf8)]), database: 3)
         let moved = await code(service, .operation(.delete(keys: [Data("a".utf8), Data("b".utf8)])), .bulk, db3)
         XCTAssertEqual(moved, "INVALID_PARAMS")
         XCTAssertEqual(server.allCommands, [["SCAN", "0"]])
@@ -95,7 +95,7 @@ final class DataCommandServiceReviewTests: XCTestCase {
         let result = try await service.execute(.raw(args("UNSUBSCRIBE", "a", "b")), origin: .console, context: db2)
         XCTAssertEqual(result.role, .stream(console))
         XCTAssertEqual(server.opened.map(\.role), [.stream(console)])
-        let agent = await code(service, .raw(args("UNSUBSCRIBE", "a", "b")), .agent(grantID: UUID()), writable)
-        XCTAssertEqual(agent, "BLOCKED_COMMAND")
+        let editor = await code(service, .raw(args("UNSUBSCRIBE", "a", "b")), .editor, writable)
+        XCTAssertEqual(editor, "BLOCKED_COMMAND")
     }
 }

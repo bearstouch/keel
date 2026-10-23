@@ -111,7 +111,7 @@ struct PackedKeyMetadata {
 
 /// Why a SCAN page didn't load. The keys already loaded and the cursor are kept, so Load more retries the same page.
 public struct KeyIndexError: Error, Sendable, Equatable {
-    /// The shared API code (`specs/05-api.md#errors`).
+    /// The shared error code (`specs/02-architecture.md#errors`).
     public var code: String
     public var message: String
 

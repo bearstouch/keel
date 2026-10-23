@@ -1,6 +1,6 @@
 # 06 Integrations
 
-Keel relies on the system and on existing tools rather than reimplementing them. This page sets the boundaries with servers, macOS services, Trellis and agent clients.
+Keel relies on the system and on existing tools rather than reimplementing them. This page sets the boundaries with servers, macOS services and Trellis.
 
 ## Redis-compatible servers
 
@@ -50,7 +50,7 @@ Results are cached for the session; a connection failure or a transient error (`
 
 **INT-03 (P0).**
 
-- RESP2 and RESP3. Browser and agent connections use RESP3 when `HELLO 3` succeeds (typed maps, doubles, booleans), else RESP2. The console uses RESP2 by default for redis-cli-identical output.
+- RESP2 and RESP3. Browser connections use RESP3 when `HELLO 3` succeeds (typed maps, doubles, booleans), else RESP2. The console uses RESP2 by default for redis-cli-identical output.
 - Authentication: `HELLO 3 AUTH <user> <pass>`, or `AUTH <user> <pass>`, or `AUTH <pass>` (`requirepass` / the `default` user), chosen by profile fields and server support.
 - Pipelining for TYPE/PTTL batches; `MULTI/EXEC` with `WATCH` for multi-step edits; no client-side caching (`CLIENT TRACKING`) in v1.
 - Command metadata from `COMMAND INFO` / `COMMAND DOCS`; bundled fallback catalog generated from Redis 7.4 and Valkey 8 sources and checked against Valkey 9, versioned, with a test that every command used by the editors is classified.
@@ -106,26 +106,17 @@ takes the host.
 **INT-07 (P0).** Keel is a **completely independent app**.
 
 - At run time Keel never reads or writes Trellis's state directory, settings, saved hosts or Keychain items, and doesn't call the Trellis CLI or API. Keel's SSH hosts come only from Keel's own host library and `~/.ssh/config`.
-- **Source reuse only:** SSH hosts, discovery, askpass, owner-only storage, shortcut bindings and the MCP HTTP layer are vendored from Trellis into `ThirdParty/TrellisShared` with `PROVENANCE.md`, and renamed to Keel identifiers.
+- **Source reuse only:** SSH hosts, discovery, askpass, owner-only storage and shortcut bindings are vendored from Trellis into `ThirdParty/TrellisShared` with `PROVENANCE.md`, and renamed to Keel identifiers.
 - **Visual reuse:** Trellis's terminal colors for the console and its native graphite grays for the dark theme. Keel's accent (Redis red), light sidebar tint and fonts (Inter, JetBrains Mono) are its own ([08 Design](08-design.md)).
-- Both apps can run at once without conflicts: separate bundle IDs, state directories, Keychain services and MCP ports (Keel 7778, Trellis 7777).
+- Both apps can run at once without conflicts: separate bundle IDs, state directories and Keychain services. Keel never uses Trellis's port 7777.
 
 ## Keychain and LocalAuthentication
 
-**INT-08 (P0).** Generic passwords for services `Keel Connection`, `Keel TLS`, `Keel SSH Host`, `Keel Automation`, *when unlocked, this device only*. Optional per-profile "Require Touch ID to connect" uses LocalAuthentication before the password is read (enforced by Keel, as in Trellis FR-H07). Ad-hoc development builds may prompt for Keychain access again after a rebuild.
-
-## Agents and MCP clients
-
-**INT-09 (P0).**
-
-- Any MCP client supporting Streamable HTTP and custom headers can connect ([05 API](05-api.md)); Claude Code is the reference client and is tested in the release checklist.
-- Keel embeds no AI model and obtains no provider API keys.
-- Server data is untrusted and labeled so for agents.
-- **P1:** `keel-mcp` stdio bridge (bundled helper) for clients that only support stdio; it forwards to the local Unix-socket transport and reads its token from the Keychain, never argv.
+**INT-08 (P0).** Generic passwords for services `Keel Connection`, `Keel TLS`, `Keel SSH Host`, *when unlocked, this device only*. Optional per-profile "Require Touch ID to connect" uses LocalAuthentication before the password is read (enforced by Keel, as in Trellis FR-H07). Ad-hoc development builds may prompt for Keychain access again after a rebuild.
 
 ## Clipboard
 
-**INT-10 (P0).** `NSPasteboard` only on explicit copy/paste. The clipboard is never polled. Pasting a connection URL is recognized only in the New Connection sheet (FR-CN08). Agents have no clipboard access.
+**INT-10 (P0).** `NSPasteboard` only on explicit copy/paste. The clipboard is never polled. Pasting a connection URL is recognized only in the New Connection sheet (FR-CN08).
 
 ## Updates
 
@@ -144,7 +135,7 @@ takes the host.
 File → **Export Connections…** writes one JSON object (`Keel Connections.json`, pretty-printed, sorted keys, at most 4 MiB):
 `format` (`"keel-profiles"`), `schemaVersion` (integer, currently 1), `folders` (`id`, `name`, in display order) and
 `profiles` (`id`, optional `folderID`, `settings` — exactly the editor's `ConnectionSettings`, in display order).
-Nothing else: no password, passphrase, token, client identity, `hasPassword`, `hasTLSSecret`, revisions or collapse
+Nothing else: no password, passphrase, client identity, `hasPassword`, `hasTLSSecret`, revisions or collapse
 state. IDs are kept, so a re-import recognises the records it already holds. A saved-SSH-host tunnel keeps the host's
 ID; on another Mac it resolves only if that host exists there. Export is refused while `connections.json` awaits
 recovery or is read-only, so an empty or backup view never overwrites a good export.

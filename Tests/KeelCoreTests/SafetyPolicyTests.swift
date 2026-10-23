@@ -7,8 +7,7 @@ final class SafetyPolicyTests: XCTestCase {
     private let catalog = CommandCatalog.bundled
     private let readOnly = SafetyProfile(name: "payments-prod", readOnly: true)
     private let writable = SafetyProfile(name: "api-staging", readOnly: false)
-    private let grant = UUID()
-    private var allOrigins: [CommandOrigin] { [.editor, .browser, .console, .bulk, .agent(grantID: grant)] }
+    private let allOrigins: [CommandOrigin] = [.editor, .browser, .console, .bulk]
 
     private func verdict(
         _ arguments: [Data], _ origin: CommandOrigin, _ profile: SafetyProfile, database: Int = 0, confirmation: CommandConfirmation? = nil, catalog: CommandCatalog? = nil
@@ -31,9 +30,7 @@ final class SafetyPolicyTests: XCTestCase {
             for line in writes {
                 let result = verdict(words(line), origin, readOnly)
                 XCTAssertFalse(result.isAllowed, "\(line) from \(origin)")
-                // Agents get BLOCKED_COMMAND for what they may never run (admin, unknown); every other refusal is READ_ONLY.
-                let agentNever = ["CONFIG SET maxmemory 1", "SWAPDB 0 1", "MIGRATE h 6379 k 0 5000", "SORT k STORE dst", "NOSUCHCOMMAND x", "CLIENT NOSUCHSUB"]
-                XCTAssertEqual(result.code, origin.isAgent && agentNever.contains(line) ? "BLOCKED_COMMAND" : "READ_ONLY", "\(line) from \(origin)")
+                XCTAssertEqual(result.code, "READ_ONLY", "\(line) from \(origin)")
             }
             // Typed editor operations compile to commands and are refused the same way.
             let operations: [DataOperation] = [
@@ -58,23 +55,20 @@ final class SafetyPolicyTests: XCTestCase {
     }
 
     func testReadOnlyScriptsAllowed() {
-        for origin in [CommandOrigin.console, .agent(grantID: grant)] {
-            for line in ["EVAL_RO return 0", "EVALSHA_RO abc 0", "FCALL_RO f 0"] {
-                XCTAssertEqual(verdict(words(line), origin, readOnly), .allow(.read), "\(line) from \(origin)")
-            }
-            for line in ["EVAL return 0", "EVALSHA abc 0", "FCALL f 0", "SCRIPT FLUSH", "FUNCTION DELETE lib"] {
-                XCTAssertEqual(verdict(words(line), origin, readOnly).code, "READ_ONLY", "\(line) from \(origin)")
-            }
+        for line in ["EVAL_RO return 0", "EVALSHA_RO abc 0", "FCALL_RO f 0"] {
+            XCTAssertEqual(verdict(words(line), .console, readOnly), .allow(.read), line)
         }
-        // On a writable profile the console and agents may run scripts (agents also need command.execute, in KeelControl).
+        for line in ["EVAL return 0", "EVALSHA abc 0", "FCALL f 0", "SCRIPT FLUSH", "FUNCTION DELETE lib"] {
+            XCTAssertEqual(verdict(words(line), .console, readOnly).code, "READ_ONLY", line)
+        }
+        // On a writable profile only the console runs scripts.
         XCTAssertEqual(verdict(words("EVAL return 0"), .console, writable), .allow(.script))
-        XCTAssertEqual(verdict(words("EVAL return 0"), .agent(grantID: grant), writable), .allow(.script))
         for origin in [CommandOrigin.editor, .browser, .bulk] {
             XCTAssertEqual(verdict(words("EVAL return 0"), origin, writable).code, "BLOCKED_COMMAND", "editors never run scripts")
         }
     }
 
-    func testDestructiveNeedsConfirmationOrApproval() throws {
+    func testDestructiveNeedsTypedConfirmation() throws {
         let cases: [(String, ConfirmationRequest.Operation, String)] = [
             ("DEL cust:41 cust:42", .deleteKeys(count: 2), "2"), ("UNLINK cust:41 cust:42 cust:43", .deleteKeys(count: 3), "3"), ("FLUSHDB", .flushDatabase(3), "db3"),
             ("FLUSHDB ASYNC", .flushDatabase(3), "db3"), ("FLUSHALL", .flushAll, "api-staging")
@@ -83,64 +77,27 @@ final class SafetyPolicyTests: XCTestCase {
             let arguments = words(line)
             for origin in allOrigins {
                 let result = verdict(arguments, origin, writable, database: 3)
-                let request: ConfirmationRequest
-                if origin.isAgent {
-                    guard case .approvalRequired(let r) = result else { return XCTFail("\(line) from \(origin): \(result)") }
-                    request = r
-                    XCTAssertEqual(result.code, "APPROVAL_REQUIRED")
-                    XCTAssertTrue(r.message.hasSuffix("needs approval in Keel."), r.message)
-                } else {
-                    guard case .confirmationRequired(let r) = result else { return XCTFail("\(line) from \(origin): \(result)") }
-                    request = r
-                    XCTAssertEqual(result.code, "CONFIRMATION_REQUIRED")
-                }
+                guard case .confirmationRequired(let request) = result else { return XCTFail("\(line) from \(origin): \(result)") }
+                XCTAssertEqual(result.code, "CONFIRMATION_REQUIRED")
+                XCTAssertTrue(request.message.hasSuffix("needs a typed confirmation."), request.message)
                 XCTAssertEqual(request.operation, operation, line)
                 XCTAssertEqual(request.typedText, typed, line)
                 XCTAssertFalse(request.message.contains("cust:"), "messages never name keys")
 
-                // The matching confirmation from the right source lets it through …
-                let source: CommandConfirmation.Source = origin.isAgent ? .approval(UUID()) : .user
-                let good = CommandConfirmation(source: source, scope: .command(arguments), database: 3)
+                // The matching confirmation lets it through …
+                let good = CommandConfirmation(scope: .command(arguments), database: 3)
                 XCTAssertEqual(verdict(arguments, origin, writable, database: 3, confirmation: good), .allow(.destructive), "\(line) from \(origin)")
-                // … but not one for another command, another database, or from the other source.
-                let otherCommand = CommandConfirmation(source: source, scope: .command(words("DEL x y")), database: 3)
-                let otherDatabase = CommandConfirmation(source: source, scope: .command(arguments), database: 4)
-                let otherSource = CommandConfirmation(source: origin.isAgent ? .user : .approval(UUID()), scope: .command(arguments), database: 3)
-                for bad in [otherCommand, otherDatabase, otherSource] {
+                // … but not one for another command or another database.
+                let otherCommand = CommandConfirmation(scope: .command(words("DEL x y")), database: 3)
+                let otherDatabase = CommandConfirmation(scope: .command(arguments), database: 4)
+                for bad in [otherCommand, otherDatabase] {
                     XCTAssertFalse(verdict(arguments, origin, writable, database: 3, confirmation: bad).isAllowed, "\(line) from \(origin) with \(bad)")
                 }
             }
         }
         // Deleting one key is an ordinary write (the UI asks with a normal confirmation, FR-ED12).
         XCTAssertEqual(verdict(words("UNLINK k"), .editor, writable), .allow(.write))
-        XCTAssertEqual(verdict(words("DEL k"), .agent(grantID: grant), writable), .allow(.write))
-    }
-
-    func testAgentsBlockedFromAdminAndStreaming() {
-        let agent = CommandOrigin.agent(grantID: grant)
-        let never = [
-            "CONFIG SET maxmemory 1", "CONFIG GET maxmemory", "SHUTDOWN", "DEBUG SLEEP 0", "REPLICAOF NO ONE", "FAILOVER", "CLUSTER RESET", "ACL SETUSER u",
-            "ACL DELUSER u", "MIGRATE h 6379 k 0 5000", "SWAPDB 0 1", "MODULE LOAD x", "CLIENT KILL ID 1", "CLIENT LIST", "KEYS *", "MONITOR", "SUBSCRIBE ch",
-            "PSUBSCRIBE ch*", "SSUBSCRIBE ch", "NOSUCHCOMMAND", "SELECT 1", "MULTI", "EXEC", "WATCH k", "HELLO 2", "AUTH user pass", "CLIENT REPLY OFF"
-        ]
-        for profile in [writable, readOnly] {
-            for line in never {
-                let approval = CommandConfirmation(source: .approval(UUID()), scope: .command(words(line)), database: 0)
-                for confirmation in [nil, approval] {
-                    let result = verdict(words(line), agent, profile, confirmation: confirmation)
-                    XCTAssertEqual(result.code, "BLOCKED_COMMAND", "\(line) on \(profile.name)")
-                }
-            }
-        }
-        if case .blocked(let message) = verdict(words("KEYS *"), agent, writable) {
-            XCTAssertTrue(message.contains("key_scan"), message)
-        } else {
-            XCTFail("KEYS is blocked for agents")
-        }
-        // What agents may run: reads, writes, server reads.
-        for line in ["GET k", "SET k v", "SCAN 0", "INFO", "DBSIZE", "PING"] {
-            XCTAssertTrue(verdict(words(line), agent, writable).isAllowed, line)
-        }
+        XCTAssertEqual(verdict(words("DEL k"), .console, writable), .allow(.write))
     }
 
     func testUnknownCommandBlockedOnReadOnly() {
@@ -150,7 +107,7 @@ final class SafetyPolicyTests: XCTestCase {
             }
             // Writable: the console runs it with a notice; nothing else may.
             XCTAssertEqual(verdict(words(line), .console, writable), .allow(.unknown), line)
-            for origin in [CommandOrigin.editor, .browser, .bulk, .agent(grantID: grant)] {
+            for origin in [CommandOrigin.editor, .browser, .bulk] {
                 XCTAssertEqual(verdict(words(line), origin, writable).code, "BLOCKED_COMMAND", "\(line) from \(origin)")
             }
         }
@@ -190,7 +147,7 @@ final class SafetyPolicyTests: XCTestCase {
         XCTAssertNil(admin.typedText)
         guard case .confirmationRequired(let keys) = verdict(words("KEYS *"), .console, readOnly) else { return XCTFail("KEYS asks even on read-only") }
         XCTAssertEqual(keys.operation, .keys)
-        let yes = CommandConfirmation(source: .user, scope: .command(words("KEYS *")), database: 0)
+        let yes = CommandConfirmation(scope: .command(words("KEYS *")), database: 0)
         XCTAssertEqual(verdict(words("KEYS *"), .console, readOnly, confirmation: yes), .allow(.keys))
         XCTAssertEqual(verdict(words("CONFIG SET maxmemory 1"), .console, readOnly).code, "READ_ONLY")
         // Streaming and connection state: console only, read-only or not.
@@ -210,17 +167,17 @@ final class SafetyPolicyTests: XCTestCase {
     // MARK: - Batch confirmations
 
     func testSelectionAndPatternConfirmationsCoverBatches() {
-        let selection = CommandConfirmation(source: .user, scope: .keys([Data("a".utf8), Data("b".utf8), Data("c".utf8)]), database: 0)
+        let selection = CommandConfirmation(scope: .keys([Data("a".utf8), Data("b".utf8), Data("c".utf8)]), database: 0)
         XCTAssertEqual(verdict(words("UNLINK a b"), .browser, writable, confirmation: selection), .allow(.destructive))
         XCTAssertEqual(verdict(words("UNLINK c"), .browser, writable, confirmation: selection), .allow(.write))
         XCTAssertFalse(verdict(words("UNLINK a z"), .browser, writable, confirmation: selection).isAllowed, "z wasn't selected")
         XCTAssertFalse(verdict(words("FLUSHDB"), .browser, writable, confirmation: selection).isAllowed, "a selection never covers a flush")
 
-        let pattern = CommandConfirmation(source: .user, scope: .pattern(Data("tmp:*".utf8)), database: 0)
+        let pattern = CommandConfirmation(scope: .pattern(Data("tmp:*".utf8)), database: 0)
         XCTAssertEqual(verdict(words("UNLINK tmp:1 tmp:2"), .bulk, writable, confirmation: pattern), .allow(.destructive))
         XCTAssertFalse(verdict(words("UNLINK tmp:1 user:1"), .bulk, writable, confirmation: pattern).isAllowed)
         XCTAssertFalse(verdict(words("UNLINK tmp:1 tmp:2"), .bulk, writable, database: 1, confirmation: pattern).isAllowed)
-        let everything = CommandConfirmation(source: .user, scope: .pattern(Data("*".utf8)), database: 0)
+        let everything = CommandConfirmation(scope: .pattern(Data("*".utf8)), database: 0)
         XCTAssertFalse(verdict(words("UNLINK a b"), .bulk, writable, confirmation: everything).isAllowed, "pattern * is FLUSHDB's job")
         XCTAssertEqual(verdict(words("UNLINK tmp:1 tmp:2"), .bulk, readOnly, confirmation: pattern).code, "READ_ONLY", "no confirmation beats read-only")
     }

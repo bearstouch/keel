@@ -2,7 +2,7 @@
 
 | Epic | Priority | Size | Sprint | Depends on |
 | --- | --- | --- | --- | --- |
-| E7 App quality and release | P0 | 3 pts | S9 | [KEEL-041](KEEL-041-console-view-history-completion-streaming-masking.md), [KEEL-044](KEEL-044-agent-tool-catalog-over-the-data-path.md) |
+| E7 App quality and release | P0 | 3 pts | S9 | [KEEL-041](KEEL-041-console-view-history-completion-streaming-masking.md) |
 
 **Specs:** [NFR-PV01–NFR-PV04](../04-non-functional-requirements.md#privacy), [FR-AP06, FR-AP10](../03-functional-requirements.md#7-app-basics)
 

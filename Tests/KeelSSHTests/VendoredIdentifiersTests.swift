@@ -5,7 +5,7 @@ import XCTest
 
 /// Keel never touches Trellis's state, settings or Keychain items at run time (INT-07): the code it ships, including
 /// what is vendored from Trellis, must not name Trellis's Keychain services, state paths, environment variables,
-/// helper or MCP port (KEEL-002 AC3).
+/// helper or port (KEEL-002 AC3).
 final class VendoredIdentifiersTests: XCTestCase {
     private static let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
     /// Everything that is compiled into or bundled with the app.
@@ -16,7 +16,7 @@ final class VendoredIdentifiersTests: XCTestCase {
         ("Trellis Application Support folder", #"Application Support/Trellis"#),
         ("Trellis environment variable", #"TRELLIS_"#),
         ("Trellis helper", #"trellis-(askpass|broker|cli)"#),
-        ("Trellis MCP port", #"\b7777\b"#)
+        ("Trellis port", #"\b7777\b"#)
     ]
 
     func testNoTrellisRuntimeIdentifiers() throws {

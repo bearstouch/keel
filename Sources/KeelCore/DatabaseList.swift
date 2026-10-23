@@ -87,7 +87,7 @@ public struct DatabaseList: Sendable, Equatable {
     }
 
     /// Asks `CONFIG GET databases` once at session setup, best effort, the way the capability probes run: on the
-    /// session's connection, marked a read. `CONFIG` is admin for the console and agents, so this fixed, read-only
+    /// session's connection, marked a read. `CONFIG` is admin (console only), so this fixed, read-only
     /// probe is the only `CONFIG` Keel sends by itself; any failure gives nil and the switcher offers db0–db15.
     public static func probeCount(send: CapabilityProbe.Send) async -> Int? {
         let reply: RESPValue

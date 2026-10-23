@@ -3,22 +3,19 @@ import XCTest
 
 final class LaunchArgumentsTests: XCTestCase {
     func testParsesStateDirectoryAndFlags() throws {
-        let parsed = try LaunchArguments.parse(["--state-directory", "/tmp/keel-state/", "--no-mcp", "--fixture"])
+        let parsed = try LaunchArguments.parse(["--state-directory", "/tmp/keel-state/", "--fixture"])
         XCTAssertEqual(parsed.stateDirectory?.path, "/tmp/keel-state")
-        XCTAssertTrue(parsed.noMCP)
         XCTAssertTrue(parsed.fixture)
-        XCTAssertFalse(parsed.mcpAllowed)
 
         XCTAssertEqual(try LaunchArguments.parse(["--state-directory=/var/keel"]).stateDirectory?.path, "/var/keel")
         XCTAssertEqual(try LaunchArguments.parse([]), LaunchArguments())
-        XCTAssertTrue(try LaunchArguments.parse([]).mcpAllowed, "A plain launch may start MCP if settings allow it")
-        XCTAssertFalse(try LaunchArguments.parse(["--fixture"]).mcpAllowed, "Fixture launches never listen")
 
         assertParse(["--verbose"], throws: .unknownArgument("--verbose"))
-        assertParse(["--no-mcp=yes"], throws: .unknownArgument("--no-mcp=yes"))
+        assertParse(["--fixture=yes"], throws: .unknownArgument("--fixture=yes"))
+        assertParse(["--no-mcp"], throws: .unknownArgument("--no-mcp"), "The MCP server was removed, so its switch is unknown")
         assertParse(["stray"], throws: .unknownArgument("stray"))
         assertParse(["--state-directory"], throws: .missingValue("--state-directory"))
-        assertParse(["--state-directory", "--no-mcp"], throws: .missingValue("--state-directory"), "A following flag is never taken as the path")
+        assertParse(["--state-directory", "--fixture"], throws: .missingValue("--state-directory"), "A following flag is never taken as the path")
     }
 
     func testRejectsRelativeStateDirectory() {
@@ -26,8 +23,8 @@ final class LaunchArgumentsTests: XCTestCase {
     }
 
     func testIgnoresArgumentsAddedByTheSystem() throws {
-        let parsed = try LaunchArguments.parse(["-psn_0_12345", "-NSDocumentRevisionsDebugMode", "YES", "--no-mcp"])
-        XCTAssertEqual(parsed, LaunchArguments(noMCP: true))
+        let parsed = try LaunchArguments.parse(["-psn_0_12345", "-NSDocumentRevisionsDebugMode", "YES", "--fixture"])
+        XCTAssertEqual(parsed, LaunchArguments(fixture: true))
         XCTAssertEqual(try LaunchArguments.parse(["-NSQuitAlwaysKeepsWindows", "--fixture"]), LaunchArguments(fixture: true), "A Keel flag is never taken as a default's value")
     }
 

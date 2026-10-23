@@ -8,7 +8,7 @@
 
 ## Story
 
-As the app, I want one actor per server socket that pipelines commands with timeouts and bounded reads, so that browsing, editing and agents share a reliable transport.
+As the app, I want one actor per server socket that pipelines commands with timeouts and bounded reads, so that browsing, editing, the console and bulk jobs share a reliable transport.
 
 ## Scope
 

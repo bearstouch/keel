@@ -3,7 +3,7 @@ import Foundation
 public enum ProfileStoreError: Error, Equatable, Sendable {
     case invalid(ProfileField)
     case notFound
-    /// The record changed since the editor loaded it (API `CONFLICT`).
+    /// The record changed since the editor loaded it (`CONFLICT`).
     case conflict(expected: UInt64, actual: UInt64)
     /// Not loaded, awaiting a recovery choice, or `connections.json` was written by a newer Keel.
     case readOnly
@@ -80,7 +80,7 @@ public actor ProfileStore {
     }
 
     /// The current document, then every document the store publishes (load, recovery and each committed change), so
-    /// the sidebar follows edits made by the sheet, agents or another view. Ends when the caller stops iterating.
+    /// the sidebar follows edits made by the sheet, an import or another view. Ends when the caller stops iterating.
     public func changes() -> AsyncStream<ConnectionsDocument> {
         let (stream, continuation) = AsyncStream.makeStream(of: ConnectionsDocument.self, bufferingPolicy: .bufferingNewest(1))
         let id = UUID()
@@ -139,7 +139,7 @@ public actor ProfileStore {
 
     /// Saves the editor's settings. Renaming or relabeling keeps the connection revision and the password; a new
     /// connection advances the revision and removes the password unless `password` sets a new one. An unchanged
-    /// save keeps the revision, so it doesn't invalidate approvals.
+    /// save keeps the revision, so it doesn't remove the saved password.
     public func update(_ id: UUID, _ settings: ConnectionSettings, password: PasswordChange = .keep, expectedRevision: UInt64) async throws(ProfileStoreError) -> ConnectionProfile {
         await acquire(); defer { release() }
         let (index, current) = try locate(id, expectedRevision: expectedRevision)

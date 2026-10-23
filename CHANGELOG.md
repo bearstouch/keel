@@ -7,11 +7,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- Swift package scaffold with the Keel targets, an empty Keel window, launch arguments `--state-directory`,
-  `--no-mcp` and `--fixture`, owner-only state folder, release manifest, formatter config and CI (KEEL-001).
+- Swift package scaffold with the Keel targets, an empty Keel window, launch arguments `--state-directory`
+  and `--fixture`, owner-only state folder, release manifest, formatter config and CI (KEEL-001).
 - Vendored Trellis code in `ThirdParty/TrellisShared` with `PROVENANCE.md`: SSH host library and `~/.ssh/config`
-  discovery, the askpass broker and `keel-askpass` helper, owner-only file storage, rebindable shortcut rules and the
-  MCP HTTP parser and listener, all under Keel names (`Keel SSH Host`, `SSH_ASKPASS_KEEL_*`) (KEEL-002).
+  discovery, the askpass broker and `keel-askpass` helper, owner-only file storage, and rebindable shortcut rules,
+  all under Keel names (`Keel SSH Host`, `SSH_ASKPASS_KEEL_*`) (KEEL-002).
 - Owner-only versioned persistence for the state files: atomic 0600 writes in a 0700 folder, last-known-good
   backups, sequence-gated 300 ms debounced saves, corrupt files preserved before **Recover backup** / **Start empty**,
   and files from a newer Keel opened read-only (KEEL-003).
@@ -54,12 +54,12 @@ and versions follow [Semantic Versioning](https://semver.org/).
   `dangerous`, `blocking` and `pubsub` flags, key positions and argument docs rendered as completion syntax. The
   server's `COMMAND` / `COMMAND DOCS` merge over it per session but can never drop a restrictive flag; unknown commands
   and subcommands classify as unknown, never read (KEEL-012).
-- One data path: every command from editors, the browser, the console, bulk jobs and agents goes through
+- One data path: every command from editors, the browser, the console and bulk jobs goes through
   `DataCommandService` and `SafetyPolicy` before anything is sent. Read-only profiles refuse every write, script that
   may write, admin and unknown command with `READ_ONLY` (`EVAL_RO` / `FCALL_RO` still run); multi-key delete, FLUSHDB
-  and FLUSHALL need a typed confirmation or an agent approval bound to the exact command and database; agents are
-  always refused admin commands, `KEYS`, `MONITOR`, `SUBSCRIBE` and unknown commands. `ServerSession` keeps
-  `browser`, `console`, `stream`, `job` and `agent` connections apart and never replays a command (KEEL-013).
+  and FLUSHALL need a typed confirmation bound to the exact command and database; admin commands, `KEYS`, `MONITOR`,
+  `SUBSCRIBE` and unknown commands run only in the console. `ServerSession` keeps
+  `browser`, `console`, `stream` and `job` connections apart and never replays a command (KEEL-013).
 - Connection profiles and folders in `connections.json`: create, edit, duplicate, delete and reorder, with revisions
   that refuse stale edits and color labels with editable names (red is the built-in Production label). Passwords and TLS
   secrets live only in the Keychain (`Keel Connection`, `Keel TLS`), written before the metadata and restored if it can't
@@ -119,3 +119,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
   connection now connects it and shows its keys; Connection → Reconnect (⇧⌘R) / Disconnect (⇧⌘D). Windows, tabs,
   modes, databases and frames are saved in `windows.json` and restored disconnected, except profiles with Reconnect on
   launch (never production ones). Closing a tab or window with unsaved edits asks first (KEEL-026).
+
+### Removed
+
+- The agent API and the optional MCP server are out of scope for v1: removed from the specs and the plan
+  (KEEL-043–KEEL-047 retired), along with the `KeelControl` and `KeelMCP` targets and the vendored Trellis MCP HTTP
+  layer. The `--no-mcp` launch flag is gone and is now refused as an unknown argument.

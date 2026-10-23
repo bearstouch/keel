@@ -41,7 +41,7 @@ As a user, I want my connections in folders in a quiet sidebar, so that I can fi
 
 Known limits: opening from the sidebar adds or focuses a tab in `ConnectionTabs`, an in-memory registry; the actual
 connect, the tab bar and `windows.json` arrive with KEEL-020 / KEEL-026, so until then no row shows the link icon or
-"Failed" in the app. Search is the ⌘K palette (KEEL-048). Tabs of a profile deleted outside the sidebar (sheet, agent)
+"Failed" in the app. Search is the ⌘K palette (KEEL-048). Tabs of a profile deleted outside the sidebar (the sheet)
 are left to KEEL-026.
 
 ## Unit tests

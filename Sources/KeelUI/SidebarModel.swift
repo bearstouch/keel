@@ -57,7 +57,7 @@ public final class SidebarModel: ObservableObject {
 
     deinit { watching?.cancel() }
 
-    /// Follows the store from now on, so profiles saved by the sheet, agents or an import appear without a reload.
+    /// Follows the store from now on, so profiles saved by the sheet or an import appear without a reload.
     public func start() {
         guard watching == nil else { return }
         let store = store

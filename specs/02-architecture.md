@@ -9,11 +9,7 @@ Third-party code: Sparkle 2 (updates) as a SwiftPM dependency, and `ThirdParty/T
 ```mermaid
 flowchart TD
     App[KeelApp<br/>entry, menus, windows, wiring] --> UI
-    App --> MCP
     UI[KeelUI<br/>SwiftUI + AppKit views, view models] --> Core
-    UI --> Control
-    MCP[KeelMCP<br/>HTTP listener, MCP tools] --> Control
-    Control[KeelControl<br/>method table, grants, approvals, authorizer] --> Core
     Core[KeelCore<br/>profiles, sessions, command service, safety policy, key index, persistence] --> RESP
     Core --> SSH
     RESP[KeelRESP<br/>RESP2/3 codec, RedisConnection, TLS]
@@ -28,12 +24,10 @@ flowchart TD
 | `KeelSSH` | SSH tunnels through OpenSSH, saved SSH hosts, `~/.ssh/config` discovery, the askpass broker and prompt relay | `TunnelManager` (actor), `SSHTunnel`, `SavedHost`, `HostLibrary`, `SSHConfigDiscovery`, `AskpassBroker`, `PromptRelay` |
 | `KeelAskpass` / `KeelAskpassMain` | The `keel-askpass` helper ssh runs as `SSH_ASKPASS`, bundled in `Contents/Helpers` | `Askpass` |
 | `KeelCore` | Domain: profiles and folders, server sessions, server detection, command catalog, **safety policy**, **data command service**, key index, value pagers, bulk jobs, persistence, Keychain, settings | `ProfileStore` (actor), `ConnectionProfile`, `ServerSession` (actor), `ServerIdentity`, `CommandCatalog`, `SafetyPolicy`, `DataCommandService`, `KeyIndex`, `KeyPath`, `ValuePager`, `BulkDeleteJob`, `Persistence` (actor), `SecretStore`, `RedisURL` |
-| `KeelControl` | Transport-independent agent API: method table, grants, capabilities, connection scope, approvals, idempotency, limits, activity log | `ControlHandler`, `AuthorizingControlHandler`, `AuthorizationPolicy`, `GrantStore`, `KeychainGrantSecretStore`, `ApprovalCenter` (actor), `ActivityLog` |
-| `KeelMCP` | Optional MCP server (Streamable HTTP), off by default | `MCPServer`, `MCPListener`, `MCPEndpoint`, `MCPTools`, `HTTPRequestParser` |
-| `KeelUI` | Views and `@MainActor` view models. `KeyListDataSource` with `KeyListOutlineView` / `KeyListTableView` (AppKit, virtualized), `ConsoleTextView` (AppKit), editors, dashboard, settings, palette | `AppModel`, `WindowModel`, `TabModel`, `BrowserModel`, `ConsoleModel`, `InfoModel`, `ApprovalPanel` |
-| `KeelApp` | The `Keel` executable: `@main`, `AppDelegate`, menus built from shortcut bindings, Sparkle wiring, launch arguments (`--state-directory`, `--no-mcp`, `--fixture`) | `KeelMain`, `AppDelegate` |
+| `KeelUI` | Views and `@MainActor` view models. `KeyListDataSource` with `KeyListOutlineView` / `KeyListTableView` (AppKit, virtualized), `ConsoleTextView` (AppKit), editors, dashboard, settings, palette | `AppModel`, `WindowModel`, `TabModel`, `BrowserModel`, `ConsoleModel`, `InfoModel` |
+| `KeelApp` | The `Keel` executable: `@main`, `AppDelegate`, menus built from shortcut bindings, Sparkle wiring, launch arguments (`--state-directory`, `--fixture`) | `KeelMain`, `AppDelegate` |
 | `KeelRelease` | Release manifest checks, update channel policy, uninstall plan | `ReleaseManifest`, `UninstallPlanner` |
-| Tests | `KeelRESPTests`, `KeelSSHTests`, `KeelCoreTests`, `KeelControlTests`, `KeelMCPTests`, `KeelUITests`, `KeelReleaseTests`, plus `KeelIntegrationTests` against containerized servers | |
+| Tests | `KeelRESPTests`, `KeelSSHTests`, `KeelCoreTests`, `KeelUITests`, `KeelReleaseTests`, plus `KeelIntegrationTests` against containerized servers | |
 
 ## Logical components
 
@@ -41,16 +35,15 @@ flowchart TD
 | --- | --- | --- |
 | App shell | Native windows, tabs, sidebar, menus, palette, settings | `KeelApp`, `KeelUI` |
 | Profile store | Authoritative profiles and folders, revisions, validation | `ProfileStore` |
-| Secret store | Keychain read/write for profile, SSH and grant secrets | `SecretStore`, `KeychainGrantSecretStore` |
+| Secret store | Keychain read/write for profile, TLS and SSH secrets | `SecretStore` |
 | Server session | Connections, tunnel, `HELLO`/`AUTH`/`SELECT`, detection, capability probing, reconnect policy | `ServerSession` |
 | Command catalog | Command names, arity, flags (`write`, `readonly`, `admin`, `dangerous`, `blocking`, `pubsub`), key positions, docs for completion | `CommandCatalog` |
 | Safety policy | Classifies every command before it is sent; enforces read-only, confirmations, blocked commands | `SafetyPolicy` |
-| Data command service | The single entry point for every server command from editors, browser, console, bulk jobs and agents | `DataCommandService` |
+| Data command service | The single entry point for every server command from editors, browser, console and bulk jobs | `DataCommandService` |
 | Key index | Accumulates SCAN results, builds the namespace tree, filters, holds per-key metadata | `KeyIndex` |
 | Value pagers | Paged, bounded loading of values per type (GETRANGE, HSCAN, LRANGE, SSCAN, ZRANGE/ZSCAN, XRANGE) | `ValuePager` |
 | Bulk jobs | SCAN + UNLINK batches with progress, cancel and a final report | `BulkDeleteJob` |
 | Persistence | Versioned atomic JSON files, backups, recovery | `Persistence` |
-| Agent API | Grants, authorization, approvals, tool table, MCP transport | `KeelControl`, `KeelMCP` |
 
 ## One data path
 
@@ -58,7 +51,7 @@ Every command sent to a server, whatever its origin, goes through `DataCommandSe
 
 ```mermaid
 sequenceDiagram
-    participant O as Editor / Console / Bulk job / MCP tool
+    participant O as Editor / Browser / Console / Bulk job
     participant D as DataCommandService
     participant P as SafetyPolicy
     participant C as CommandCatalog
@@ -69,7 +62,7 @@ sequenceDiagram
     C-->>D: flags, key positions
     D->>P: evaluate(classification, profile, origin, confirmation)
     alt blocked
-        P-->>D: READ_ONLY / BLOCKED_COMMAND / CONFIRMATION_REQUIRED / APPROVAL_REQUIRED
+        P-->>D: READ_ONLY / BLOCKED_COMMAND / CONFIRMATION_REQUIRED
         D-->>O: error (nothing sent)
     else allowed
         D->>S: send on the right connection role
@@ -80,7 +73,7 @@ sequenceDiagram
     end
 ```
 
-- `DataRequest.origin` is `.editor`, `.browser`, `.console`, `.bulk` or `.agent(grantID)`. Origin never relaxes a rule; it only selects how a confirmation is obtained (a sheet for the UI, an approval for agents).
+- `DataRequest.origin` is `.editor`, `.browser`, `.console` or `.bulk`. Origin never relaxes a rule; it only selects what may run at all (scripts, admin, `KEYS`, streaming, session and unknown commands are the console's).
 - The policy decides **before** anything is written to the socket. A blocked command leaves the server untouched.
 - Editors don't build raw command strings; they produce typed operations (`.hashSetField(key:field:value:)`) that the service turns into commands, so the same classification runs for them.
 - Multi-command edits (for example renaming a hash field) run as one `MULTI … EXEC`, optionally guarded by `WATCH`, so they apply entirely or not at all.
@@ -91,13 +84,13 @@ sequenceDiagram
 | --- | --- | --- | --- |
 | Read (`readonly` flag, no `write`) | Catalog | Allowed | Allowed |
 | Write (`write` flag) | Catalog | **Blocked** `READ_ONLY` | Allowed |
-| Multi-key delete (DEL/UNLINK with > 1 key), FLUSHDB, FLUSHALL, bulk delete | Catalog + arity | Blocked | Typed confirmation (UI) or approval (agent) |
-| Script and transaction commands that may write (`EVAL`, `EVALSHA`, `FCALL`, `SCRIPT`, `FUNCTION`, `MULTI`/`EXEC` with any write inside) | Catalog | Blocked (only `EVAL_RO`/`FCALL_RO` allowed) | Allowed (console); agents need `command.execute` |
-| Admin / dangerous (`SHUTDOWN`, `DEBUG`, `CONFIG SET`, `REPLICAOF`, `FAILOVER`, `CLUSTER RESET`, `ACL SETUSER/DELUSER`, `MIGRATE`, `SWAPDB`, `MODULE`) | Catalog `admin`/`dangerous` | Blocked | Console: confirmation sheet naming the command. Agents: **always denied** in v1 (`BLOCKED_COMMAND`) |
-| `KEYS` | Fixed rule | Console: confirmation that warns with DBSIZE | Same; agents: denied, use `key_scan` |
-| `MONITOR`, `SUBSCRIBE`, `PSUBSCRIBE`, `SSUBSCRIBE` (and their `UNSUBSCRIBE` counterparts) | Catalog `pubsub` / fixed | Console only, on a dedicated connection with Stop | Same; agents: denied |
-| Unknown command (not in the server's or the bundled catalog; also a module or live-only command with neither `readonly` nor `write`) | — | **Blocked** (fail closed) | Console: allowed with a notice; editors, browser, bulk jobs and agents: denied |
-| Connection state (`SELECT`, `HELLO`, `AUTH`, `RESET`, `QUIT`, `MULTI`, `EXEC`, `DISCARD`, `WATCH`, `UNWATCH`, `READONLY`, `READWRITE`, `ASKING`, `CLIENT TRACKING`, `CLIENT CACHING`) | Fixed | Console only (it keeps its own connection state) | Same; every other origin and agents: `BLOCKED_COMMAND` |
+| Multi-key delete (DEL/UNLINK with > 1 key), FLUSHDB, FLUSHALL, bulk delete | Catalog + arity | Blocked | Typed confirmation |
+| Script and transaction commands that may write (`EVAL`, `EVALSHA`, `FCALL`, `SCRIPT`, `FUNCTION`, `MULTI`/`EXEC` with any write inside) | Catalog | Blocked (only `EVAL_RO`/`FCALL_RO` allowed) | Console only |
+| Admin / dangerous (`SHUTDOWN`, `DEBUG`, `CONFIG SET`, `REPLICAOF`, `FAILOVER`, `CLUSTER RESET`, `ACL SETUSER/DELUSER`, `MIGRATE`, `SWAPDB`, `MODULE`) | Catalog `admin`/`dangerous` | Blocked | Console only: confirmation sheet naming the command |
+| `KEYS` | Fixed rule | Console only: confirmation that warns with DBSIZE | Same |
+| `MONITOR`, `SUBSCRIBE`, `PSUBSCRIBE`, `SSUBSCRIBE` (and their `UNSUBSCRIBE` counterparts) | Catalog `pubsub` / fixed | Console only, on a dedicated connection with Stop | Same |
+| Unknown command (not in the server's or the bundled catalog; also a module or live-only command with neither `readonly` nor `write`) | — | **Blocked** (fail closed) | Console: allowed with a notice; editors, browser and bulk jobs: denied |
+| Connection state (`SELECT`, `HELLO`, `AUTH`, `RESET`, `QUIT`, `MULTI`, `EXEC`, `DISCARD`, `WATCH`, `UNWATCH`, `READONLY`, `READWRITE`, `ASKING`, `CLIENT TRACKING`, `CLIENT CACHING`) | Fixed | Console only (it keeps its own connection state) | Same; every other origin: `BLOCKED_COMMAND` |
 | `CLIENT REPLY` | Fixed | Never sent: it would leave the reply queue waiting | Same |
 
 The server's own `COMMAND INFO` / `COMMAND DOCS` (Redis 7+) is preferred; a bundled catalog generated from Redis 7.4 / Valkey 8 (checked against Valkey 9) is the fallback and is versioned in `Resources/Commands`. `CommandCatalog` rules:
@@ -112,10 +105,10 @@ The server's own `COMMAND INFO` / `COMMAND DOCS` (Redis 7+) is preferred; a bund
 `SafetyPolicy` rules (`SafetyPolicy.evaluate`, pure; `SafetyClass` names the row):
 
 - **Classes, first match wins.** `CLIENT REPLY` → forbidden; `MONITOR` / `SUBSCRIBE` / `PSUBSCRIBE` / `SSUBSCRIBE` and `UNSUBSCRIBE` / `PUNSUBSCRIBE` / `SUNSUBSCRIBE` (one reply per channel would desynchronise a shared connection) → streaming; `KEYS` → keys; `FLUSHDB`, `FLUSHALL`, and `DEL` / `UNLINK` with more than one key → destructive; the connection-state commands above → session; `admin`, or `dangerous` with `write` (`MIGRATE`, `RESTORE`, `SWAPDB`, `SORT`) → admin (before scripts, so a scripting command a server flags `admin` stays admin); group `scripting` without `readonly` (`EVAL`, `EVALSHA`, `FCALL`, `SCRIPT …`, `FUNCTION …`) → script; `write`, or `may_replicate` without `readonly` (`PUBLISH`) → write; `readonly` → read (`KEYS` aside, `dangerous` reads such as `SORT_RO` stay reads); a core command with neither flag (`PING`, `INFO`, `ROLE`, `COMMAND`) → neutral; anything else → unknown. An empty command is forbidden.
-- **Order.** (1) Agents get `BLOCKED_COMMAND` for admin, keys, streaming, session and unknown on every profile, approval or not. (2) A read-only profile gets `READ_ONLY` for write, destructive, script, admin and unknown from every origin; no confirmation overrides it. (3) Read, write and neutral run. Destructive needs a confirmation: `CONFIRMATION_REQUIRED` for UI origins (with the FR-SF03 typed text: the key count, `db<N>`, or the profile name for FLUSHALL), `APPROVAL_REQUIRED` for agents. Script runs from the console and agents only (agents also need `command.execute`, checked in KeelControl). Admin and keys run from the console only, after a plain confirmation (`CONFIRMATION_REQUIRED`). Streaming, session and unknown run from the console only. Everything an origin may not run is `BLOCKED_COMMAND`.
-- **Confirmations.** A `CommandConfirmation` is the yes the UI (sheet) or KeelControl (a checked approval) attaches to the request. It must come from the right source (a user confirmation never satisfies an agent call and an approval never satisfies a UI call), name the same database, and cover the command: exactly these argument bytes, or for `DEL` / `UNLINK` batches a confirmed key selection (FR-SF04, every key in it) or pattern (FR-SF05, every key matching it with Redis glob rules; `*` never qualifies). Single use, expiry and parameter binding of approvals are KeelControl's (API approvals).
+- **Order.** (1) A read-only profile gets `READ_ONLY` for write, destructive, script, admin and unknown from every origin; no confirmation overrides it. (2) Read, write and neutral run. Destructive needs a typed confirmation (`CONFIRMATION_REQUIRED`, with the FR-SF03 typed text: the key count, `db<N>`, or the profile name for FLUSHALL). Admin and keys run from the console only, after a plain confirmation (`CONFIRMATION_REQUIRED`). Script, streaming, session and unknown run from the console only. Forbidden never runs. Everything an origin may not run is `BLOCKED_COMMAND`.
+- **Confirmations.** A `CommandConfirmation` is the yes the UI (sheet) attaches to the request. It must name the same database and cover the command: exactly these argument bytes, or for `DEL` / `UNLINK` batches a confirmed key selection (FR-SF04, every key in it) or pattern (FR-SF05, every key matching it with Redis glob rules; `*` never qualifies).
 - **Transactions.** `MULTI` / `EXEC` are console session commands; each queued command is classified when the console sends it, so on a read-only profile a write inside a transaction is refused before it is queued.
-- **Routing.** `DataCommandService` sends an allowed command on `browser(db)` for editors and the browser, `console(id)` (`stream(id)` for streaming) for a console, `job(id)` for a bulk job and `agent(grant, db)` for an agent. A refused or malformed request (no arguments, a console or bulk command without its id: `INVALID_PARAMS`) opens no connection and sends nothing. Each connection's database is tracked: set when it opens, moved by the console's own `SELECT` / `RESET` when the server answers `OK`, and unknown while one is in flight or queued in `MULTI`. A command for `context.database` runs only on a connection known to be on it (`INVALID_PARAMS` otherwise, nothing sent), so a console that has `SELECT`ed db5 can't run a FLUSHDB confirmed for db0 and a job id reused with another database can't delete there; connection-state, pub/sub and MONITOR commands are exempt. A console therefore passes its current database. A failed open is not remembered: the next use opens again. Only read, keys and neutral commands are sent as reads; everything else reports `OUTCOME_UNKNOWN` if interrupted. The live catalog (`COMMAND`, `COMMAND DOCS`) is loaded through the same service.
+- **Routing.** `DataCommandService` sends an allowed command on `browser(db)` for editors and the browser, `console(id)` (`stream(id)` for streaming) for a console, and `job(id)` for a bulk job. A refused or malformed request (no arguments, a console or bulk command without its id: `INVALID_PARAMS`) opens no connection and sends nothing. Each connection's database is tracked: set when it opens, moved by the console's own `SELECT` / `RESET` when the server answers `OK`, and unknown while one is in flight or queued in `MULTI`. A command for `context.database` runs only on a connection known to be on it (`INVALID_PARAMS` otherwise, nothing sent), so a console that has `SELECT`ed db5 can't run a FLUSHDB confirmed for db0 and a job id reused with another database can't delete there; connection-state, pub/sub and MONITOR commands are exempt. A console therefore passes its current database. A failed open is not remembered: the next use opens again. Only read, keys and neutral commands are sent as reads; everything else reports `OUTCOME_UNKNOWN` if interrupted. The live catalog (`COMMAND`, `COMMAND DOCS`) is loaded through the same service.
 
 Read-only mode is also defended in depth: if the server reports the ACL user can't write, the profile shows "server-enforced read-only" as well.
 
@@ -150,7 +143,6 @@ A `ServerSession` holds connections by **role**, so long or stateful work never 
 | `console` | 1 per console | Console commands; keeps its own `SELECT`, `CLIENT`, `MULTI` state |
 | `stream` | on demand | MONITOR / SUBSCRIBE in the console; closed with Stop |
 | `job` | 1 per bulk job | SCAN + UNLINK batches |
-| `agent` | 1 per (grant, profile, db) | MCP tool calls |
 
 Opening a connection: connect (TCP / TLS / tunnel socket) → `HELLO 3 AUTH user pass SETNAME keel` when supported, else `AUTH` (one- or two-argument) then `CLIENT SETNAME` → `SELECT db` (not sent for db 0, every new connection's default) → on the first connection of the session, `INFO server`, capability probes and `CONFIG GET databases` (best effort, for the database switcher). `CLIENT SETNAME` is on by default and can be turned off per profile.
 
@@ -166,7 +158,7 @@ Reconnect: a dropped `browser` connection reconnects on the next user action, re
 
 - Minimum TLS 1.2; SNI = profile's server name (defaults to host, overridable for tunnels and IP hosts). An IP literal is never sent as SNI (RFC 6066) but is still matched against the certificate's IP names.
 - **Verify block.** Keel's verify block replaces Network's default evaluation. It checks the chain first with the SSL policy and no name, so an untrusted chain reports its issuer (`TLS_UNTRUSTED`: the self-signed root's name, else the issuer named by the top certificate sent), then with the expected name (`TLS_HOSTNAME_MISMATCH` with the expected name and the certificate's DNS/IP names, or its common name when it has none). A Unix-socket endpoint with no server name override has nothing to match and fails closed. Certificate names are sanitized (no control characters, at most 128 characters, at most 16 names) before they reach a message.
-- **Custom CA:** PEM bundle file reference; trust evaluated with `SecTrustSetAnchorCertificates` + `SecTrustSetAnchorCertificatesOnly(true)` in the verify block. A bundle with no readable certificate is refused when loaded; anchors that fail to decode leave fewer anchors, never the system roots. **CA fingerprints (FR-CN04):** before each connect `KnownCAStore` reads the file (symlinks followed, regular files only, at most 4 MiB), parses it, and compares the SHA-256 of its bytes with `known-ca.json`'s record for the profile. First use, or a different file chosen for the profile, records it; a different SHA-256 shows the old and new fingerprints (`AB:CD:…`) and connects only after the user accepts, with the anchors parsed from the exact bytes that were hashed. Declining (`TLS_CA_CHANGED`) or an unusable file (`TLS_CA_UNAVAILABLE`, naming the path) aborts before any connection is opened. An unreadable `known-ca.json` is preserved as `known-ca.corrupt.<UUID>.json` and replaced by an empty store marked `recordsLost`: from then on a profile without a record is asked about instead of trusted on first use. A newer-version file is never written; acceptances then hold for the session only. Agents get `INTERACTION_REQUIRED` while a CA change awaits the user.
+- **Custom CA:** PEM bundle file reference; trust evaluated with `SecTrustSetAnchorCertificates` + `SecTrustSetAnchorCertificatesOnly(true)` in the verify block. A bundle with no readable certificate is refused when loaded; anchors that fail to decode leave fewer anchors, never the system roots. **CA fingerprints (FR-CN04):** before each connect `KnownCAStore` reads the file (symlinks followed, regular files only, at most 4 MiB), parses it, and compares the SHA-256 of its bytes with `known-ca.json`'s record for the profile. First use, or a different file chosen for the profile, records it; a different SHA-256 shows the old and new fingerprints (`AB:CD:…`) and connects only after the user accepts, with the anchors parsed from the exact bytes that were hashed. Declining (`TLS_CA_CHANGED`) or an unusable file (`TLS_CA_UNAVAILABLE`, naming the path) aborts before any connection is opened. An unreadable `known-ca.json` is preserved as `known-ca.corrupt.<UUID>.json` and replaced by an empty store marked `recordsLost`: from then on a profile without a record is asked about instead of trusted on first use. A newer-version file is never written; acceptances then hold for the session only.
 - **Client certificate:** a Keychain identity (imported from `.p12`, or from PEM certificate + key through Keel's importer), referenced by persistent reference. TLS 1.3 servers check it after the client's handshake is done, so a missing or refused certificate ends the stream at the first handshake command; the handshake reports the TLS status, not a drop.
 - **Skip verification:** the verify block accepts any chain; the connection reports `tlsVerified = false` and the tab, chrome strip and Info show "TLS not verified" in text. Never the default; not offered for `rediss://` URL imports unless explicitly chosen.
 - **Not TLS.** A Redis server reads a TLS ClientHello as an unfinished inline command and never answers, so a TLS connect that times out or fails in the handshake opens one plain connection to the same endpoint, sends `PING` and waits at most 2 s: a RESP reply (`+PONG`, `-NOAUTH …`) means "Server may not be using TLS" (`TLS_HANDSHAKE_FAILED`). Certificate refusals, DNS and refused connections are never probed. The reverse case, a plain connection answered by a TLS record (first byte `0x15`/`0x16`), is `NOT_TLS_EXPECTED`; a TLS port that just closes stays `CONNECTION_FAILED` with the TLS hint.
@@ -199,7 +191,7 @@ Keel never implements SSH. `TunnelManager` runs, without a shell (`posix_spawn` 
 - `KeyIndex` is an actor holding keys as compact `ContiguousArray<UInt8>` slices in an arena plus a parallel metadata array (type, TTL, size when requested, staleness). An open-addressing table of indices deduplicates keys SCAN repeats. Display strings are computed lazily for visible rows only. Each page is one `SCAN` through `DataCommandService` from the `.browser` origin; a page that lands after a restart (filter change, refresh) is dropped.
 - SCAN pages (`COUNT` default 1,000) append to the index; with **auto-paging**, the next page is requested while the user is idle or near the end of the list, up to the configured limit (default 1,000,000 loaded keys, configurable to 10,000,000).
 - Type and TTL for visible rows are fetched in pipelined `TYPE` + `PTTL` batches (or from `SCAN … TYPE` filters on 6.0+), debounced as rows scroll into view. `RowMetadataLoader` (one per tab) asks only for what is still unknown, for the rows on screen (not the fetch margin), at most 256 keys and one batch per 100 ms; a request arriving while one waits replaces its rows. A `PTTL` becomes a deadline on a monotonic clock and the list counts down from it once a second without commands, so an idle tab sends nothing (NFR-PF07). "Show sizes" adds `MEMORY USAGE key SAMPLES 0` for at most 100 keys a batch. A batch that lands after a restart is dropped. The index stores metadata packed in 8 bytes a key (type, flags, deadline in tenths of a second); measured sizes live in a side table.
-- Databases and refresh (FR-KB08, FR-KB09, FR-KB12): `KeyIndex.switchDatabase(n)` moves the index's context to db n and restarts it (filters kept); `restart()` is Refresh. A scan epoch (restarts only) drops pages from before a restart; the public `generation` also changes when a key is removed from the list, since later keys move down one index — the list and metadata answers from before are dropped. `DBSIZE` (`KeyIndex.databaseSize`) and `INFO keyspace` (`DatabaseList.load`) go through the data path from the `.browser` origin. `CONFIG GET databases` is admin for the console and agents, so the switcher's count comes from `DatabaseList.probeCount`, sent at session setup like the capability probes: on the session's connection, marked a read, best effort (db0–db15 otherwise). Cluster mode offers db0 only. Opening a key sends one `TYPE` (`KeyIndex.presence`); "Remove from List" (`KeyIndex.remove(key:)`) rebuilds the arena, dedup table and tree without the key — O(loaded keys) for one user action — and leaves the cursor alone.
+- Databases and refresh (FR-KB08, FR-KB09, FR-KB12): `KeyIndex.switchDatabase(n)` moves the index's context to db n and restarts it (filters kept); `restart()` is Refresh. A scan epoch (restarts only) drops pages from before a restart; the public `generation` also changes when a key is removed from the list, since later keys move down one index — the list and metadata answers from before are dropped. `DBSIZE` (`KeyIndex.databaseSize`) and `INFO keyspace` (`DatabaseList.load`) go through the data path from the `.browser` origin. `CONFIG GET databases` is admin (console only, after a confirmation), so the switcher's count comes from `DatabaseList.probeCount`, sent at session setup like the capability probes: on the session's connection, marked a read, best effort (db0–db15 otherwise). Cluster mode offers db0 only. Opening a key sends one `TYPE` (`KeyIndex.presence`); "Remove from List" (`KeyIndex.remove(key:)`) rebuilds the arena, dedup table and tree without the key — O(loaded keys) for one user action — and leaves the cursor alone.
 - Filters (`KeyFilter`): pattern → `MATCH`, core type → `TYPE`, both on every page; a filter change is `KeyIndex.restart(filter:)`. The "other" type can't be named in SCAN, so each page's keys get a pipelined `TYPE` before the cursor advances (a failed check fails the page and Retry resends the same cursor). Keys added under a type filter take that type as metadata. The local filter is `KeyIndex.localMatches`: a byte substring search over the arena in chunks of 131,072 keys, so the list shows the first matches before the whole index is searched.
 - The namespace tree is built off the main actor incrementally; each node stores child counts so collapsed nodes are cheap. The UI receives snapshots of the visible range only.
 - `NamespaceTree` lives inside `KeyIndex` and stores no names: a folder is (source key, path end, key count, first child, next sibling) pointing into the key arena, children are one linked list of folders and keys, and a table keyed by a folder's full path finds each level with one hash. Adding a key is O(depth); a folder's children are sorted (folders first, byte order) only when it is expanded. A separator change rebuilds the tree in one pass over the arena; a restart clears it. Measured: 1M keys build in ~0.3 s and a 500,000-child folder expands in ~40 ms (release, Apple silicon).
@@ -220,13 +212,12 @@ All state lives in `~/Library/Application Support/<identity>/` (`com.bearstouch.
 | `connections.json` | Profiles, folders, ordering, labels; flags for which secrets exist (never values) | `connections.backup.json`; unreadable → preserved as `connections.corrupt.<UUID>.json` |
 | `hosts.json` | Keel's own saved SSH hosts (format version 1, same shape as the vendored host library) | Backup and corrupt-file preservation |
 | `windows.json` | Native windows in order, tabs (ID, profile ID, db, mode), the selected tab, frames. The selected key stays in memory: key names from browsing are never persisted. A restore keeps at most 64 windows of 128 tabs, drops tabs of deleted profiles and repeated window and tab IDs; while `connections.json` can't be used (recovery, newer version) the file isn't saved, so its tabs aren't lost | Backup |
-| `settings.json` | Appearance, browser defaults, console options, remote-control settings | Backup |
-| `grants.json` | Agent grant metadata with token **hashes** only | No backup (a stale copy could revive a revoked grant); unreadable → preserved, store read-only |
+| `settings.json` | Appearance, browser defaults, console options | Backup |
 | `known-ca.json` | Per profile (UUID key): CA file path and SHA-256; `recordsLost` after a recovery | `0600`, no backup; corrupt-file preservation, then unknown profiles are asked about |
 
 Each file is a flat JSON object with an integer `schemaVersion` beside the document's own keys, written by one `Persistence` actor per file (KeelCore). Reads never follow symlinks, are capped at 4 MiB and 128 nesting levels, and give `.missing`, `.loaded` or `.recovery(reason, backup)`; saving stays off until a file has loaded (or is missing), so nothing unread is overwritten. Before each save the previous good file becomes the backup. Saves carry a caller-assigned sequence (an older one never replaces a newer one); `scheduleSave` debounces 300 ms and `flush()` writes immediately on quit. Recovery offers **Recover backup** / **Start empty**; the original is first copied to `<name>.corrupt.<UUID>.json`. A file with a newer `schemaVersion` — at load or seen mid-session — makes that file read-only for the rest of the session: recovery is refused and the backup can only be used in memory. A symlinked file, backup or state folder is refused.
 
-`UserDefaults`: keyboard bindings, Sparkle preferences. **Never persisted:** values, key names from browsing, console output, console history (unless P1 opt-in, with AUTH-type commands always redacted), passwords, tokens, MCP request bodies. Versioned formats: bump, migrate, test the old format; newer unknown versions open read-only and are never overwritten.
+`UserDefaults`: keyboard bindings, Sparkle preferences. **Never persisted:** values, key names from browsing, console output, console history (unless P1 opt-in, with AUTH-type commands always redacted), passwords. Versioned formats: bump, migrate, test the old format; newer unknown versions open read-only and are never overwritten.
 
 ### Keychain items
 
@@ -235,7 +226,6 @@ Each file is a flat JSON object with an integer `schemaVersion` beside the docum
 | `Keel Connection` | `<profile-uuid>` | Redis password (ACL or `requirepass`) |
 | `Keel TLS` | `<profile-uuid>` | Client identity (persistent reference) and key passphrase |
 | `Keel SSH Host` | `<host-uuid>` | Saved SSH password |
-| `Keel Automation` | `<grant-uuid>` | Grant token |
 
 All generic passwords use *when unlocked, this device only*. The Keychain is written before metadata; a failed metadata write restores the previous Keychain value. Changing a profile's host, port, username, TLS server name or tunnel, turning TLS off or turning **Skip verification** on removes its saved password (connection-revision binding, as in Trellis FR-H09). Turning TLS on or verification back on keeps it.
 
@@ -251,7 +241,27 @@ All generic passwords use *when unlocked, this device only*. The Keychain is wri
 
 ## Errors
 
-Internally every failure is a `KeelError` with a SCREAMING_SNAKE `code` shared with the [API](05-api.md#errors), a sanitized message that names the target and the recovery, and optional server error text (`ERR`, `WRONGTYPE`, `NOPERM`, …) passed through verbatim. Messages never include passwords, tokens or values.
+Internally every failure is a `KeelError` with a SCREAMING_SNAKE `code` from the table below, a sanitized message that names the target and the recovery, and optional server error text (`ERR`, `WRONGTYPE`, `NOPERM`, …) passed through verbatim. Messages never include passwords or values. New codes are SCREAMING_SNAKE and are added here; connection failures also carry an FR-CN10 category (`DNS_FAILED`, `TLS_UNTRUSTED`, `AUTH_FAILED`, `TUNNEL_FAILED`, `DB_OUT_OF_RANGE`, …), listed in [03](03-functional-requirements.md).
+
+| Code | When | Retryable |
+| --- | --- | --- |
+| `INVALID_PARAMS` | Bad arguments: an empty command, a console or bulk command without its id, a database the connection isn't known to be on | no |
+| `READ_ONLY` | Write, destructive, script, admin or unknown command on a read-only profile | no |
+| `BLOCKED_COMMAND` | Command not allowed from this origin (a script, admin, `KEYS`, `MONITOR`/`SUBSCRIBE`, session or unknown command outside the console), or never sent (`CLIENT REPLY`) | no |
+| `CONFIRMATION_REQUIRED` | Destructive, admin or `KEYS` command without a matching confirmation; the UI asks (typed text for destructive, FR-SF03) and resends | yes, after confirmation |
+| `CONFLICT` | Key exists for create, rename target exists, stale profile revision, `WATCH` conflict | sometimes |
+| `WRONG_TYPE` | Operation doesn't match the key's type (server `WRONGTYPE`) | no |
+| `NOT_FOUND` | Profile or job doesn't exist; key missing where it must exist | no |
+| `PERMISSION_DENIED` | ACL `NOPERM` from the server (server text kept) | no |
+| `NOT_CONNECTED` / `CONNECTION_FAILED` | Connection not open or failed (category from FR-CN10) | yes |
+| `PROTOCOL_ERROR` | The server sent something that isn't valid RESP or not the reply shape expected; the connection is closed | yes, on a new connection |
+| `TIMEOUT` | Connect, tunnel or command exceeded its timeout; outcome of writes is unknown | no for writes |
+| `OUTCOME_UNKNOWN` | Connection dropped after a write was sent | no |
+| `CANCELLED` | The request was cancelled, or Keel closed the connection, before a read's reply arrived (a write in flight reports `OUTCOME_UNKNOWN` instead) | yes |
+| `LIMIT_EXCEEDED` | Reply size, page, key count or other bound exceeded | usually |
+| `SERVER_ERROR` | Any other server error, text kept | no |
+| `UNSUPPORTED` | Server lacks the needed command (e.g. `OBJECT ENCODING` on Dragonfly) | no |
+| `UNSUPPORTED_SERVER` | Server version is below Redis 6.0 | no |
 
 ## Testing and injection
 
@@ -263,17 +273,14 @@ Internally every failure is a `KeelError` with a SCREAMING_SNAKE `code` shared w
 
 Copied at build time into `ThirdParty/TrellisShared` with `PROVENANCE.md` (Trellis commit, files, local changes). This is source reuse only: Keel is an independent app and never touches Trellis's files, settings or Keychain items at run time.
 
-
 | Trellis source | Used for |
 | --- | --- |
 | `SavedHost.swift`, `HostLibrary.swift`, `SSHConfigDiscovery.swift`, `HostSecrets.swift` | SSH hosts, discovery, Keychain passwords |
 | `AskpassBroker.swift`, `TrellisAskpass/Askpass.swift` | `keel-askpass`, extended with the prompt relay |
 | `WorkspacePersistence` owner-only storage helpers | Atomic owner-only writes |
 | `KeyboardShortcuts.swift` | Rebindable shortcuts with conflict detection |
-| `TrellisMCP` HTTP parser, listener, endpoint | MCP transport and its security controls |
-| `TrellisControl` grant store, authorization pattern | Grants and the authorizer |
 | Trellis's default terminal colors (`#151719` background, ANSI palette) | Console; the rest of the palette is Keel's own ([08 Design](08-design.md)) |
 
 Identifiers are renamed (`Keel…`, Keychain services above, env prefix `KEEL_`). Any change to the copied code is recorded in `PROVENANCE.md`.
 
-Each vendored file sits in `ThirdParty/TrellisShared/<Target>` and is compiled into that Keel target through the symlink `Sources/<Target>/TrellisShared`. KEEL-002 vendors the SSH host library, discovery, askpass, owner-only storage, shortcut bindings and the MCP HTTP parser, listener and transport checks (Host/Origin, bearer, token hash). The rows that need Keel's own control layer are copied by the story that builds it: the MCP endpoint's sessions and JSON-RPC handling with KEEL-045, the grant store and authorizer with KEEL-043, the terminal colors with KEEL-041.
+Each vendored file sits in `ThirdParty/TrellisShared/<Target>` and is compiled into that Keel target through the symlink `Sources/<Target>/TrellisShared`. KEEL-002 vendors the SSH host library, discovery, askpass, owner-only storage and shortcut bindings; KEEL-041 copies the terminal colors.

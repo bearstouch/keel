@@ -45,7 +45,7 @@ Keel's visual contract. The reference is the **Keel — Native calm** design can
 | `sidebar` / `tabBar` | `#29292B` | Sidebar, tab bar |
 | `sidebarSelection` / `selection` | `#3D2826` | Selected connection, key, field |
 | `sidebarHair` | `#333335` | Sidebar edge |
-| `sheet` | `#2A2A2C` | Sheets, Settings, approval card |
+| `sheet` | `#2A2A2C` | Sheets, Settings |
 | `card` / `codeBg` | `#262628` | Info tiles, value viewer |
 | `field` / `segBg` | `#38383A` | Inputs in sheets, viewer switch track |
 | `soft` | `#2C2C2E` | Filter, db picker |
@@ -127,7 +127,7 @@ Both fonts are bundled ([MAC-19](07-macos-support.md#input-and-text)).
 | Production strip | 28 high |
 | Key list | 380 wide; rows 32 high, radius 7; indent 18 per level |
 | Editor | padding 28 × 36; field rows 40 high |
-| Sheets | New Connection 560, confirmations 480, approval card 380; radius 14; padding 28 × 32 |
+| Sheets | New Connection 560, confirmations 480; radius 14; padding 28 × 32 |
 | Controls | height 30–36, radius 7–8; badges radius 4; Info tiles radius 12 |
 
 ## Components
@@ -160,7 +160,7 @@ Key title (mono) + type badge + `⋯`; one metadata line; field table (Field / V
 
 ### Sheets and cards
 
-New Connection, typed confirmation (bulk delete, FLUSHDB, multi-key delete), bulk-delete progress, approval card, Settings → Agents. Each has a title, at most one sentence of explanation, the minimum fields, and two or three buttons with the primary on the right. The destructive button stays disabled until the typed text matches.
+New Connection, typed confirmation (bulk delete, FLUSHDB, multi-key delete), bulk-delete progress. Each has a title, at most one sentence of explanation, the minimum fields, and two or three buttons with the primary on the right. The destructive button stays disabled until the typed text matches.
 
 ## App icon
 
@@ -186,8 +186,7 @@ Boards in the canvas (light row and matching dark row):
 | Server info | `Info` | `InfoDark` | FR-SI |
 | New connection | `Connection` | `ConnectionDark` | FR-CN19 |
 | Bulk delete | `BulkDelete` (confirm) | `BulkDeleteDark` (progress) | FR-SF03, FR-SF05 |
-| Agents | `Agents` | `AgentsDark` | FR-RC05–FR-RC07 |
 | Tokens | `Tokens` | — | this page |
 | Sidebar component | `Sidebar` | — | FR-CN13 |
 
-Not yet drawn (follow the same components): welcome screen, string / list / set / zset / stream editors, new-key sheet, command palette, Settings panes other than Agents, error states for each connection category.
+Not yet drawn (follow the same components): welcome screen, string / list / set / zset / stream editors, new-key sheet, command palette, Settings panes, error states for each connection category.

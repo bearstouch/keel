@@ -8,11 +8,11 @@
 
 ## Story
 
-As a user, I want simple settings for theme, browsing, editors, console, keyboard, agents and advanced options, so that I can tune Keel without clutter.
+As a user, I want simple settings for theme, browsing, editors, console, keyboard and advanced options, so that I can tune Keel without clutter.
 
 ## Scope
 
-- Panes: General, Browser, Editors, Console, Keyboard, Agents (KEEL-047), Advanced
+- Panes: General, Browser, Editors, Console, Keyboard, Advanced
 - Drafts with Apply where live connections are affected; Cancel restores exact prior state
 
 ## Acceptance criteria

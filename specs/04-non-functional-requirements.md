@@ -29,7 +29,7 @@ Targets are measured on the reference machines (Apple silicon M1 8 GB and an Int
 
 | ID | Requirement | Acceptance check |
 | --- | --- | --- |
-| NFR-RL01 | Keel never changes server data except through an explicit user action or an authorized agent call; no background writes. | Code review + protocol trace of browse-only sessions. |
+| NFR-RL01 | Keel never changes server data except through an explicit user action; no background writes. | Code review + protocol trace of browse-only sessions. |
 | NFR-RL02 | Multi-step edits are atomic (`MULTI/EXEC`, guarded by `WATCH` where a concurrent change would corrupt the result). A failed step leaves the key unchanged. | Integration tests with a concurrent writer. |
 | NFR-RL03 | A lost reply to a write is reported as `OUTCOME_UNKNOWN`, the key is re-read, and the write is never re-sent automatically. | Fault-injection test dropping the connection after send. |
 | NFR-RL04 | Persistence: versioned atomic files, last-known-good backup, owner-only permissions, single writer; corrupt or newer files go to recovery and are never overwritten. Interrupting a save leaves a readable file or backup. | Same test pattern as Trellis `WorkspacePersistence` tests. |
@@ -40,12 +40,11 @@ Targets are measured on the reference machines (Apple silicon M1 8 GB and an Int
 
 | ID | Requirement | Acceptance check |
 | --- | --- | --- |
-| NFR-SC01 | Secrets (Redis passwords, key passphrases, SSH passwords, grant tokens) live only in the Keychain (*when unlocked, this device only*), never in files, logs, argv, environment variables, pasteboard (except explicit copy of a just-created token), diagnostics or API responses. | Grep of the state directory and unified logs after a full scenario finds none. |
+| NFR-SC01 | Secrets (Redis passwords, key passphrases, SSH passwords) live only in the Keychain (*when unlocked, this device only*), never in files, logs, argv, environment variables, pasteboard or diagnostics. | Grep of the state directory and unified logs after a full scenario finds none. |
 | NFR-SC02 | TLS verification is on by default; skipping it is explicit, per profile, and always visible in text. Minimum TLS 1.2. | |
 | NFR-SC03 | ssh is run as an executable plus argument array, never through a shell; destinations starting with `-` or containing control characters are rejected; no trust-bypass options are ever added. | |
 | NFR-SC04 | The runtime directory for tunnel and askpass sockets is per-user `$TMPDIR`, `0700`, random name; sockets `0600`; symlinked endpoints are rejected; peers must match the user's UID. | |
-| NFR-SC05 | Data from Redis (keys, values, INFO, error text) is untrusted: it's never interpreted as markup, URLs aren't auto-opened, JSON is parsed without code execution, and data returned to agents is marked untrusted ([05 API](05-api.md#untrusted-data)). | |
-| NFR-SC06 | The MCP server meets Trellis API-07 controls: off by default, loopback by default, bearer tokens, Origin/Host checks, size and connection limits, idle expiry, rate-limited auth failures, immediate revocation. | `KeelMCPTests` mirror `MCPEndpointTests`/`MCPListenerTests`. |
+| NFR-SC05 | Data from Redis (keys, values, INFO, error text) is untrusted: it's never interpreted as markup, URLs aren't auto-opened, JSON is parsed without code execution, and key names with control or bidi characters display escaped (FR-KB10). | |
 | NFR-SC07 | Dependencies are pinned (Sparkle by exact version and checksum), and the release workflow pins actions to commit SHAs. | |
 
 ## Privacy
@@ -53,7 +52,7 @@ Targets are measured on the reference machines (Apple silicon M1 8 GB and an Int
 | ID | Requirement | Acceptance check |
 | --- | --- | --- |
 | NFR-PV01 | No telemetry, analytics, crash reporting service or remote logging. The only network traffic Keel initiates is to servers the user configured, SSH destinations, and the Sparkle appcast (if enabled). | Little Snitch / `nettop` observation during the acceptance scenario. |
-| NFR-PV02 | Values, key names, console input/output, INFO contents and agent payloads are never logged. `os_log` messages use `privacy: .private` for any server-derived string and contain only codes and counts in release builds. | Log review of a full scenario with `log stream --level debug`. |
+| NFR-PV02 | Values, key names, console input/output, and INFO contents are never logged. `os_log` messages use `privacy: .private` for any server-derived string and contain only codes and counts in release builds. | Log review of a full scenario with `log stream --level debug`. |
 | NFR-PV03 | Nothing derived from server data is persisted except what the user explicitly saves (exported files) — no key caches, no value caches, no history (v1). | State-directory review. |
 | NFR-PV04 | `CLIENT SETNAME keel` identifies the app to the server by default; the user can turn it off per profile. Keel never sends the user's name, machine name or email. | |
 
@@ -62,7 +61,7 @@ Targets are measured on the reference machines (Apple silicon M1 8 GB and an Int
 | ID | Requirement | Acceptance check |
 | --- | --- | --- |
 | NFR-AX01 | Every control has a label, role and state; tables expose rows, columns and headers to VoiceOver; status (connection, read-only, production, TLS not verified, partial load) is text, never color only. | VoiceOver pass over the acceptance scenario (**pending** until run by hand). |
-| NFR-AX02 | Full keyboard operation: sidebar, tabs, key list, editors, sheets, palette, approvals; visible focus everywhere. | Keyboard-only run of the acceptance scenario. |
+| NFR-AX02 | Full keyboard operation: sidebar, tabs, key list, editors, sheets, palette; visible focus everywhere. | Keyboard-only run of the acceptance scenario. |
 | NFR-AX03 | Honors Increase Contrast, Reduce Motion (no animated countdown or sparkline motion), Reduce Transparency, and Dynamic Type equivalents via the data font size setting (9–32 pt). | |
 | NFR-AX04 | Contrast ≥ 4.5:1 for text and ≥ 3:1 for badges and the production strip, in light and dark, validated by Trellis's `ThemeContrast` checks. | Automated contrast test over the palette. |
 

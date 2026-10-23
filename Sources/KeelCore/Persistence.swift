@@ -3,15 +3,15 @@ import Foundation
 
 /// Keel's durable state files (02 Architecture → Persistence). Each lives directly in the state folder.
 public enum PersistedFile: String, CaseIterable, Sendable {
-    case connections, hosts, windows, settings, grants
+    case connections, hosts, windows, settings
     case knownCA = "known-ca"
 
     public var fileName: String { "\(rawValue).json" }
-    /// Grants and CA fingerprints keep no backup: restoring an old copy could revive a revoked grant or a replaced CA.
+    /// CA fingerprints keep no backup: restoring an old copy could revive a replaced CA.
     public var backupName: String? {
         switch self {
         case .connections, .hosts, .windows, .settings: return "\(rawValue).backup.json"
-        case .grants, .knownCA: return nil
+        case .knownCA: return nil
         }
     }
     func corruptName(_ id: UUID) -> String { "\(rawValue).corrupt.\(id.uuidString).json" }

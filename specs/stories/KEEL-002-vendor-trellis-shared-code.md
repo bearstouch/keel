@@ -8,15 +8,17 @@
 
 ## Story
 
-As a Keel developer, I want Trellis's SSH host library, askpass helper, owner-only storage, shortcut bindings and MCP HTTP layer vendored with recorded provenance, so that Keel reuses proven code without any runtime link to Trellis.
+As a Keel developer, I want Trellis's SSH host library, askpass helper, owner-only storage and shortcut bindings vendored with recorded provenance, so that Keel reuses proven code without any runtime link to Trellis.
 
 ## Scope
 
-- `ThirdParty/TrellisShared/` with the files listed in the architecture page, renamed to Keel identifiers (`Keel…` types, `KEEL_` env prefix, Keychain services `Keel SSH Host`, `Keel Automation`)
+- `ThirdParty/TrellisShared/` with the files listed in the architecture page, renamed to Keel identifiers (`Keel…` types, `KEEL_` env prefix, Keychain service `Keel SSH Host`)
 - `ThirdParty/TrellisShared/PROVENANCE.md`: Trellis commit SHA, file list, every local change
 - Vendored tests ported alongside the code
 
 **Out of scope:** reading any Trellis file, setting or Keychain item at run time.
+
+**Note:** the MCP HTTP layer (parser, listener, transport security) and its `KeelMCPTests` were vendored here, then removed on 2026-10-23 with the agent API.
 
 ## Acceptance criteria
 
@@ -27,13 +29,12 @@ As a Keel developer, I want Trellis's SSH host library, askpass helper, owner-on
 
 ## Unit tests
 
-Test target: `KeelSSHTests, KeelMCPTests`.
+Test target: `KeelSSHTests`.
 
 | Test | Verifies |
 | --- | --- |
 | `VendoredIdentifiersTests.testNoTrellisRuntimeIdentifiers` | scans bundled sources/resources for forbidden Trellis identifiers |
 | `HostLibraryCodecTests.testLoadsVersion1` | ported codec test still passes under Keel names |
-| `HTTPRequestParserTests.testRejectsChunkedBodies` | ported MCP parser behavior intact |
 
 ## Definition of done
 

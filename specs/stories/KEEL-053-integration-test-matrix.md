@@ -17,7 +17,7 @@ As the team, I want every supported server tested in CI, so that compatibility c
 
 ## Acceptance criteria
 
-- [ ] **AC1.** The matrix runs in CI and covers connect, detection, browse, each editor, console, bulk delete and agent tools.
+- [ ] **AC1.** The matrix runs in CI and covers connect, detection, browse, each editor, console and bulk delete.
 - [ ] **AC2.** A Redis 5 container is refused with `UNSUPPORTED_SERVER`.
 - [ ] **AC3.** Tests never touch hosts outside the containers.
 

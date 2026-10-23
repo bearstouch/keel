@@ -60,7 +60,7 @@ final class ProfileStoreTests: XCTestCase {
         let kept = await store.profile(profile.id)
         XCTAssertEqual(kept, updated)
 
-        // An unchanged save keeps the revision, so approvals bound to it survive.
+        // An unchanged save keeps the revision, so the saved password bound to it survives.
         let unchanged = try await store.update(profile.id, renamed, expectedRevision: updated.revision)
         XCTAssertEqual(unchanged.revision, updated.revision)
     }

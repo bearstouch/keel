@@ -9,10 +9,10 @@ private struct TestSettings: PersistedDocument, Equatable {
     var items: [String] = []
 }
 
-private struct TestGrants: PersistedDocument, Equatable {
-    static let file = PersistedFile.grants
+private struct TestKnownCA: PersistedDocument, Equatable {
+    static let file = PersistedFile.knownCA
     static let currentVersion = 1
-    var hashes: [String]
+    var fingerprints: [String]
 }
 
 /// Thread-safe mutable state shared with `@Sendable` hooks.
@@ -82,14 +82,14 @@ final class PersistenceTests: XCTestCase {
 
         // An existing, too-open folder is tightened to 0700; files without a backup policy get none.
         XCTAssertEqual(chmod(directory.path, 0o755), 0)
-        let grants = Persistence<TestGrants>(directory: directory)
-        _ = await grants.load()
-        try await grants.save(TestGrants(hashes: ["a"]), sequence: 1)
-        try await grants.save(TestGrants(hashes: ["b"]), sequence: 2)
+        let knownCA = Persistence<TestKnownCA>(directory: directory)
+        _ = await knownCA.load()
+        try await knownCA.save(TestKnownCA(fingerprints: ["a"]), sequence: 1)
+        try await knownCA.save(TestKnownCA(fingerprints: ["b"]), sequence: 2)
         XCTAssertEqual(mode(directory), 0o700)
-        XCTAssertEqual(mode(grants.fileURL), 0o600)
-        XCTAssertNil(grants.backupURL)
-        XCTAssertEqual(try contents(), ["settings.json", "settings.backup.json", "grants.json"])
+        XCTAssertEqual(mode(knownCA.fileURL), 0o600)
+        XCTAssertNil(knownCA.backupURL)
+        XCTAssertEqual(try contents(), ["settings.json", "settings.backup.json", "known-ca.json"])
     }
 
     func testRefusesSymlinkedTarget() async throws {
@@ -121,9 +121,9 @@ final class PersistenceTests: XCTestCase {
         // A symlinked state folder is refused too.
         let linkedFolder = root.appendingPathComponent("linked", isDirectory: true)
         try FileManager.default.createSymbolicLink(at: linkedFolder, withDestinationURL: directory)
-        let linked = Persistence<TestGrants>(directory: linkedFolder)
+        let linked = Persistence<TestKnownCA>(directory: linkedFolder)
         _ = await linked.load()
-        do { try await linked.save(TestGrants(hashes: []), sequence: 1); XCTFail("Saved into a symlinked folder") } catch { XCTAssertEqual(error, .io(ELOOP)) }
+        do { try await linked.save(TestKnownCA(fingerprints: []), sequence: 1); XCTFail("Saved into a symlinked folder") } catch { XCTAssertEqual(error, .io(ELOOP)) }
     }
 
     func testSequenceGateDropsStaleSave() async throws {
@@ -203,11 +203,11 @@ final class PersistenceTests: XCTestCase {
         XCTAssertEqual(try stored(try XCTUnwrap(fresh.backupURL)), TestSettings(name: "good"), "A corrupt file never becomes the backup")
 
         // No usable backup: Recover backup is refused and nothing is written.
-        let grants = Persistence<TestGrants>(directory: directory)
-        try garbage.write(to: grants.fileURL)
-        guard case .recovery(.corrupt, nil) = await grants.load() else { return XCTFail("Expected corrupt recovery without backup") }
-        do { try await grants.recover(.recoverBackup); XCTFail("Recovered a missing backup") } catch { XCTAssertEqual(error, .backupUnavailable) }
-        XCTAssertFalse(try contents().contains { $0.hasPrefix("grants.corrupt.") })
+        let knownCA = Persistence<TestKnownCA>(directory: directory)
+        try garbage.write(to: knownCA.fileURL)
+        guard case .recovery(.corrupt, nil) = await knownCA.load() else { return XCTFail("Expected corrupt recovery without backup") }
+        do { try await knownCA.recover(.recoverBackup); XCTFail("Recovered a missing backup") } catch { XCTAssertEqual(error, .backupUnavailable) }
+        XCTAssertFalse(try contents().contains { $0.hasPrefix("known-ca.corrupt.") })
     }
 
     func testNewerVersionOpensReadOnly() async throws {

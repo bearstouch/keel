@@ -1,12 +1,9 @@
 import Foundation
 
-/// Who is asking (02 Architecture → One data path). Origin never relaxes a rule; it selects how a confirmation is
-/// obtained (a sheet for the UI, an approval for agents) and which connection role carries the command.
+/// Who is asking (02 Architecture → One data path). Origin never relaxes a rule; it selects what may run at all
+/// (only the console runs scripts, admin and streaming commands) and which connection role carries the command.
 public enum CommandOrigin: Sendable, Hashable {
     case editor, browser, console, bulk
-    case agent(grantID: UUID)
-
-    public var isAgent: Bool { if case .agent = self { return true } else { return false } }
 }
 
 /// What a command does, as far as the policy cares (02 Architecture → Safety policy).
@@ -15,7 +12,7 @@ public enum SafetyClass: String, Sendable, Equatable {
     case read
     /// `write`, or `may_replicate` without `readonly` (`PUBLISH`).
     case write
-    /// Multi-key `DEL` / `UNLINK`, `FLUSHDB`, `FLUSHALL`: typed confirmation (UI) or approval (agents).
+    /// Multi-key `DEL` / `UNLINK`, `FLUSHDB`, `FLUSHALL`: typed confirmation.
     case destructive
     /// A script or function command that may write (`EVAL`, `EVALSHA`, `FCALL`, `SCRIPT …`, `FUNCTION …`).
     case script
@@ -44,17 +41,9 @@ public enum SafetyClass: String, Sendable, Equatable {
     }
 }
 
-/// The user's or an approval's yes to one destructive or console-confirmed command (FR-SF03, API approvals).
-/// The UI creates it after its sheet; KeelControl after the ApprovalCenter has checked the approval (single use,
-/// grant, parameters, expiry). Core checks that it covers the exact command and database.
+/// The user's yes to one destructive or console-confirmed command (FR-SF03), created by the UI after its sheet
+/// (typed when the request had `typedText`). Core checks that it covers the exact command and database.
 public struct CommandConfirmation: Sendable, Equatable {
-    public enum Source: Sendable, Equatable {
-        /// A sheet in Keel (typed when the request had `typedText`). Only UI origins accept it.
-        case user
-        /// An approved agent request. Only the agent origin accepts it.
-        case approval(UUID)
-    }
-
     public enum Scope: Sendable, Equatable {
         /// Exactly these arguments, byte for byte.
         case command([Data])
@@ -64,14 +53,13 @@ public struct CommandConfirmation: Sendable, Equatable {
         case pattern(Data)
     }
 
-    public var source: Source
     public var scope: Scope
     public var database: Int
 
-    public init(source: Source, scope: Scope, database: Int) { self.source = source; self.scope = scope; self.database = database }
+    public init(scope: Scope, database: Int) { self.scope = scope; self.database = database }
 }
 
-/// What the UI (or the approval card) must ask before the command can run.
+/// What the UI must ask before the command can run.
 public struct ConfirmationRequest: Sendable, Equatable {
     public enum Operation: Sendable, Equatable {
         case deleteKeys(count: Int)
@@ -96,18 +84,16 @@ public enum SafetyVerdict: Sendable, Equatable {
     case readOnly(message: String)
     case blocked(message: String)
     case confirmationRequired(ConfirmationRequest)
-    case approvalRequired(ConfirmationRequest)
 
     public var isAllowed: Bool { if case .allow = self { return true } else { return false } }
 
-    /// The shared error code (`specs/05-api.md#errors`); nil when allowed.
+    /// The shared error code (`specs/02-architecture.md#errors`); nil when allowed.
     public var code: String? {
         switch self {
         case .allow: return nil
         case .readOnly: return "READ_ONLY"
         case .blocked: return "BLOCKED_COMMAND"
         case .confirmationRequired: return "CONFIRMATION_REQUIRED"
-        case .approvalRequired: return "APPROVAL_REQUIRED"
         }
     }
 }
@@ -121,7 +107,7 @@ public struct SafetyProfile: Sendable, Equatable {
 }
 
 /// Classifies every command before it is sent and decides whether it may go (02 Architecture → Safety policy,
-/// FR-SF01, API-04). Pure: the same arguments, catalog entry, origin and context always give the same verdict.
+/// FR-SF01). Pure: the same arguments, catalog entry, origin and context always give the same verdict.
 public enum SafetyPolicy {
     /// The unsubscribe commands too: one call answers once per channel (pushes on RESP3), which would desynchronise a
     /// shared connection's reply queue, so they belong with SUBSCRIBE on the console's stream connection.
@@ -145,7 +131,7 @@ public enum SafetyPolicy {
         if name == "del" || name == "unlink" { return arguments.count > 2 ? .destructive : .write }
         if sessionNames.contains(name) { return .session }
         // `dangerous` alone also marks reads (INFO, ROLE, LASTSAVE, SORT_RO); with `write` it is admin-grade. Before
-        // scripts, so a scripting command a server flags admin stays admin (agents never get it).
+        // scripts, so a scripting command a server flags admin stays admin.
         if flags.contains(.admin) || flags.isSuperset(of: [.dangerous, .write]) { return .admin }
         if command.docs?.group == "scripting", !flags.contains(.readonly) { return .script }
         if flags.contains(.write) || (flags.contains(.mayReplicate) && !flags.contains(.readonly)) { return .write }
@@ -161,32 +147,27 @@ public enum SafetyPolicy {
     {
         let safetyClass = classify(arguments, command: command)
         let display = command?.displayName ?? "This command"
-        // 1. Agents: never admin, KEYS, MONITOR / SUBSCRIBE, unknown or connection-state commands in v1, whatever the profile.
-        if origin.isAgent, [.admin, .keys, .streaming, .unknown, .session].contains(safetyClass) {
-            let hint = safetyClass == .keys ? " Use key_scan." : ""
-            return .blocked(message: "\(display) isn't available to agents.\(hint)")
-        }
-        // 2. Read-only blocks every possible write, whoever asks (unknown fails closed).
+        // 1. Read-only blocks every possible write, whoever asks (unknown fails closed).
         if profile.readOnly, [.write, .destructive, .script, .admin, .unknown].contains(safetyClass) {
             return .readOnly(message: "Write commands are blocked on this connection (\(profile.name) is read-only).")
         }
-        // 3. What each origin may run.
+        // 2. What each origin may run.
         switch safetyClass {
         case .read, .write, .neutral:
             return .allow(safetyClass)
         case .destructive:
-            let request = destructiveRequest(arguments, command: command, origin: origin, profile: profile, database: database)
-            return confirmed(arguments, safetyClass, request, origin: origin, database: database, confirmation: confirmation)
+            let request = destructiveRequest(arguments, command: command, profile: profile, database: database)
+            return confirmed(arguments, safetyClass, request, database: database, confirmation: confirmation)
         case .script:
-            // Editors, the browser and bulk jobs never run scripts; agents also need `command.execute` (KeelControl).
-            return origin == .console || origin.isAgent ? .allow(.script) : consoleOnly(display)
+            // Editors, the browser and bulk jobs never run scripts.
+            return origin == .console ? .allow(.script) : consoleOnly(display)
         case .admin, .keys:
             guard origin == .console else { return consoleOnly(display) }
             let request =
                 safetyClass == .keys
                 ? ConfirmationRequest(operation: .keys, typedText: nil, message: "KEYS blocks the server while it walks every key in db\(database).")
                 : ConfirmationRequest(operation: .admin(command: display), typedText: nil, message: "\(display) changes the server \(profile.name).")
-            return confirmed(arguments, safetyClass, request, origin: origin, database: database, confirmation: confirmation)
+            return confirmed(arguments, safetyClass, request, database: database, confirmation: confirmation)
         case .streaming, .session, .unknown:
             // The console runs these on its own (or a dedicated stream) connection; unknown ones with a notice.
             return origin == .console ? .allow(safetyClass) : consoleOnly(display)
@@ -198,11 +179,11 @@ public enum SafetyPolicy {
 
     private static func consoleOnly(_ display: String) -> SafetyVerdict { .blocked(message: "\(display) runs only in the console.") }
 
-    private static func destructiveRequest(_ arguments: [Data], command: CommandInfo?, origin: CommandOrigin, profile: SafetyProfile, database: Int)
+    private static func destructiveRequest(_ arguments: [Data], command: CommandInfo?, profile: SafetyProfile, database: Int)
         -> ConfirmationRequest
     {
         let display = command?.displayName ?? ""
-        let asking = origin.isAgent ? "needs approval in Keel" : "needs a typed confirmation"
+        let asking = "needs a typed confirmation"
         switch command?.name {
         case "flushall":
             return ConfirmationRequest(operation: .flushAll, typedText: profile.name, message: "FLUSHALL on \(profile.name) \(asking).")
@@ -215,20 +196,12 @@ public enum SafetyPolicy {
         }
     }
 
-    /// Allows when `confirmation` comes from the right source for `origin` and covers this command and database;
-    /// otherwise asks for one the way the origin gets it.
-    private static func confirmed(
-        _ arguments: [Data], _ safetyClass: SafetyClass, _ request: ConfirmationRequest, origin: CommandOrigin, database: Int, confirmation: CommandConfirmation?
-    ) -> SafetyVerdict {
-        if let confirmation, confirmation.database == database, accepts(confirmation.source, from: origin), covers(confirmation.scope, arguments, safetyClass) {
-            return .allow(safetyClass)
-        }
-        return origin.isAgent ? .approvalRequired(request) : .confirmationRequired(request)
-    }
-
-    private static func accepts(_ source: CommandConfirmation.Source, from origin: CommandOrigin) -> Bool {
-        if case .approval = source { return origin.isAgent }
-        return !origin.isAgent
+    /// Allows when `confirmation` covers this command and database; otherwise asks for one.
+    private static func confirmed(_ arguments: [Data], _ safetyClass: SafetyClass, _ request: ConfirmationRequest, database: Int, confirmation: CommandConfirmation?)
+        -> SafetyVerdict
+    {
+        if let confirmation, confirmation.database == database, covers(confirmation.scope, arguments, safetyClass) { return .allow(safetyClass) }
+        return .confirmationRequired(request)
     }
 
     private static func covers(_ scope: CommandConfirmation.Scope, _ arguments: [Data], _ safetyClass: SafetyClass) -> Bool {

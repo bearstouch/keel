@@ -12,8 +12,6 @@ public enum ConnectionRole: Sendable, Hashable, CustomStringConvertible {
     case stream(UUID)
     /// One per bulk job (SCAN + UNLINK batches).
     case job(UUID)
-    /// One per (grant, profile, database) for MCP tool calls.
-    case agent(grantID: UUID, database: Int)
 
     public var description: String {
         switch self {
@@ -21,7 +19,6 @@ public enum ConnectionRole: Sendable, Hashable, CustomStringConvertible {
         case .console: return "console"
         case .stream: return "stream"
         case .job: return "job"
-        case .agent(_, let db): return "agent(db\(db))"
         }
     }
 }

@@ -2,7 +2,7 @@
 
 | Epic | Priority | Size | Sprint | Depends on |
 | --- | --- | --- | --- | --- |
-| E7 App quality and release | P0 | 5 pts | S9 | [KEEL-047](KEEL-047-agents-settings-activity-and-pause.md), [KEEL-042](KEEL-042-server-info-overview.md), [KEEL-041](KEEL-041-console-view-history-completion-streaming-masking.md) |
+| E7 App quality and release | P0 | 5 pts | S9 | [KEEL-042](KEEL-042-server-info-overview.md), [KEEL-041](KEEL-041-console-view-history-completion-streaming-masking.md) |
 
 **Specs:** [NFR-AX01–NFR-AX04](../04-non-functional-requirements.md#accessibility), [DS-04](../08-design.md#principles)
 

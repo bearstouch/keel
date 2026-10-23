@@ -11,7 +11,7 @@ public struct HandshakeOptions: Sendable, Equatable {
     public var database: Int
     /// `CLIENT SETNAME keel` (NFR-PV04): on by default, off per profile.
     public var setName: Bool
-    /// RESP version asked for with `HELLO`: 3 for browser and agent connections, 2 for the console.
+    /// RESP version asked for with `HELLO`: 3 for browser connections, 2 for the console.
     public var protocolVersion: Int
     /// Limit for each handshake command; exceeding it fails with `TIMEOUT` in the AUTH phase.
     public var timeout: Duration

@@ -246,7 +246,7 @@ public final class AskpassBroker: @unchecked Sendable {
         return ((path as NSString).resolvingSymlinksInPath, pid_t(info.pbi_ppid))
     }
 
-    /// Bridges a connection thread to async work, like `MCPListener`.
+    /// Bridges a connection thread to async work.
     private static func wait<T: Sendable>(_ work: @escaping @Sendable () async -> T) -> T {
         let semaphore = DispatchSemaphore(value: 0)
         let box = Box<T>()

@@ -17,11 +17,11 @@ final class DataCommandServiceTests: XCTestCase {
             (.operation(.stringSet(key: Data("k".utf8), value: Data("v".utf8), keepTTL: false)), .editor, readOnly, "READ_ONLY"),
             (.raw(args("SET", "k", "v")), .console, readOnly, "READ_ONLY"),
             (.operation(.delete(keys: [Data("a".utf8), Data("b".utf8)])), .bulk, readOnly, "READ_ONLY"),
-            (.raw(args("HSET", "h", "f", "v")), .agent(grantID: UUID()), readOnly, "READ_ONLY"),
+            (.raw(args("HSET", "h", "f", "v")), .browser, readOnly, "READ_ONLY"),
             (.raw(args("EVAL", "return 0", "0")), .console, readOnly, "READ_ONLY"),
             (.raw(args("FLUSHDB")), .console, writable, "CONFIRMATION_REQUIRED"),
-            (.raw(args("FLUSHALL")), .agent(grantID: UUID()), writable, "APPROVAL_REQUIRED"),
-            (.raw(args("CONFIG", "SET", "maxmemory", "1")), .agent(grantID: UUID()), writable, "BLOCKED_COMMAND"),
+            (.raw(args("FLUSHALL")), .editor, writable, "CONFIRMATION_REQUIRED"),
+            (.raw(args("CONFIG", "SET", "maxmemory", "1")), .editor, writable, "BLOCKED_COMMAND"),
             (.raw(args("KEYS", "*")), .browser, writable, "BLOCKED_COMMAND"),
             (.raw(args("NOSUCHCOMMAND")), .editor, writable, "BLOCKED_COMMAND"),
             (.raw([]), .console, writable, "INVALID_PARAMS")
@@ -47,7 +47,6 @@ final class DataCommandServiceTests: XCTestCase {
     func testRoutesToConnectionRoles() async throws {
         let server = RecordingServer()
         let service = DataCommandService(session: server.session())
-        let grant = UUID()
         var db2 = writable
         db2.database = 2
         let expected: [(DataCommand, CommandOrigin, DataContext, ConnectionRole)] = [
@@ -57,7 +56,6 @@ final class DataCommandServiceTests: XCTestCase {
             (.raw(args("SELECT", "4")), .console, writable, .console(writable.consoleID!)),
             (.raw(args("SUBSCRIBE", "ch")), .console, writable, .stream(writable.consoleID!)),
             (.raw(args("SCAN", "0", "MATCH", "tmp:*")), .bulk, writable, .job(writable.jobID!)),
-            (.raw(args("GET", "k")), .agent(grantID: grant), db2, .agent(grantID: grant, database: 2)),
             (.raw(args("GET", "k")), .editor, writable, .browser(database: 0))
         ]
         for (command, origin, context, role) in expected {
@@ -65,8 +63,8 @@ final class DataCommandServiceTests: XCTestCase {
             XCTAssertEqual(result.role, role, "\(command) from \(origin)")
         }
         // One connection per role, reused: the editor and the browser share db0's.
-        XCTAssertEqual(server.opened.map(\.role), [.browser(database: 0), .browser(database: 2), .console(writable.consoleID!), .stream(writable.consoleID!), .job(writable.jobID!), .agent(grantID: grant, database: 2)])
-        XCTAssertEqual(server.opened.map(\.database), [0, 2, 0, 0, 0, 2])
+        XCTAssertEqual(server.opened.map(\.role), [.browser(database: 0), .browser(database: 2), .console(writable.consoleID!), .stream(writable.consoleID!), .job(writable.jobID!)])
+        XCTAssertEqual(server.opened.map(\.database), [0, 2, 0, 0, 0])
         XCTAssertEqual(server.opened[0].transport.commands, [["GET", "k"], ["SCAN", "0", "COUNT", "100"], ["GET", "k"]])
         XCTAssertEqual(server.opened[3].transport.commands, [["SUBSCRIBE", "ch"]])
 
@@ -81,7 +79,7 @@ final class DataCommandServiceTests: XCTestCase {
                 XCTAssertEqual(error.code, "INVALID_PARAMS")
             }
         }
-        XCTAssertEqual(server.opened.count, 6)
+        XCTAssertEqual(server.opened.count, 5)
     }
 
     // MARK: - Data path
@@ -90,7 +88,7 @@ final class DataCommandServiceTests: XCTestCase {
         let server = RecordingServer { _ in ":2\r\n" }
         let service = DataCommandService(session: server.session())
         var context = writable
-        context.confirmation = CommandConfirmation(source: .user, scope: .pattern(Data("tmp:*".utf8)), database: 0)
+        context.confirmation = CommandConfirmation(scope: .pattern(Data("tmp:*".utf8)), database: 0)
         let result = try await service.execute(.operation(.delete(keys: [Data("tmp:1".utf8), Data("tmp:2".utf8)])), origin: .bulk, context: context)
         XCTAssertEqual(result.safetyClass, .destructive)
         XCTAssertEqual(server.allCommands, [["UNLINK", "tmp:1", "tmp:2"]])

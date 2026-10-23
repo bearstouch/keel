@@ -93,7 +93,7 @@ public enum DataOperation: Sendable, Equatable {
 
 private func d(_ text: String) -> Data { Data(text.utf8) }
 
-/// What to run: a typed operation, or raw arguments (console lines after tokenizing, agent `command_execute`).
+/// What to run: a typed operation, or raw arguments (console lines after tokenizing).
 public enum DataCommand: Sendable, Equatable {
     case operation(DataOperation)
     case raw([Data])
@@ -121,7 +121,7 @@ public struct DataContext: Sendable, Equatable {
     }
 }
 
-/// Why a command didn't run or didn't complete. `code` is the shared API code (`specs/05-api.md#errors`).
+/// Why a command didn't run or didn't complete. `code` is the shared error code (`specs/02-architecture.md#errors`).
 public enum DataCommandError: Error, Equatable, Sendable {
     /// The safety policy refused it; nothing was sent.
     case refused(SafetyVerdict)
@@ -152,7 +152,7 @@ public struct DataCommandResult: Sendable, Equatable {
     public var isUnknownCommand: Bool { safetyClass == .unknown }
 }
 
-/// The single entry point for every server command — editors, browser, console, bulk jobs and agents
+/// The single entry point for every server command — editors, browser, console and bulk jobs
 /// (02 Architecture → One data path). The policy decides before anything is written: a refused command opens no
 /// connection and sends no byte.
 public actor DataCommandService {
@@ -199,7 +199,7 @@ public actor DataCommandService {
     }
 
     /// Editors and the browser share the database's browser connection; the console keeps its own (and a stream
-    /// connection for MONITOR / SUBSCRIBE); each bulk job and agent grant gets its own.
+    /// connection for MONITOR / SUBSCRIBE); each bulk job gets its own.
     static func role(for origin: CommandOrigin, _ safetyClass: SafetyClass, _ context: DataContext) throws(DataCommandError) -> ConnectionRole {
         switch origin {
         case .editor, .browser: return .browser(database: context.database)
@@ -209,7 +209,6 @@ public actor DataCommandService {
         case .bulk:
             guard let job = context.jobID else { throw .invalidRequest("A bulk command needs its job.") }
             return .job(job)
-        case .agent(let grant): return .agent(grantID: grant, database: context.database)
         }
     }
 }
