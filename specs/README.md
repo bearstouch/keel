@@ -44,4 +44,3 @@ Retired 2026-10: agent API and MCP server removed from v1; numbers are never reu
 | `NFR-SC06` | MCP server transport controls |
 | `INT-09` | Agents and MCP clients |
 | `MAC-15` | Firewall prompt for a non-loopback MCP bind |
-| Stories `KEEL-043`–`KEEL-047` | Grants, agent tool catalog, MCP server, approvals, Agents settings |

@@ -23,7 +23,7 @@ final class SafetyPolicyReviewTests: XCTestCase {
     }
 
     /// The admin set of 02 Architecture → Safety policy asks in the console and is refused from every other origin,
-    /// even with a confirmation that covers it byte for byte (it replaces the coverage of the retired agent test).
+    /// even with a confirmation that covers it byte for byte.
     func testAdminAndStreamingStayConsoleOnlyWhateverTheConfirmation() {
         let lines = [
             "CONFIG SET maxmemory 1", "SHUTDOWN", "DEBUG SLEEP 0", "REPLICAOF NO ONE", "FAILOVER", "CLUSTER RESET", "ACL SETUSER u", "ACL DELUSER u",

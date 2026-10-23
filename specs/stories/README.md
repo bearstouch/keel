@@ -23,8 +23,6 @@ This folder breaks the [Keel specifications](../README.md) into implementable st
 
 **Total:** 52 stories, 239 points.
 
-KEEL-043–KEEL-047 (Agents and MCP) are retired: the agent API was removed from v1 (2026-10); their numbers are never reused.
-
 ## Sprint plan
 
 Two-week sprints. Each sprint ends with format, lint, build, tests green, an independent review and a short demo against the design canvas.
