@@ -150,6 +150,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
   save together; the row moves to its new place after the save. **+ Add member** (`ZADD`) and Increment… (`ZINCRBY`)
   run at once. Pattern search with `ZSCAN … MATCH`. Scores show in full double precision with `inf` / `-inf`
   (KEEL-033).
+- Stream viewer: a read-only ID / Fields table, newest first (the ID header reverses it), paged 500 entries at a time
+  with `XREVRANGE` / `XRANGE` and **Load more**: exclusive ranges where the server has them (6.2+), else the next
+  possible ID, so no entry is repeated or skipped. Selecting an entry lists its fields and opens a value in the viewer.
+  ⋯ → Details shows the `XINFO STREAM` summary (length, first and last ID, groups). **+ Add entry** (`XADD`, automatic
+  `*` or explicit ID) shows the new entry at the top (KEEL-034).
 
 ### Removed
 

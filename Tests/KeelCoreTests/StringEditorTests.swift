@@ -202,7 +202,7 @@ final class StringEditorTests: XCTestCase {
         XCTAssertNotNil(EditorBinding.editor(for: .list))
         XCTAssertNotNil(EditorBinding.editor(for: .set))
         XCTAssertNotNil(EditorBinding.editor(for: .zset))
-        XCTAssertNil(EditorBinding.editor(for: .stream))
+        XCTAssertNotNil(EditorBinding.editor(for: .stream))
         XCTAssertNil(EditorBinding.editor(for: .other))
     }
 }

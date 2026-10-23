@@ -82,26 +82,10 @@ public struct CapabilitySet: Sendable, Equatable {
     /// ID as an inclusive start, so 6.0 pages without repeating the last entry. Nil when `lastID` isn't an entry ID
     /// or is the largest possible one (nothing can follow it).
     public func xrangeAfter(key: Data, lastID: Data, count: Int) -> [Data]? {
-        guard let (ms, seq) = Self.streamID(lastID) else { return nil }
-        let start: Data
-        if supports(.xrangeExclusive) {
-            start = d("(") + lastID
-        } else if seq < UInt64.max {
-            start = d("\(ms)-\(seq + 1)")
-        } else if ms < UInt64.max {
-            // The sequence is exhausted: the next ID is the first of the following millisecond.
-            start = d("\(ms + 1)-0")
-        } else {
-            return nil
-        }
-        return [d("XRANGE"), key, start, d("+"), d("COUNT"), d(String(count))]
-    }
-
-    private static func streamID(_ id: Data) -> (UInt64, UInt64)? {
-        let parts = String(decoding: id, as: UTF8.self).split(separator: "-", omittingEmptySubsequences: false)
-        // Digits only: `UInt64("+1")` would accept a sign that Redis rejects in a stream ID.
-        guard parts.count == 2, parts.allSatisfy({ !$0.isEmpty && $0.utf8.allSatisfy { (0x30...0x39).contains($0) } }), let ms = UInt64(parts[0]), let seq = UInt64(parts[1]) else { return nil }
-        return (ms, seq)
+        guard StreamEditor.parseID(lastID) != nil else { return nil }
+        // The exclusive form is sent for any ID; the inclusive one shares the viewer's next-ID arithmetic.
+        let start = supports(.xrangeExclusive) ? d("(") + lastID : StreamEditor.bound(after: lastID, descending: false, exclusive: false)
+        return start.map { [d("XRANGE"), key, $0, d("+"), d("COUNT"), d(String(count))] }
     }
 
     /// How to read a key's expiry: `PEXPIRETIME` (7.0+, absolute) or `PTTL` (relative, turned into a time with `now`).
