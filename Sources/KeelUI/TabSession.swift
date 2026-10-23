@@ -86,6 +86,7 @@ public final class TabSession: ObservableObject, Identifiable {
         let index = KeyIndex(service: server.service, context: DataContext(profile: server.safety, database: database), separator: server.separator)
         let list = KeyListDataSource(index: index, metadataLoader: RowMetadataLoader(index: index))
         return BrowserModel(
-            list: list, filter: KeyFilterModel(list: list), database: database, serverMode: server.identity.mode, databaseCount: server.databaseCount)
+            list: list, filter: KeyFilterModel(list: list), database: database, serverMode: server.identity.mode, databaseCount: server.databaseCount,
+            editorBinding: { EditorBinding.editor(for: $0) })
     }
 }

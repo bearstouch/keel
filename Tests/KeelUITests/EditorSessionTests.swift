@@ -39,17 +39,8 @@ final class TransactionalKeyspace: @unchecked Sendable {
         return EditorSession(key: Data(key.utf8), type: .string, binding: Self.stringBinding, service: DataCommandService(session: server), context: context)
     }
 
-    /// A minimal whole-value string binding: one row, `GET` guards it, `SET … KEEPTTL` saves it.
-    static let stringBinding = EditorBinding(
-        load: { (key: Data, service: DataCommandService, context: DataContext) async throws(DataCommandError) -> LoadedValue in
-            let reply = try await service.execute(.operation(.get(key: key)), origin: .editor, context: context).reply
-            guard case .bulkString(let value) = reply else { throw .invalidRequest("not a string") }
-            return LoadedValue(rows: [EditorRow(id: Data(), value: value)], watch: WatchGuard(key: key, reads: [.get(key: key)], expected: [reply]))
-        },
-        writes: { key, loaded, draft in
-            guard let value = draft.first?.value, loaded.first?.value != value else { return [] }
-            return [.stringSet(key: key, value: value, keepTTL: true)]
-        })
+    /// The string editor (KEEL-029): `STRLEN`, then `GET` (or `GETRANGE` over 1 MiB); `GET` guards, `SET … KEEPTTL` saves.
+    static let stringBinding = StringEditor.binding
 
     /// One connection's view: its watched versions and queued commands.
     final class Transport: KeelRESP.Transport, @unchecked Sendable {
@@ -122,6 +113,10 @@ final class TransactionalKeyspace: @unchecked Sendable {
                     return "+OK\r\n"
                 case "PTTL": return keyspace.values[arguments[1]] == nil ? ":-2\r\n" : ":-1\r\n"
                 case "STRLEN": return ":\(keyspace.values[arguments[1]]?.utf8.count ?? 0)\r\n"
+                case "GETRANGE":
+                    let bytes = Array((keyspace.values[arguments[1]] ?? "").utf8), end = min(Int(arguments[3])!, bytes.count - 1)
+                    let text = end >= 0 ? String(decoding: bytes[0...end], as: UTF8.self) : ""
+                    return "$\(text.utf8.count)\r\n\(text)\r\n"
                 default: return "-ERR unexpected\r\n"
                 }
             }

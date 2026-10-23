@@ -28,8 +28,8 @@ public final class ValueViewerModel: ObservableObject {
     /// Bumped when `state.text` is replaced by a rendering (open, view switch), not by typing: the text view replaces
     /// its contents only then, so the cursor stays put while the user types.
     @Published public private(set) var revision = 0
-    /// Read-only profiles view but never edit (03 → Value editors).
-    public let isEditable: Bool
+    /// Read-only profiles view but never edit (03 → Value editors), nor does a partial load (FR-ED01).
+    @Published public internal(set) var isEditable: Bool
     /// After every open, switch and edit: the editor takes `state.bytes` as its draft and refuses Save while
     /// `state.saveBlock` says why.
     var onChange: ((ValueViewerState) -> Void)?

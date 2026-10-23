@@ -103,12 +103,39 @@ struct EditorShell: View {
             Text(message).font(Tokens.interface(12.5)).foregroundStyle(Tokens.danger).fixedSize(horizontal: false, vertical: true)
         default:
             if session.showsWholeValue {
-                ValueViewerPanel(model: session.viewer)
+                VStack(alignment: .leading, spacing: 10) {
+                    if let partial = session.partial { PartialNotice(session: session, partial: partial) }
+                    ValueViewerPanel(model: session.viewer)
+                }
             } else if session.binding == nil {
                 Notice(type: session.type)
             }
         }
     }
+}
+
+/// FR-ED01: "Partial (1 MiB of 2 MiB) · Read-only until loaded · Load all", or why the rest can't be loaded. Text, not
+/// color, carries the state (NFR-AX01).
+private struct PartialNotice: View {
+    @ObservedObject var session: EditorSession
+    let partial: PartialLoad
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "doc.badge.ellipsis").font(.system(size: 11)).accessibilityHidden(true)
+            Text("\(partial.text) · \(status)")
+            if partial.canLoadAll {
+                Button(session.phase == .loading ? "Loading…" : "Load all") { Task { await session.loadAll() } }
+                    .buttonStyle(.plain).foregroundStyle(Tokens.accent).disabled(!session.canLoadAll)
+                    .accessibilityHint("Reads the whole value so it can be edited")
+            }
+            if let failure = session.loadAllFailure { Text(failure).foregroundStyle(Tokens.danger).lineLimit(2) }
+        }
+        .font(Tokens.interface(12.5)).foregroundStyle(Tokens.muted)
+        .accessibilityElement(children: .contain)
+    }
+
+    private var status: String { partial.canLoadAll ? "Read-only until fully loaded" : "Too large to load all (over 64 MiB) · Read-only" }
 }
 
 /// FR-ED07 for module types; for core types, the editor isn't in this build yet.
