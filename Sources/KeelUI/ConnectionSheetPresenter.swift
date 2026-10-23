@@ -68,10 +68,11 @@ private struct ConnectionSheetModifier: ViewModifier {
 
     private struct Presenting: ViewModifier {
         @ObservedObject var presenter: ConnectionSheetPresenter
+        @Environment(\.presentsSharedSheets) private var active
 
         func body(content: Content) -> some View {
             // The setter is a no-op: dismissal goes through the model's Cancel / Save, which clears `model`.
-            content.sheet(item: Binding(get: { presenter.model }, set: { _ in })) { model in
+            content.sheet(item: Binding(get: { active ? presenter.model : nil }, set: { _ in })) { model in
                 ConnectionSheet(model: model).interactiveDismissDisabled()
             }
         }

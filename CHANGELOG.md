@@ -113,3 +113,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
   the list. View → Refresh (⌘R) rescans with the same filters and selects the same key again once it loads; the
   footer shows `DBSIZE` beside the loaded count. Opening a key deleted elsewhere says "Key no longer exists" and
   offers **Remove from List** (KEEL-025).
+- Windows and connection tabs: File → New Window (⌘N) and New Tab (⌘T, a connection picker), a tab bar per window
+  with label dot, name and ×, tabs that drag between windows (or Move to New Window) and keep their connection, and a
+  toolbar with the connection name, the db picker and the Browser | Console | Info switch (⌘1/⌘2/⌘3). Opening a
+  connection now connects it and shows its keys; Connection → Reconnect (⇧⌘R) / Disconnect (⇧⌘D). Windows, tabs,
+  modes, databases and frames are saved in `windows.json` and restored disconnected, except profiles with Reconnect on
+  launch (never production ones). Closing a tab or window with unsaved edits asks first (KEEL-026).
