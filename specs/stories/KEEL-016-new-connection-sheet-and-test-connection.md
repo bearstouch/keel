@@ -18,11 +18,31 @@ As a user, I want a short, calm New Connection sheet with a Test button, so that
 
 ## Acceptance criteria
 
-- [ ] **AC1.** A local profile can be created without opening any collapsed row.
-- [ ] **AC2.** Test reports success with server type and latency, or the categorized error, in one line.
-- [ ] **AC3.** Cancel discards all changes including pasted passwords; nothing reaches the Keychain.
+- [x] **AC1.** A local profile can be created without opening any collapsed row.
+- [x] **AC2.** Test reports success with server type and latency, or the categorized error, in one line.
+- [x] **AC3.** Cancel discards all changes including pasted passwords; nothing reaches the Keychain.
 - [ ] **AC4.** The sheet matches the `Connection` / `ConnectionDark` boards (manual design review).
 - [ ] **AC5.** All fields have labels and the sheet is fully keyboard-operable.
+
+**Verification (KEEL-016).** Observed in `ConnectionSheetModelTests`, `ConnectionSheetModelReviewTests` (`KeelUITests`) and
+`ConnectionTesterTests` (`KeelCoreTests`).
+- AC1: `testValidationBlocksSave` saves a profile from the defaults plus a password with no row expanded; a blank Name
+  takes the host.
+- AC2: `ConnectionTesterTests` runs HELLO → PING → INFO server / replication against an in-memory server and reports
+  "✓ Connected · Redis 7.4.1 · standalone · N ms"; WRONGPASS, NOPERM, Redis 5.0, a missing CA file and a missing saved
+  SSH host each give their FR-CN10 category (the last two open no socket). The sheet shows it in one line, the fix in
+  the tooltip and VoiceOver hint; the line hides once a field changes.
+- AC3: `testCancelLeavesNoSecrets` pastes a URL with a password, tests, cancels: no Keychain write, no profile, no
+  `connections.json`; the password is wiped. `testCancelDuringTestDropsTheResult` covers a test finishing after Cancel.
+- AC4 (**pending** manual design review): offscreen renders in light and dark were compared with the boards (layout,
+  560 width, tokens, footer); the review in the running app with Inter / JetBrains Mono bundled (KEEL-049) is not done.
+  Yellow and purple label dots had no token and were added to 08 Design.
+- AC5 (**pending** manual check): every field carries an accessibility label, the label dots read their names with
+  the selected trait, collapsed rows read value and expanded state; Return saves, Escape cancels, ⌘T tests, ⌘N opens
+  the sheet. VoiceOver and Full Keyboard Access in the running app were not exercised.
+
+Known limits: the client certificate import UI is not in the sheet yet (an edited profile's saved identity is used by
+Test); saved SSH hosts appear once KEEL-018 wires the host library; the recovery prompt for `connections.json` is KEEL-055.
 
 ## Unit tests
 

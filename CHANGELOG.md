@@ -68,3 +68,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - Connection URLs: `redis://` and `rediss://` parsing with percent-decoded user and password, `[IPv6]` hosts with
   zone IDs, port and database bounds, ignored query parameters listed by name and inline messages for malformed
   URLs; profiles copy as a URL without the password (KEEL-015).
+- New / Edit Connection sheet (File → New Connection…, ⌘N): URL paste fills the form, Name, Host and Port,
+  Username and Password, label dots, Read-only, and collapsed TLS, SSH tunnel and Advanced rows. **Test** runs the full
+  handshake (tunnel, TLS, AUTH, SELECT, PING, INFO) without saving anything and reports "✓ Connected" with server,
+  version, mode and round trip, or the categorized error, in one line. Cancel writes nothing and wipes the password
+  (KEEL-016).

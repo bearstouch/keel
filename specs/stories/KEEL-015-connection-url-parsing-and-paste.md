@@ -28,7 +28,8 @@ As a user, I want to paste a `redis://` or `rediss://` URL to fill the form, so 
   list in the sheet arrives with KEEL-016.
 - AC3: `testPastedURLIsNeverPersisted` saves a pasted URL through `ProfileStore`; the password is in the (fake)
   Keychain and `connections.json` contains neither it, the scheme nor the query.
-- AC4 (**pending** the sheet, KEEL-016): `testRejectsMalformedURLs` covers the table, a failed parse leaves the form
+- AC4 (**pending** an on-screen check): the KEEL-016 sheet shows `urlMessage` under the URL field and
+  `ConnectionSheetModelTests.testPasteURLFillsFields` observes a refused URL changing no field; `testRejectsMalformedURLs` covers the table, a failed parse leaves the form
   unchanged and every `RedisURLError` has an inline `message`; the inline error display itself is not built yet.
 
 ## Unit tests
