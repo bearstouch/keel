@@ -49,7 +49,7 @@ struct ConnectionToolbar: View {
             Spacer(minLength: 0)
             ModeSwitch(mode: tabs.selected?.mode) { tabs.setMode($0) }
             Spacer(minLength: 0)
-            // ⌘K is the command palette (KEEL-048); the icon is in place and inactive until then.
+            // ⌘K is the command palette (KEEL-043); the icon is in place and inactive until then.
             Image(systemName: "magnifyingglass").font(.system(size: 14)).foregroundStyle(Tokens.muted)
                 .frame(width: 30, height: 30)
                 .opacity(0.5)

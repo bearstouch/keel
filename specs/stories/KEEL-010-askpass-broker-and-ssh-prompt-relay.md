@@ -18,8 +18,8 @@ As a user, I want my saved SSH password used once and every other ssh question s
 
 ## Acceptance criteria
 
-- [x] **AC1.** A saved password is supplied at most once per tunnel; a second password prompt is shown to the user. *(Observed through the real broker socket and a fake ssh: `AskpassBrokerTests.testAnswersPasswordOnce`, `TunnelAskpassTests.testSavedPasswordIsReadOncePerLaunch`. Password auth against a real sshd is **pending** KEEL-053's container; the local fixture is key-only.)*
-- [x] **AC2.** An unknown host key shows ssh's exact text; Reject fails the connection with "Host key not accepted". *(Observed with real `/usr/bin/ssh`, the built `keel-askpass` and the sshd fixture: `SSHPromptIntegrationTests`. Rendering the sheet in light and dark and with VoiceOver is **pending** a manual check; design tokens arrive with KEEL-049.)*
+- [x] **AC1.** A saved password is supplied at most once per tunnel; a second password prompt is shown to the user. *(Observed through the real broker socket and a fake ssh: `AskpassBrokerTests.testAnswersPasswordOnce`, `TunnelAskpassTests.testSavedPasswordIsReadOncePerLaunch`. Password auth against a real sshd is **pending** KEEL-048's container; the local fixture is key-only.)*
+- [x] **AC2.** An unknown host key shows ssh's exact text; Reject fails the connection with "Host key not accepted". *(Observed with real `/usr/bin/ssh`, the built `keel-askpass` and the sshd fixture: `SSHPromptIntegrationTests`. Rendering the sheet in light and dark and with VoiceOver is **pending** a manual check; design tokens arrive with KEEL-044.)*
 - [x] **AC3.** A helper not launched by Keel's ssh, or with a reused nonce, gets no answer. *(`AskpassBrokerTests.testRejectsForeignPeer`, `testNonceIsSingleUse`.)*
 - [x] **AC4.** Editing the host's destination removes its saved password (connection revision binding). *(`HostSecretsTests.testDestinationChangeDeletesPassword`.)*
 

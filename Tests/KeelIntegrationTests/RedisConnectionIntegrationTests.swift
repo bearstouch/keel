@@ -3,7 +3,7 @@ import KeelRESP
 import XCTest
 
 /// KEEL-005 manual check. Needs `KEEL_INTEGRATION=1` and a disposable server on 127.0.0.1 at
-/// `KEEL_INTEGRATION_REDIS_PORT` (default 6379); the KEEL-053 container matrix provides one per engine.
+/// `KEEL_INTEGRATION_REDIS_PORT` (default 6379); the KEEL-048 container matrix provides one per engine.
 final class RedisConnectionIntegrationTests: XCTestCase {
     func testTenThousandPipelinedPings() async throws {
         let environment = ProcessInfo.processInfo.environment

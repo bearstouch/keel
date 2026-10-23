@@ -1,5 +1,5 @@
 #!/bin/sh
-# Starts the KEEL-009 tunnel fixture until KEEL-053's sshd container replaces it: an unprivileged OpenSSH server on
+# Starts the KEEL-009 tunnel fixture until KEEL-048's sshd container replaces it: an unprivileged OpenSSH server on
 # 127.0.0.1:22422 (fresh host and client keys, key auth only) and a disposable redis-server on 127.0.0.1:26399 that is
 # reached only through the tunnel. Writes a client ssh_config with the host key pinned in its own known_hosts file
 # (never ~/.ssh), and a second one that leaves the host key unknown for the prompt relay. Stop with: serve.sh stop

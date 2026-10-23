@@ -39,7 +39,7 @@ Test target: `KeelRESPTests, KeelCoreTests`.
 
 ## Integration and manual checks
 
-- Redis TLS fixture with private CA, client-auth required, and a self-signed variant. *(Observed with disposable local `redis-server` 7.2.1 instances started by `Tests/Fixtures/TLS/serve.sh`, not the KEEL-053 container fixture: `KEEL_INTEGRATION=1 KEEL_INTEGRATION_REDIS_PORT=<plain port> swift test --filter TLSIntegrationTests`. **Pending:** Redis 6.0/6.2, Valkey 7.2/8.x/9.x and Dragonfly TLS matrix (KEEL-053); TLS 1.2-only servers (client-certificate refusal during the handshake); import into the real login keychain on macOS 14 and 15+, including the private-key access prompt, on a clean Mac.)*
+- Redis TLS fixture with private CA, client-auth required, and a self-signed variant. *(Observed with disposable local `redis-server` 7.2.1 instances started by `Tests/Fixtures/TLS/serve.sh`, not the KEEL-048 container fixture: `KEEL_INTEGRATION=1 KEEL_INTEGRATION_REDIS_PORT=<plain port> swift test --filter TLSIntegrationTests`. **Pending:** Redis 6.0/6.2, Valkey 7.2/8.x/9.x and Dragonfly TLS matrix (KEEL-048); TLS 1.2-only servers (client-certificate refusal during the handshake); import into the real login keychain on macOS 14 and 15+, including the private-key access prompt, on a clean Mac.)*
 
 ## Definition of done
 

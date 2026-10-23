@@ -88,7 +88,7 @@ comment no longer points at `MCPListener` (removed with the agent API).
 **`KeyboardShortcuts.swift`**
 - Trellis's terminal `ShortcutAction` enum and `ShortcutMenu` were removed. `ShortcutAction` is now a protocol
   (`title`, `defaultChord`, `laterDefaults`), and `ShortcutIssue`, `ShortcutMap` and the settings type are generic over
-  it; Keel's action table arrives with KEEL-048.
+  it; Keel's action table arrives with KEEL-043.
 - `KeyboardSettings` became `ShortcutSettings<Action>` and dropped the terminal's Option-as-Meta flag (and its key in
   the saved JSON) and the matching reserved chord.
 - Reserved chord names say "Quit Keel" / "Hide Keel"; the ⌘-required message names the console.

@@ -37,11 +37,11 @@ As a user, I want my connections in folders in a quiet sidebar, so that I can fi
   ⌥ (newTab) opens another; Return opens the keyboard selection, never one hidden in a collapsed folder.
 - AC4 (**pending** manual design review): offscreen renders of `SidebarView` in light and dark were compared with the
   `Sidebar` board (232 wide, 52 px traffic-light band, muted group headings, 32 px rows, `sidebarSelection`, link icon,
-  mark and wordmark); the review in the running app with Inter / JetBrains Mono bundled (KEEL-049) is not done.
+  mark and wordmark); the review in the running app with Inter / JetBrains Mono bundled (KEEL-044) is not done.
 
 Known limits: opening from the sidebar adds or focuses a tab in `ConnectionTabs`, an in-memory registry; the actual
 connect, the tab bar and `windows.json` arrive with KEEL-020 / KEEL-026, so until then no row shows the link icon or
-"Failed" in the app. Search is the ⌘K palette (KEEL-048). Tabs of a profile deleted outside the sidebar (the sheet)
+"Failed" in the app. Search is the ⌘K palette (KEEL-043). Tabs of a profile deleted outside the sidebar (the sheet)
 are left to KEEL-026.
 
 ## Unit tests

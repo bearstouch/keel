@@ -1,5 +1,5 @@
 #!/bin/sh
-# Starts the KEEL-007 TLS fixture servers on loopback until KEEL-053's container matrix replaces them:
+# Starts the KEEL-007 TLS fixture servers on loopback until KEEL-048's container matrix replaces them:
 #   6380 private CA (server cert for redis.keel.test only), 6381 the same with client certificates required,
 #   6382 self-signed. Needs a TLS-enabled redis-server (Homebrew's is). Stop with: serve.sh stop
 # Then: KEEL_INTEGRATION=1 swift test --filter KeelIntegrationTests.TLSIntegrationTests

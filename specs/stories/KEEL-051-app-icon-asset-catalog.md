@@ -1,4 +1,4 @@
-# KEEL-056 · App icon asset catalog
+# KEEL-051 · App icon asset catalog
 
 | Epic | Priority | Size | Sprint | Depends on |
 | --- | --- | --- | --- | --- |

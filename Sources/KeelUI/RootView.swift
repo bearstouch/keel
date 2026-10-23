@@ -2,7 +2,7 @@ import KeelCore
 import SwiftUI
 
 /// The window's content: the connections sidebar beside the toolbar, tab bar and selected tab (board `Main`); with no
-/// tab, a quiet empty state (FR-AP08's welcome screen replaces it in KEEL-055).
+/// tab, a quiet empty state (FR-AP08's welcome screen replaces it in KEEL-050).
 public struct RootView: View {
     /// ssh's prompts for tunnels (FR-CN07); nil in previews and tests.
     let prompts: SSHPromptCenter?

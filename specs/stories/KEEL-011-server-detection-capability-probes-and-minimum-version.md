@@ -27,7 +27,7 @@ As a user, I want Keel to recognise Redis, Valkey and Dragonfly and adapt to wha
 **Verification (KEEL-011).** AC1–AC3 observed in `ServerDetectionTests` against the `Tests/Fixtures/INFO` fixtures.
 AC4 is **pending**: per-session caching and the fallback commands (`ZRANGEBYSCORE`, `PTTL`, inclusive stream paging)
 are observed in `CapabilityProbeTests`, but no editor consumes them yet (KEEL-033, KEEL-034); real servers are
-pending the integration matrix (KEEL-053).
+pending the integration matrix (KEEL-048).
 
 ## Unit tests
 

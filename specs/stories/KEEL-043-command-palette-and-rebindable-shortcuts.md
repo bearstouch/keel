@@ -1,4 +1,4 @@
-# KEEL-048 · Command palette and rebindable shortcuts
+# KEEL-043 · Command palette and rebindable shortcuts
 
 | Epic | Priority | Size | Sprint | Depends on |
 | --- | --- | --- | --- | --- |

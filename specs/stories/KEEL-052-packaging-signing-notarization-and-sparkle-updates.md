@@ -1,8 +1,8 @@
-# KEEL-057 · Packaging, signing, notarization and Sparkle updates
+# KEEL-052 · Packaging, signing, notarization and Sparkle updates
 
 | Epic | Priority | Size | Sprint | Depends on |
 | --- | --- | --- | --- | --- |
-| E7 App quality and release | P0 | 8 pts | S10 | [KEEL-056](KEEL-056-app-icon-asset-catalog.md), [KEEL-053](KEEL-053-integration-test-matrix.md) |
+| E7 App quality and release | P0 | 8 pts | S10 | [KEEL-051](KEEL-051-app-icon-asset-catalog.md), [KEEL-048](KEEL-048-integration-test-matrix.md) |
 
 **Specs:** [MAC-08–MAC-11](../07-macos-support.md#distribution-signing-and-updates), [INT-11](../06-integrations.md#updates), [FR-AP07](../03-functional-requirements.md#7-app-basics)
 

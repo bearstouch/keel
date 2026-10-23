@@ -7,7 +7,7 @@ import XCTest
 /// KEEL-007 acceptance checks against real TLS servers. Needs `KEEL_INTEGRATION=1`, the fixture servers from
 /// `Tests/Fixtures/TLS/serve.sh` (ports overridable with `KEEL_INTEGRATION_TLS_PORT`, `…_TLS_CLIENT_AUTH_PORT`,
 /// `…_TLS_SELF_SIGNED_PORT`) and a plain disposable server at `KEEL_INTEGRATION_REDIS_PORT` (default 6379).
-/// KEEL-053's container matrix replaces the script with its TLS fixture.
+/// KEEL-048's container matrix replaces the script with its TLS fixture.
 @available(macOS 15, *)
 final class TLSIntegrationTests: XCTestCase {
     private var ports = (privateCA: UInt16(6_380), clientAuth: UInt16(6_381), selfSigned: UInt16(6_382), plain: UInt16(6_379))

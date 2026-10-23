@@ -27,7 +27,7 @@ As a user, I want keys grouped into a tree by a separator I choose, with odd byt
 
 - AC1, AC2 observed in `NamespaceTreeTests` (`testKeyAndFolderCoexist`, `testChangingSeparatorRebuildsTree`), with stale folder IDs from an old tree refused (`NamespaceTreeReviewTests`).
 - AC3 **partially observed**: `\xff\x00a` displays escaped in the tree and copies as `"\xff\x00a"`; GET, RENAMENX and UNLINK sent through `DataCommandService` carry the original bytes (`KeyDisplayTests.testBinaryKeyActionsUseOriginalBytes`). Opening it in an editor and the rename/delete UI are **pending** the editor and key-action stories (KEEL-027/028 and later).
-- AC4 observed in `NamespaceTreePerformanceTests` with 1M keys in scrambled (SCAN-like) order on Apple silicon: release build (`swift test -c release -Xswiftc -enable-testing`) ~0.2–0.3 s to build, slowest expand (a 500,000-child folder) ~40 ms. Debug builds, as CI runs them, take ~2.5 s / ~0.4 s and are checked with 5× slack. Intel is **pending** (KEEL-052).
+- AC4 observed in `NamespaceTreePerformanceTests` with 1M keys in scrambled (SCAN-like) order on Apple silicon: release build (`swift test -c release -Xswiftc -enable-testing`) ~0.2–0.3 s to build, slowest expand (a 500,000-child folder) ~40 ms. Debug builds, as CI runs them, take ~2.5 s / ~0.4 s and are checked with 5× slack. Intel is **pending** (KEEL-047).
 - Memory (NFR-RS01): on 100k 30-byte keys where every key opens two folders of its own, index buffers are ~32 B/key, the tree ~102 B/key, and total heap ~164 B/key including the names, about 164 MB projected for 1M keys (< 200 MB). The ≤ 120 B/key clause is read as the index alone; the spec page now says so.
 
 ## Unit tests

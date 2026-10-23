@@ -45,7 +45,7 @@ public final class AppModel: ObservableObject {
         let document: WindowsDocument
         switch await persistence?.load() {
         case .loaded(let saved)?: document = saved
-        // Missing: first launch. Recovery: KEEL-055 offers the choice; until then nothing is saved over the file.
+        // Missing: first launch. Recovery: KEEL-050 offers the choice; until then nothing is saved over the file.
         case .missing?, .recovery?, nil: document = WindowsDocument()
         }
         let catalog = await profiles.document, writable = await profiles.isWritable

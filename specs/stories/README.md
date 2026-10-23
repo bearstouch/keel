@@ -19,7 +19,7 @@ This folder breaks the [Keel specifications](../README.md) into implementable st
 | E3 Key browser | [KEEL-020](KEEL-020-scan-key-index.md), [KEEL-021](KEEL-021-namespace-tree-and-binary-safe-names.md), [KEEL-022](KEEL-022-virtualized-key-list-tree-and-flat.md), [KEEL-023](KEEL-023-key-filters.md), [KEEL-024](KEEL-024-row-metadata-types-ttls-and-sizes.md), [KEEL-025](KEEL-025-database-switcher-dbsize-and-refresh.md), [KEEL-026](KEEL-026-windows-connection-tabs-and-modes.md) | 39 | 2 Browse |
 | E4 Editors and safety | [KEEL-027](KEEL-027-editor-shell-save-bar-and-conflicts.md), [KEEL-028](KEEL-028-value-viewers-text-json-hex-raw.md), [KEEL-029](KEEL-029-string-editor.md), [KEEL-030](KEEL-030-hash-editor.md), [KEEL-031](KEEL-031-list-editor.md), [KEEL-032](KEEL-032-set-editor.md), [KEEL-033](KEEL-033-sorted-set-editor.md), [KEEL-034](KEEL-034-stream-viewer-and-add-entry.md), [KEEL-035](KEEL-035-key-actions-rename-ttl-delete-export.md), [KEEL-036](KEEL-036-new-key-sheet.md), [KEEL-037](KEEL-037-read-only-mode-and-production-chrome.md), [KEEL-038](KEEL-038-typed-confirmations-and-multi-key-delete.md), [KEEL-039](KEEL-039-bulk-delete-by-pattern.md) | 50 | 3 Edit |
 | E5 Console and server info | [KEEL-040](KEEL-040-console-parser-and-redis-cli-formatter.md), [KEEL-041](KEEL-041-console-view-history-completion-streaming-masking.md), [KEEL-042](KEEL-042-server-info-overview.md) | 18 | 4 Console and Info |
-| E7 App quality and release | [KEEL-048](KEEL-048-command-palette-and-rebindable-shortcuts.md), [KEEL-049](KEEL-049-design-tokens-themes-and-bundled-fonts.md), [KEEL-050](KEEL-050-accessibility-pass.md), [KEEL-051](KEEL-051-privacy-and-logging-guardrails.md), [KEEL-052](KEEL-052-performance-benchmarks.md), [KEEL-053](KEEL-053-integration-test-matrix.md), [KEEL-054](KEEL-054-settings-window.md), [KEEL-055](KEEL-055-welcome-screen-and-data-removal.md), [KEEL-056](KEEL-056-app-icon-asset-catalog.md), [KEEL-057](KEEL-057-packaging-signing-notarization-and-sparkle-updates.md) | 43 | 5 Release qualification |
+| E7 App quality and release | [KEEL-043](KEEL-043-command-palette-and-rebindable-shortcuts.md), [KEEL-044](KEEL-044-design-tokens-themes-and-bundled-fonts.md), [KEEL-045](KEEL-045-accessibility-pass.md), [KEEL-046](KEEL-046-privacy-and-logging-guardrails.md), [KEEL-047](KEEL-047-performance-benchmarks.md), [KEEL-048](KEEL-048-integration-test-matrix.md), [KEEL-049](KEEL-049-settings-window.md), [KEEL-050](KEEL-050-welcome-screen-and-data-removal.md), [KEEL-051](KEEL-051-app-icon-asset-catalog.md), [KEEL-052](KEEL-052-packaging-signing-notarization-and-sparkle-updates.md) | 43 | 5 Release qualification |
 
 **Total:** 52 stories, 239 points.
 
@@ -31,14 +31,14 @@ Two-week sprints. Each sprint ends with format, lint, build, tests green, an ind
 | --- | --- | --- | --- | --- |
 | S1 | Foundation and protocol core | [KEEL-001](KEEL-001-package-scaffold-toolchain-and-ci.md), [KEEL-002](KEEL-002-vendor-trellis-shared-code.md), [KEEL-003](KEEL-003-owner-only-versioned-persistence.md), [KEEL-004](KEEL-004-resp2-resp3-streaming-codec.md), [KEEL-005](KEEL-005-redisconnection-actor-over-network-framework.md), [KEEL-012](KEEL-012-command-catalog.md) | 27 | A test connects to a local Redis, pipelines commands and classifies them; state files are atomic and owner-only. |
 | S2 | Secure connections and the data path | [KEEL-006](KEEL-006-handshake-authentication-and-error-categories.md), [KEEL-007](KEEL-007-tls-with-custom-ca-client-identity-and-skip-verify.md), [KEEL-008](KEEL-008-ca-file-change-detection.md), [KEEL-011](KEEL-011-server-detection-capability-probes-and-minimum-version.md), [KEEL-013](KEEL-013-safety-policy-and-single-data-path.md), [KEEL-014](KEEL-014-connection-profiles-and-keychain-secrets.md) | 31 | TLS and ACL fixtures connect with categorized errors; read-only blocks every write path; profiles persist with Keychain secrets. |
-| S3 | Connection management and look | [KEEL-009](KEEL-009-ssh-tunnel-manager.md), [KEEL-010](KEEL-010-askpass-broker-and-ssh-prompt-relay.md), [KEEL-015](KEEL-015-connection-url-parsing-and-paste.md), [KEEL-016](KEEL-016-new-connection-sheet-and-test-connection.md), [KEEL-017](KEEL-017-sidebar-of-connections.md), [KEEL-018](KEEL-018-ssh-hosts-library.md), [KEEL-049](KEEL-049-design-tokens-themes-and-bundled-fonts.md) | 33 | A profile through an SSH bastion works end to end from the New Connection sheet; sidebar and theme tokens match the design. |
+| S3 | Connection management and look | [KEEL-009](KEEL-009-ssh-tunnel-manager.md), [KEEL-010](KEEL-010-askpass-broker-and-ssh-prompt-relay.md), [KEEL-015](KEEL-015-connection-url-parsing-and-paste.md), [KEEL-016](KEEL-016-new-connection-sheet-and-test-connection.md), [KEEL-017](KEEL-017-sidebar-of-connections.md), [KEEL-018](KEEL-018-ssh-hosts-library.md), [KEEL-044](KEEL-044-design-tokens-themes-and-bundled-fonts.md) | 33 | A profile through an SSH bastion works end to end from the New Connection sheet; sidebar and theme tokens match the design. |
 | S4 | Key browser | [KEEL-020](KEEL-020-scan-key-index.md), [KEEL-021](KEEL-021-namespace-tree-and-binary-safe-names.md), [KEEL-022](KEEL-022-virtualized-key-list-tree-and-flat.md), [KEEL-025](KEEL-025-database-switcher-dbsize-and-refresh.md), [KEEL-026](KEEL-026-windows-connection-tabs-and-modes.md) | 31 | 1M keys browse smoothly in tree and flat views; databases switch; windows and tabs restore. |
 | S5 | Editing core | [KEEL-024](KEEL-024-row-metadata-types-ttls-and-sizes.md), [KEEL-027](KEEL-027-editor-shell-save-bar-and-conflicts.md), [KEEL-028](KEEL-028-value-viewers-text-json-hex-raw.md), [KEEL-029](KEEL-029-string-editor.md), [KEEL-030](KEEL-030-hash-editor.md), [KEEL-031](KEEL-031-list-editor.md), [KEEL-037](KEEL-037-read-only-mode-and-production-chrome.md) | 31 | Rows show badges and TTLs; strings, hashes and lists edit safely with conflicts detected; viewers switch formats; production chrome shows. |
 | S6 | Editing complete and safety | [KEEL-023](KEEL-023-key-filters.md), [KEEL-032](KEEL-032-set-editor.md), [KEEL-033](KEEL-033-sorted-set-editor.md), [KEEL-034](KEEL-034-stream-viewer-and-add-entry.md), [KEEL-035](KEEL-035-key-actions-rename-ttl-delete-export.md), [KEEL-036](KEEL-036-new-key-sheet.md), [KEEL-038](KEEL-038-typed-confirmations-and-multi-key-delete.md), [KEEL-039](KEEL-039-bulk-delete-by-pattern.md) | 27 | All six types edit; filters and key actions work; bulk delete of 2M keys runs with progress and cancel; destructive actions need typed confirmation. |
 | S7 | Console and info | [KEEL-040](KEEL-040-console-parser-and-redis-cli-formatter.md), [KEEL-041](KEEL-041-console-view-history-completion-streaming-masking.md), [KEEL-042](KEEL-042-server-info-overview.md) | 18 | Console matches redis-cli golden output and runs through the data path; Info overview works. |
-| S8 | App basics | [KEEL-019](KEEL-019-import-and-export-profiles.md), [KEEL-048](KEEL-048-command-palette-and-rebindable-shortcuts.md), [KEEL-054](KEEL-054-settings-window.md), [KEEL-055](KEEL-055-welcome-screen-and-data-removal.md) | 13 | Palette, shortcuts, settings, welcome screen, data removal and profile import/export are complete. |
-| S9 | Quality | [KEEL-050](KEEL-050-accessibility-pass.md), [KEEL-051](KEEL-051-privacy-and-logging-guardrails.md), [KEEL-052](KEEL-052-performance-benchmarks.md), [KEEL-053](KEEL-053-integration-test-matrix.md), [KEEL-056](KEEL-056-app-icon-asset-catalog.md) | 20 | Accessibility audit clean, privacy guardrails verified, NFR-PF targets measured, integration matrix green, icon assets built. |
-| S10 | Release | [KEEL-057](KEEL-057-packaging-signing-notarization-and-sparkle-updates.md) | 8 | Signed, notarized Universal DMG with working Sparkle update; release verification matrix recorded. |
+| S8 | App basics | [KEEL-019](KEEL-019-import-and-export-profiles.md), [KEEL-043](KEEL-043-command-palette-and-rebindable-shortcuts.md), [KEEL-049](KEEL-049-settings-window.md), [KEEL-050](KEEL-050-welcome-screen-and-data-removal.md) | 13 | Palette, shortcuts, settings, welcome screen, data removal and profile import/export are complete. |
+| S9 | Quality | [KEEL-045](KEEL-045-accessibility-pass.md), [KEEL-046](KEEL-046-privacy-and-logging-guardrails.md), [KEEL-047](KEEL-047-performance-benchmarks.md), [KEEL-048](KEEL-048-integration-test-matrix.md), [KEEL-051](KEEL-051-app-icon-asset-catalog.md) | 20 | Accessibility audit clean, privacy guardrails verified, NFR-PF targets measured, integration matrix green, icon assets built. |
+| S10 | Release | [KEEL-052](KEEL-052-packaging-signing-notarization-and-sparkle-updates.md) | 8 | Signed, notarized Universal DMG with working Sparkle update; release verification matrix recorded. |
 
 ## Story index
 
@@ -86,16 +86,16 @@ Two-week sprints. Each sprint ends with format, lint, build, tests green, an ind
 | [KEEL-040](KEEL-040-console-parser-and-redis-cli-formatter.md) | Console parser and redis-cli formatter | E5 | S7 | 5 | KEEL-004 |
 | [KEEL-041](KEEL-041-console-view-history-completion-streaming-masking.md) | Console view: history, completion, streaming, masking | E5 | S7 | 8 | KEEL-040, KEEL-013, KEEL-012 |
 | [KEEL-042](KEEL-042-server-info-overview.md) | Server info overview | E5 | S7 | 5 | KEEL-011, KEEL-026 |
-| [KEEL-048](KEEL-048-command-palette-and-rebindable-shortcuts.md) | Command palette and rebindable shortcuts | E7 | S8 | 5 | KEEL-026, KEEL-002 |
-| [KEEL-049](KEEL-049-design-tokens-themes-and-bundled-fonts.md) | Design tokens, themes and bundled fonts | E7 | S3 | 5 | KEEL-001 |
-| [KEEL-050](KEEL-050-accessibility-pass.md) | Accessibility pass | E7 | S9 | 5 | KEEL-042, KEEL-041 |
-| [KEEL-051](KEEL-051-privacy-and-logging-guardrails.md) | Privacy and logging guardrails | E7 | S9 | 3 | KEEL-041 |
-| [KEEL-052](KEEL-052-performance-benchmarks.md) | Performance benchmarks | E7 | S9 | 5 | KEEL-022, KEEL-024, KEEL-028 |
-| [KEEL-053](KEEL-053-integration-test-matrix.md) | Integration test matrix | E7 | S9 | 5 | KEEL-011, KEEL-009, KEEL-007 |
-| [KEEL-054](KEEL-054-settings-window.md) | Settings window | E7 | S8 | 3 | KEEL-049 |
-| [KEEL-055](KEEL-055-welcome-screen-and-data-removal.md) | Welcome screen and data removal | E7 | S8 | 2 | KEEL-016, KEEL-014 |
-| [KEEL-056](KEEL-056-app-icon-asset-catalog.md) | App icon asset catalog | E7 | S9 | 2 | KEEL-001 |
-| [KEEL-057](KEEL-057-packaging-signing-notarization-and-sparkle-updates.md) | Packaging, signing, notarization and Sparkle updates | E7 | S10 | 8 | KEEL-056, KEEL-053 |
+| [KEEL-043](KEEL-043-command-palette-and-rebindable-shortcuts.md) | Command palette and rebindable shortcuts | E7 | S8 | 5 | KEEL-026, KEEL-002 |
+| [KEEL-044](KEEL-044-design-tokens-themes-and-bundled-fonts.md) | Design tokens, themes and bundled fonts | E7 | S3 | 5 | KEEL-001 |
+| [KEEL-045](KEEL-045-accessibility-pass.md) | Accessibility pass | E7 | S9 | 5 | KEEL-042, KEEL-041 |
+| [KEEL-046](KEEL-046-privacy-and-logging-guardrails.md) | Privacy and logging guardrails | E7 | S9 | 3 | KEEL-041 |
+| [KEEL-047](KEEL-047-performance-benchmarks.md) | Performance benchmarks | E7 | S9 | 5 | KEEL-022, KEEL-024, KEEL-028 |
+| [KEEL-048](KEEL-048-integration-test-matrix.md) | Integration test matrix | E7 | S9 | 5 | KEEL-011, KEEL-009, KEEL-007 |
+| [KEEL-049](KEEL-049-settings-window.md) | Settings window | E7 | S8 | 3 | KEEL-044 |
+| [KEEL-050](KEEL-050-welcome-screen-and-data-removal.md) | Welcome screen and data removal | E7 | S8 | 2 | KEEL-016, KEEL-014 |
+| [KEEL-051](KEEL-051-app-icon-asset-catalog.md) | App icon asset catalog | E7 | S9 | 2 | KEEL-001 |
+| [KEEL-052](KEEL-052-packaging-signing-notarization-and-sparkle-updates.md) | Packaging, signing, notarization and Sparkle updates | E7 | S10 | 8 | KEEL-051, KEEL-048 |
 
 ## Dependency overview
 
@@ -112,7 +112,7 @@ flowchart LR
   E5 --> E7
 ```
 
-Critical path: KEEL-004 → KEEL-005 → KEEL-006 → KEEL-013 → KEEL-020 → KEEL-021 → KEEL-022 → KEEL-027 → KEEL-028 → editors → KEEL-038 → KEEL-050 → KEEL-057.
+Critical path: KEEL-004 → KEEL-005 → KEEL-006 → KEEL-013 → KEEL-020 → KEEL-021 → KEEL-022 → KEEL-027 → KEEL-028 → editors → KEEL-038 → KEEL-045 → KEEL-052.
 
 ## Definition of done
 
@@ -141,6 +141,6 @@ A story is done when all of these hold:
 | --- | --- | --- | --- |
 | Network.framework TLS with custom anchors and client identities | Blocks managed and secured servers | Spike early in S2 with fixtures; fall back to `SecTrust` evaluation in the verify block | KEEL-007 |
 | ssh prompts without a terminal | Tunnels fail on first host-key prompt | Askpass relay design proven in S3 with an sshd container | KEEL-010 |
-| 1M-key smoothness in AppKit lists | Core promise of the browser | Compact arena index, lazy display strings, benchmark from S4 | KEEL-020–KEEL-022, KEEL-052 |
-| Server variance (Dragonfly, managed services) | Features fail unexpectedly | Capability probes and "unavailable" states; integration matrix | KEEL-011, KEEL-053 |
-| Notarization and Sparkle setup | Release delay | Dry-run packaging from S9 with ad-hoc signing; pinned actions | KEEL-057 |
+| 1M-key smoothness in AppKit lists | Core promise of the browser | Compact arena index, lazy display strings, benchmark from S4 | KEEL-020–KEEL-022, KEEL-047 |
+| Server variance (Dragonfly, managed services) | Features fail unexpectedly | Capability probes and "unavailable" states; integration matrix | KEEL-011, KEEL-048 |
+| Notarization and Sparkle setup | Release delay | Dry-run packaging from S9 with ad-hoc signing; pinned actions | KEEL-052 |

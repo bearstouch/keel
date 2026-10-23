@@ -30,7 +30,7 @@ As a user, I want each row's type and expiry, and sizes only when I ask, so that
 - AC3 observed in `KeyListRowMetadataTests.testTTLCountsDownLocally`: a `PTTL` of 90,000 ms shows "1m 30s" (VoiceOver: "expires in 1 minute 30 seconds"), "1m" after 30 s and "expired" after 90 s; a key `TYPE`/`PTTL` report gone reads "expired" and is marked stale.
 - AC4 observed in `KeyListRowMetadataTests.testBadgesHaveText`: every loaded type has a text badge and a spoken name; no badge until the type is loaded.
 - NFR-RS01 still holds with the new metadata (packed to 8 bytes a key, sizes in a table capped at 65,536): `KeyIndexMemoryTests` measures ~44 B/key index buffers and ~176 B/key heap in total at 100k keys.
-- **Pending:** observing it in the running app, since the key list is not yet hosted in a browser window (KEEL-025/026); a protocol trace on real servers (Redis 6.0–8.x, Valkey, Dragonfly, ACL users without `MEMORY`) with the `KeelIntegrationTests` matrix (KEEL-053); VoiceOver pass and light/dark review of the ⋯ menu.
+- **Pending:** observing it in the running app, since the key list is not yet hosted in a browser window (KEEL-025/026); a protocol trace on real servers (Redis 6.0–8.x, Valkey, Dragonfly, ACL users without `MEMORY`) with the `KeelIntegrationTests` matrix (KEEL-048); VoiceOver pass and light/dark review of the ⋯ menu.
 
 ## Unit tests
 

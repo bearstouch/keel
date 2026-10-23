@@ -26,8 +26,8 @@ As a user browsing a production server, I want keys loaded with SCAN in pages, s
 
 ### Verification notes
 
-- AC1–AC4 observed in `KeyIndexTests` / `KeyIndexReviewTests` against the in-memory recording server (protocol trace of every frame sent); a trace against real servers comes with `KeelIntegrationTests` (KEEL-053).
-- AC5 **pending**: the index alone measures ~32 B/key in buffers and ~36 B/key of heap beyond the key bytes on 100k keys of 30 bytes (`KeyIndexMemoryTests`), projecting ~66 MB for 1M keys; the tree arrives with KEEL-021 and the 1M-key benchmark with KEEL-052.
+- AC1–AC4 observed in `KeyIndexTests` / `KeyIndexReviewTests` against the in-memory recording server (protocol trace of every frame sent); a trace against real servers comes with `KeelIntegrationTests` (KEEL-048).
+- AC5 **pending**: the index alone measures ~32 B/key in buffers and ~36 B/key of heap beyond the key bytes on 100k keys of 30 bytes (`KeyIndexMemoryTests`), projecting ~66 MB for 1M keys; the tree arrives with KEEL-021 and the 1M-key benchmark with KEEL-047.
 
 ## Unit tests
 

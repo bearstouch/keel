@@ -123,5 +123,5 @@ and versions follow [Semantic Versioning](https://semver.org/).
 ### Removed
 
 - The agent API and the optional MCP server are out of scope for v1: removed from the specs and the plan
-  (stories KEEL-043–KEEL-047 deleted), along with the `KeelControl` and `KeelMCP` targets and the vendored Trellis MCP HTTP
+  (its five stories deleted and the later stories renumbered KEEL-043–KEEL-052 to close the gap), along with the `KeelControl` and `KeelMCP` targets and the vendored Trellis MCP HTTP
   layer. The `--no-mcp` launch flag is gone and is now refused as an unknown argument.

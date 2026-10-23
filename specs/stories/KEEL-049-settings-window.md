@@ -1,8 +1,8 @@
-# KEEL-054 · Settings window
+# KEEL-049 · Settings window
 
 | Epic | Priority | Size | Sprint | Depends on |
 | --- | --- | --- | --- | --- |
-| E7 App quality and release | P0 | 3 pts | S8 | [KEEL-049](KEEL-049-design-tokens-themes-and-bundled-fonts.md) |
+| E7 App quality and release | P0 | 3 pts | S8 | [KEEL-044](KEEL-044-design-tokens-themes-and-bundled-fonts.md) |
 
 **Specs:** [FR-AP09](../03-functional-requirements.md#7-app-basics)
 

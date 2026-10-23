@@ -67,7 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         self.app = app
         Task {
             // Tabs restore against the profiles, so they load first. A connections.json that needs recovery keeps the
-            // store read-only (KEEL-055 offers the choice); its tabs then have no profile and aren't restored.
+            // store read-only (KEEL-050 offers the choice); its tabs then have no profile and aren't restored.
             _ = await profiles.load()
             for (window, frame) in await app.restore() { show(window, frame: frame) }
             NSApp.activate()

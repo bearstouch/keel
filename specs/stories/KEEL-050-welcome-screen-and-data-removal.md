@@ -1,4 +1,4 @@
-# KEEL-055 · Welcome screen and data removal
+# KEEL-050 · Welcome screen and data removal
 
 | Epic | Priority | Size | Sprint | Depends on |
 | --- | --- | --- | --- | --- |

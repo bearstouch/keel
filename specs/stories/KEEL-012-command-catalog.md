@@ -29,7 +29,7 @@ list from 03 Functional requirements; it grows as the editors land (KEEL-028 onw
 flags were compared with a local Redis 7.2.1 `COMMAND` reply (370 commands, identical arity and key ranges; only
 `WAIT`/`WAITAOF` differ: 7.4 flags them `blocking`, 7.2.1 doesn't), and the live parser runs on captured Redis 7.2
 `COMMAND INFO` / `COMMAND DOCS` frames over RESP2 and RESP3 (`Tests/Fixtures/Commands`). Live loading against Valkey
-and Dragonfly is **pending** the integration matrix (KEEL-053).
+and Dragonfly is **pending** the integration matrix (KEEL-048).
 
 ## Unit tests
 

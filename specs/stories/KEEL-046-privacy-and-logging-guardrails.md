@@ -1,4 +1,4 @@
-# KEEL-051 · Privacy and logging guardrails
+# KEEL-046 · Privacy and logging guardrails
 
 | Epic | Priority | Size | Sprint | Depends on |
 | --- | --- | --- | --- | --- |

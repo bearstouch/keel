@@ -7,7 +7,7 @@ import XCTest
 
 /// KEEL-009 acceptance checks through a real `/usr/bin/ssh`. Needs `KEEL_INTEGRATION=1` and the fixture from
 /// `Tests/Fixtures/SSH/serve.sh` (folder in `KEEL_INTEGRATION_SSH_FIXTURE`): an unprivileged sshd on 22422 with Redis
-/// behind it on 26399. KEEL-053's sshd container replaces the script.
+/// behind it on 26399. KEEL-048's sshd container replaces the script.
 ///
 /// The fixture's host key is pinned in its own known_hosts, so the test launcher adds `-F <fixture>/client_config`
 /// in front of Keel's arguments; the user's `~/.ssh` is never read or written. Keel itself never adds options.

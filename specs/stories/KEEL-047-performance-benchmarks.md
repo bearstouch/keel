@@ -1,4 +1,4 @@
-# KEEL-052 · Performance benchmarks
+# KEEL-047 · Performance benchmarks
 
 | Epic | Priority | Size | Sprint | Depends on |
 | --- | --- | --- | --- | --- |

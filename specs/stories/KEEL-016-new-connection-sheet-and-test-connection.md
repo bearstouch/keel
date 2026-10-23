@@ -35,14 +35,14 @@ As a user, I want a short, calm New Connection sheet with a Test button, so that
 - AC3: `testCancelLeavesNoSecrets` pastes a URL with a password, tests, cancels: no Keychain write, no profile, no
   `connections.json`; the password is wiped. `testCancelDuringTestDropsTheResult` covers a test finishing after Cancel.
 - AC4 (**pending** manual design review): offscreen renders in light and dark were compared with the boards (layout,
-  560 width, tokens, footer); the review in the running app with Inter / JetBrains Mono bundled (KEEL-049) is not done.
+  560 width, tokens, footer); the review in the running app with Inter / JetBrains Mono bundled (KEEL-044) is not done.
   Yellow and purple label dots had no token and were added to 08 Design.
 - AC5 (**pending** manual check): every field carries an accessibility label, the label dots read their names with
   the selected trait, collapsed rows read value and expanded state; Return saves, Escape cancels, ⌘T tests, ⌘N opens
   the sheet. VoiceOver and Full Keyboard Access in the running app were not exercised.
 
 Known limits: the client certificate import UI is not in the sheet yet (an edited profile's saved identity is used by
-Test); saved SSH hosts appear once KEEL-018 wires the host library; the recovery prompt for `connections.json` is KEEL-055.
+Test); saved SSH hosts appear once KEEL-018 wires the host library; the recovery prompt for `connections.json` is KEEL-050.
 
 ## Unit tests
 

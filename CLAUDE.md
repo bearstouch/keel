@@ -36,10 +36,10 @@ swift format lint --strict -r Sources Tests ThirdParty    # lint: must print not
 swift run Keel                                 # run the app (state: com.bearstouch.keel.dev)
 swift run Keel --fixture                       # fresh temporary state folder
 swift run Keel --state-directory /abs/path     # separate dev state directory
-KEEL_INTEGRATION=1 swift test --filter KeelIntegrationTests   # container matrix; real cases land with KEEL-053
+KEEL_INTEGRATION=1 swift test --filter KeelIntegrationTests   # container matrix; real cases land with KEEL-048
 python3 -I scripts/generate-command-catalog.py --redis DIR VER --valkey DIR VER --check DIR VER   # bundled command catalog from src/commands sources
-python3 scripts/bench-browser.py [--quick]     # (later, KEEL-052) 1M/10M-key benchmarks; evidence in .build/
-scripts/package-release.sh                     # (later, KEEL-057) Universal 2 DMG; ad-hoc unless KEEL_SIGN_IDENTITY / KEEL_NOTARY_PROFILE
+python3 scripts/bench-browser.py [--quick]     # (later, KEEL-047) 1M/10M-key benchmarks; evidence in .build/
+scripts/package-release.sh                     # (later, KEEL-052) Universal 2 DMG; ad-hoc unless KEEL_SIGN_IDENTITY / KEEL_NOTARY_PROFILE
 ```
 
 There is no SwiftLint/SwiftFormat binary; use the toolchain's `swift format` with the repo `.swift-format`

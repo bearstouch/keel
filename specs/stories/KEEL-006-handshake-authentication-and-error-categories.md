@@ -38,7 +38,7 @@ Test target: `KeelRESPTests, KeelCoreTests`.
 
 ## Integration and manual checks
 
-- ACL fixture user with `-select` gets `PERMISSION_DENIED` naming `SELECT`. *(Observed against a disposable local `redis-server` 7.2.1, not the KEEL-053 container fixture: `KEEL_INTEGRATION=1 KEEL_INTEGRATION_REDIS_PORT=<port> swift test --filter HandshakeIntegrationTests` — the test creates and removes its ACL users. **Pending:** Redis 6.0/6.2, Valkey 7.2/8.x/9.x and Dragonfly matrix.)*
+- ACL fixture user with `-select` gets `PERMISSION_DENIED` naming `SELECT`. *(Observed against a disposable local `redis-server` 7.2.1, not the KEEL-048 container fixture: `KEEL_INTEGRATION=1 KEEL_INTEGRATION_REDIS_PORT=<port> swift test --filter HandshakeIntegrationTests` — the test creates and removes its ACL users. **Pending:** Redis 6.0/6.2, Valkey 7.2/8.x/9.x and Dragonfly matrix.)*
 
 ## Definition of done
 

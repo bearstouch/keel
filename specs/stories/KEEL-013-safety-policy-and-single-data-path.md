@@ -31,7 +31,7 @@ As a user of a production server, I want every command — from editors, the bro
   tokenized by KEEL-040, so its tokens reach this path as arguments.
 - AC3 is observed at the policy level (`CONFIRMATION_REQUIRED` with the FR-SF03 typed text); the sheets are
   KEEL-038. AC4 is observed in `testConsoleOnlyCommands` and `testUnknownCommandBlockedOnReadOnly`.
-- Pending against real servers (integration matrix, KEEL-053). Out of scope: MULTI/EXEC for editor multi-step edits
+- Pending against real servers (integration matrix, KEEL-048). Out of scope: MULTI/EXEC for editor multi-step edits
   (KEEL-027), the stream connection's push handling (KEEL-041), and opening real connections from profiles
   (KEEL-014/016: `ServerSession` takes an injected opener).
 

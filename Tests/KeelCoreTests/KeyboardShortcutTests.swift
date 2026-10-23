@@ -1,7 +1,7 @@
 import XCTest
 @testable import KeelCore
 
-/// A stand-in action table: Keel's own (FR-AP02) arrives with KEEL-048. `clearConsole` is a later default.
+/// A stand-in action table: Keel's own (FR-AP02) arrives with KEEL-043. `clearConsole` is a later default.
 private enum TestAction: String, ShortcutAction {
     case newTab, refresh, toggleSidebar, renameKey, clearConsole, disconnect
 
