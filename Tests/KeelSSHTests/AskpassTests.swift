@@ -41,10 +41,20 @@ final class AskpassTests: XCTestCase {
     func testNonceFraming() {
         let nonce = AskpassProtocol.makeNonce()
         XCTAssertNotEqual(nonce, AskpassProtocol.makeNonce())
-        XCTAssertEqual(AskpassProtocol.nonce(from: AskpassProtocol.request(nonce: nonce)), nonce)
-        XCTAssertNil(AskpassProtocol.nonce(from: Data(nonce.utf8)), "Unterminated")
-        XCTAssertNil(AskpassProtocol.nonce(from: Data("short\n".utf8)))
-        XCTAssertNil(AskpassProtocol.nonce(from: Data((nonce.uppercased() + "\n").utf8)))
+        let request = AskpassProtocol.request(nonce: nonce, kind: .typed(echo: true), prompt: "Continue (yes/no)? ")
+        let line = request.prefix { $0 != 0x0A } + Data([0x0A])
+        XCTAssertEqual(AskpassProtocol.header(from: line), AskpassProtocol.Header(nonce: nonce, kind: .typed(echo: true), length: 19))
+        XCTAssertEqual(request.dropFirst(line.count), Data("Continue (yes/no)? ".utf8))
+        for kind in [AskpassPrompt.password, .typed(echo: false), .confirm, .notice] {
+            XCTAssertEqual(AskpassProtocol.header(from: AskpassProtocol.request(nonce: nonce, kind: kind))?.kind, kind)
+        }
+        XCTAssertNil(AskpassProtocol.header(from: Data("\(nonce) P 0".utf8)), "Unterminated")
+        XCTAssertNil(AskpassProtocol.header(from: Data("short P 0\n".utf8)))
+        XCTAssertNil(AskpassProtocol.header(from: Data((nonce.uppercased() + " P 0\n").utf8)))
+        XCTAssertNil(AskpassProtocol.header(from: Data("\(nonce)\n".utf8)), "The kind and length are required")
+        XCTAssertNil(AskpassProtocol.header(from: Data("\(nonce) P \(AskpassProtocol.promptLimit + 1)\n".utf8)))
+        XCTAssertEqual(
+            AskpassProtocol.request(nonce: nonce, prompt: String(repeating: "x", count: 9_000)).count, 64 + 8 + AskpassProtocol.promptLimit, "Long prompts are cut to the limit")
     }
 
     func testHelperWritesBrokerPasswordWithoutTouchingTerminal() {
@@ -62,6 +72,34 @@ final class AskpassTests: XCTestCase {
         XCTAssertEqual(output, secret + Data([0x0A]))
         XCTAssertEqual(sent?.0, "/tmp/s")
         XCTAssertTrue(terminal.asked.isEmpty)
+    }
+
+    func testHelperRelaysEveryPromptThroughTheBroker() {
+        let environment = [AskpassProtocol.socketVariable: "/tmp/s", AskpassProtocol.nonceVariable: AskpassProtocol.makeNonce()]
+        let terminal = ScriptedTerminal(["never used"])
+        var helper = AskpassHelper(arguments: ["keel-askpass", "Are you sure you want to continue connecting (yes/no/[fingerprint])? "], environment: environment)
+        var output = Data(), requests: [Data] = [], reply = Data([AskpassProtocol.password]) + Data("yes".utf8)
+        helper.exchange = { _, request in
+            requests.append(request); return reply
+        }
+        helper.terminal = terminal
+        helper.write = { output.append($0) }
+        XCTAssertEqual(helper.run(), 0, "Accepted in the sheet: ssh reads `yes`")
+        XCTAssertEqual(output, Data("yes\n".utf8))
+        XCTAssertEqual(AskpassProtocol.header(from: requests[0].prefix { $0 != 0x0A } + Data([0x0A]))?.kind, .typed(echo: true))
+        XCTAssertTrue(String(decoding: requests[0], as: UTF8.self).hasSuffix("(yes/no/[fingerprint])? "), "ssh's text travels unchanged")
+
+        reply = Data([AskpassProtocol.declined]); output = Data()
+        XCTAssertEqual(helper.run(), 1, "Rejected: ssh's prompt fails")
+        XCTAssertTrue(output.isEmpty)
+
+        helper.environment["SSH_ASKPASS_PROMPT"] = "confirm"
+        reply = Data([AskpassProtocol.password]) + Data("yes".utf8)
+        XCTAssertEqual(helper.run(), 0, "Allowed confirm")
+        reply = Data([AskpassProtocol.declined])
+        XCTAssertEqual(helper.run(), 1, "Denied confirm")
+        XCTAssertTrue(output.isEmpty, "A confirm answer is the exit status only")
+        XCTAssertTrue(terminal.asked.isEmpty, "The broker's answer is final; the terminal isn't asked")
     }
 
     func testHelperFallsBackToTerminalForEverythingElse() {
@@ -83,7 +121,7 @@ final class AskpassTests: XCTestCase {
         output = Data()
         XCTAssertEqual(helper.run(), 0)
         XCTAssertEqual(output, Data("yes\n".utf8))
-        XCTAssertEqual(exchanges, 1, "Trust prompts never reach the broker")
+        XCTAssertEqual(exchanges, 2, "Trust prompts go to the broker first; `I` leaves them to the terminal")
         XCTAssertEqual(helper.run(), 1, "No terminal input fails the prompt")
 
         helper.environment = [:]
@@ -92,7 +130,7 @@ final class AskpassTests: XCTestCase {
         output = Data()
         XCTAssertEqual(helper.run(), 0)
         XCTAssertEqual(output, Data("manual\n".utf8), "Without broker variables the prompt is typed")
-        XCTAssertEqual(exchanges, 1)
+        XCTAssertEqual(exchanges, 3)
     }
 
     private func broker(peer: (path: String, parent: pid_t)?) -> AskpassBroker {
@@ -108,7 +146,7 @@ final class AskpassTests: XCTestCase {
         let registration = try XCTUnwrap(
             broker.register(
                 parent: { 4242 },
-                answer: {
+                password: {
                     calls.increment(); return secret
                 }))
         var info = stat()
@@ -116,9 +154,9 @@ final class AskpassTests: XCTestCase {
         XCTAssertEqual(info.st_mode & 0o777, 0o600)
         XCTAssertEqual(stat((registration.socketPath as NSString).deletingLastPathComponent, &info), 0)
         XCTAssertEqual(info.st_mode & 0o777, 0o700)
-        let request = AskpassProtocol.request(nonce: registration.nonce)
+        let request = AskpassProtocol.request(nonce: registration.nonce, prompt: "deploy@prod's password: ")
         XCTAssertEqual(AskpassHelper.exchange(registration.socketPath, request), Data([AskpassProtocol.password]) + secret)
-        XCTAssertEqual(AskpassHelper.exchange(registration.socketPath, request), Data([AskpassProtocol.interactive]), "One answer per connection")
+        XCTAssertEqual(AskpassHelper.exchange(registration.socketPath, request), Data([AskpassProtocol.interactive]), "One saved answer per launch; without a relay the rest is left to the terminal")
         XCTAssertEqual(calls.count, 1)
         let environment = registration.environment(helper: broker.helperPath)
         XCTAssertEqual(environment["SSH_ASKPASS_REQUIRE"], "force")
@@ -133,18 +171,18 @@ final class AskpassTests: XCTestCase {
             let registration = try XCTUnwrap(
                 broker.register(
                     parent: { parent },
-                    answer: {
+                    password: {
                         calls.increment(); return secret
                     }))
             XCTAssertEqual(AskpassHelper.exchange(registration.socketPath, AskpassProtocol.request(nonce: registration.nonce)), Data([AskpassProtocol.interactive]))
-            XCTAssertEqual(broker.registeredCount, 0, "A refused request still consumes the nonce")
+            XCTAssertEqual(broker.registeredCount, 0, "A refused request revokes the nonce")
         }
         let broker = broker(peer: ("/fixture/keel-askpass", 4242))
         defer { broker.stop() }
         let registration = try XCTUnwrap(
             broker.register(
                 parent: { 4242 },
-                answer: {
+                password: {
                     calls.increment(); return secret
                 }))
         XCTAssertEqual(
@@ -156,7 +194,7 @@ final class AskpassTests: XCTestCase {
 
     func testStopRemovesSocket() throws {
         let broker = broker(peer: nil)
-        let registration = try XCTUnwrap(broker.register(parent: { nil }, answer: { nil }))
+        let registration = try XCTUnwrap(broker.register(parent: { nil }, password: { nil }))
         broker.stop()
         XCTAssertFalse(FileManager.default.fileExists(atPath: (registration.socketPath as NSString).deletingLastPathComponent))
     }
@@ -179,7 +217,7 @@ final class AskpassTests: XCTestCase {
         let registered = try XCTUnwrap(
             broker.register(
                 parent: { holder.pid },
-                answer: {
+                password: {
                     parent.increment(); return secret
                 }))
         second.environment = ProcessInfo.processInfo.environment.merging(registered.environment(helper: helper)) { $1 }

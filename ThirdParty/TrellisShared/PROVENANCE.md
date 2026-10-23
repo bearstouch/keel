@@ -60,8 +60,11 @@ Where comments cited Trellis requirement IDs they now cite Keel's (INT-08, NFR-S
 **`Askpass.swift`**
 - Environment variables renamed to `SSH_ASKPASS_KEEL_SOCKET` / `SSH_ASKPASS_KEEL_NONCE` (still outside the app's own
   `KEEL_` prefix); helper name `keel-askpass`.
-- Doc comment of `AskpassHelper`: without a terminal (Keel's tunnels) a typed prompt fails closed until the prompt
-  relay (KEEL-010). Behavior unchanged.
+- KEEL-010 prompt relay: a request is now the header line `<nonce> <kind> <byte count>` plus ssh's prompt text
+  (`AskpassProtocol.request(nonce:kind:prompt:)`, `header(from:)`, `promptLimit` 4 KiB) instead of the bare nonce
+  line, and a new reply `D` (declined). The helper sends *every* prompt to the broker first (Trellis sent only password
+  prompts) and falls back to the terminal only on `I` or without a broker; a confirm prompt's answer is its exit
+  status. `AskpassPrompt` gained its one-letter wire code. The receive-timeout comment names the relayed prompt.
 
 **`SavedHost.swift`**
 - `connectionLaunch: SessionLaunch` (a Trellis terminal type) replaced by `sshArguments(options:) -> [String]`: the same
@@ -75,6 +78,11 @@ Where comments cited Trellis requirement IDs they now cite Keel's (INT-08, NFR-S
 **`HostSecrets.swift`** — Keychain service `Keel SSH Host`, item label `Keel SSH host password`.
 
 **`AskpassBroker.swift`** — imports `KeelAskpass`; socket folder prefix `keel-askpass-`; thread names `Keel askpass …`.
+KEEL-010: `init(helperPath:relay:)` and `register(parent:destination:password:)` (was `answer:`). A nonce is no longer
+consumed by its first request: it lives for one ssh launch, the saved password is handed out once
+(`Entry.takePassword`), other prompts (and a second password prompt) go to the `PromptRelay`, and a failed peer check
+revokes the nonce. Requests are read as header plus prompt; `unregister`/`stop` withdraw the launch's open prompts.
+New `AskpassActivity` (prompt on screen, host key declined) on the registration, read by `TunnelManager`.
 
 **`OwnerOnlyStorage.swift`**
 - Extracted from the workspace persistence file; the workspace codec and actor were not taken.
@@ -120,3 +128,8 @@ Not vendored (it lives in `Sources/`), but adapted from Trellis at the same comm
 - `Sources/KeelSSH/OwnedProcessIdentity.swift` (KEEL-009): `OwnedProcessIdentity` and its `permitsSignal` rule from
   `Sources/TrellisCore/SessionClosure.swift`; the identity is read with `proc_pidinfo` in Swift instead of Trellis's
   `trellis_read_process_identity` C helper. `OwnedProcessGroup` (signal and reap under one lock) is Keel's own.
+
+Keel's own, built on the vendored askpass (KEEL-010): `Sources/KeelSSH/PromptRelay.swift`, `AskpassHelperLocation.swift`,
+`HostLibrary+Tunnel.swift`, and `Sources/KeelUI/SSHPromptSheet.swift`. Ported tests updated for the new wire format:
+`AskpassTests.testNonceFraming`, `testHelperFallsBackToTerminalForEverythingElse` (trust prompts now reach the broker
+first) and the broker cases (`password:` label, revocation wording).

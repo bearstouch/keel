@@ -24,7 +24,7 @@ let package = Package(
         .target(name: "KeelCore", dependencies: ["KeelRESP", "KeelSSH"]),
         .target(name: "KeelControl", dependencies: ["KeelCore"]),
         .target(name: "KeelMCP", dependencies: ["KeelControl", "KeelCore"]),
-        .target(name: "KeelUI", dependencies: ["KeelCore", "KeelControl"]),
+        .target(name: "KeelUI", dependencies: ["KeelCore", "KeelControl", "KeelSSH"]),
         .executableTarget(name: "KeelApp", dependencies: ["KeelUI", "KeelCore", "KeelSSH", "KeelControl", "KeelMCP"]),
         .target(name: "KeelRelease"),
         .testTarget(name: "KeelRESPTests", dependencies: ["KeelRESP"]),
@@ -32,7 +32,7 @@ let package = Package(
         .testTarget(name: "KeelCoreTests", dependencies: ["KeelCore", "KeelSSH"]),
         .testTarget(name: "KeelControlTests", dependencies: ["KeelControl", "KeelCore"]),
         .testTarget(name: "KeelMCPTests", dependencies: ["KeelMCP", "KeelControl"]),
-        .testTarget(name: "KeelUITests", dependencies: ["KeelUI", "KeelCore"]),
+        .testTarget(name: "KeelUITests", dependencies: ["KeelUI", "KeelCore", "KeelSSH", "KeelAskpass"]),
         .testTarget(name: "KeelReleaseTests", dependencies: ["KeelRelease", "KeelCore"]),
         // Container matrix (Redis/Valkey/Dragonfly/sshd); real cases run only with KEEL_INTEGRATION=1.
         .testTarget(name: "KeelIntegrationTests", dependencies: ["KeelCore", "KeelRESP", "KeelSSH"])

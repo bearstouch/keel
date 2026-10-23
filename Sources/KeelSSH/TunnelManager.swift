@@ -13,6 +13,8 @@ public enum TunnelError: Error, Equatable, Sendable {
     case timeout(Duration)
     /// The manager shut down (app quitting) while the tunnel was starting.
     case shutDown
+    /// The person rejected ssh's host-key prompt, or left it unanswered until it timed out (FR-CN07); ssh then exited.
+    case hostKeyNotAccepted(TunnelExit)
 }
 
 /// One user's hold on a tunnel. Release it exactly once; a second release is ignored.
@@ -68,26 +70,30 @@ public actor TunnelManager {
     private let probe: @Sendable (String) -> Bool
     private let makeRuntime: @Sendable () throws(RuntimeDirectoryError) -> RuntimeDirectory
     private let baseEnvironment: [String: String]
+    private let askpass: AskpassBroker?
     private var runtime: RuntimeDirectory?
     private var tunnels: [Key: Tunnel] = [:]
     private var isShutDown = false
 
     public init(
         launcher: any TunnelProcessLauncher = SSHProcessLauncher(), options: Options = Options(),
-        environment: [String: String] = ProcessInfo.processInfo.environment,
+        environment: [String: String] = ProcessInfo.processInfo.environment, askpass: AskpassBroker? = nil,
         makeRuntime: @escaping @Sendable () throws(RuntimeDirectoryError) -> RuntimeDirectory = { () throws(RuntimeDirectoryError) in try RuntimeDirectory.create() },
         probe: @escaping @Sendable (String) -> Bool = UnixSocketProbe.accepts,
         sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) {
-        self.launcher = launcher; self.options = options; self.makeRuntime = makeRuntime; self.probe = probe; self.sleep = sleep
-        // An inherited askpass setup would let ssh run a program Keel didn't choose; KEEL-010 supplies Keel's own.
+        self.launcher = launcher; self.options = options; self.makeRuntime = makeRuntime; self.probe = probe; self.sleep = sleep; self.askpass = askpass
+        // An inherited askpass setup would let ssh run a program Keel didn't choose; `askpass` supplies Keel's own.
         baseEnvironment = environment.filter { !$0.key.hasPrefix("SSH_ASKPASS") && $0.key != "DISPLAY" }
     }
 
-    /// Opens (or joins) the tunnel for `profileID`. `environment` is added to ssh's environment (askpass registration).
-    public func acquire(profileID: UUID, configuration: SSHTunnelConfiguration, connectTimeout: Duration, environment: [String: String] = [:]) async throws(TunnelError)
-        -> TunnelLease
-    {
+    /// Opens (or joins) the tunnel for `profileID`. `environment` is added to ssh's environment. `savedPassword` reads the
+    /// host's saved password (`HostLibrary.savedPassword(for:gate:)`); a launch calls it at most once, for ssh's first
+    /// password prompt. The connect timeout starts over after the person answers one of ssh's prompts.
+    public func acquire(
+        profileID: UUID, configuration: SSHTunnelConfiguration, connectTimeout: Duration, environment: [String: String] = [:],
+        savedPassword: (@Sendable () async -> Data?)? = nil
+    ) async throws(TunnelError) -> TunnelLease {
         let key = Key(profileID: profileID, configuration: configuration)
         let leaseID = UUID()
         while true {
@@ -118,7 +124,7 @@ public actor TunnelManager {
             throw .runtimeDirectory(error)
         }
         let generation = tunnel.generation
-        let task = Task { await self.start(key, generation: generation, connectTimeout: connectTimeout, environment: environment) }
+        let task = Task { await self.start(key, generation: generation, connectTimeout: connectTimeout, environment: environment, savedPassword: savedPassword) }
         tunnel.state = .starting(task)
         tunnels[key] = tunnel
         let process: any TunnelProcess
@@ -163,9 +169,18 @@ public actor TunnelManager {
 
     // MARK: - Starting
 
-    private func start(_ key: Key, generation: UUID, connectTimeout: Duration, environment: [String: String]) async -> Result<any TunnelProcess, TunnelError> {
+    private func start(_ key: Key, generation: UUID, connectTimeout: Duration, environment: [String: String], savedPassword: (@Sendable () async -> Data?)?) async -> Result<
+        any TunnelProcess, TunnelError
+    > {
         guard let socketID = tunnels[key]?.socketID else { return .failure(.shutDown) }
-        let result = await launchAndWait(key, generation: generation, connectTimeout: connectTimeout, environment: environment)
+        // One nonce per ssh launch; it is revoked as soon as the launch is ready or has failed (no prompt follows `-N`).
+        let launched = LaunchedProcessID()
+        let registration = askpass?.register(parent: { launched.pid }, destination: key.configuration.destination, password: savedPassword)
+        var sshEnvironment = environment
+        if let askpass, let registration { sshEnvironment.merge(registration.environment(helper: askpass.helperPath)) { $1 } }
+        let result = await launchAndWait(
+            key, generation: generation, connectTimeout: connectTimeout, environment: sshEnvironment, activity: registration?.activity, launched: launched)
+        if let registration { askpass?.unregister(registration) }
         guard case .success(let process) = result else {
             if tunnels[key]?.generation == generation { tunnels[key] = nil }
             return result
@@ -179,7 +194,9 @@ public actor TunnelManager {
         return .success(process)
     }
 
-    private func launchAndWait(_ key: Key, generation: UUID, connectTimeout: Duration, environment: [String: String]) async -> Result<any TunnelProcess, TunnelError> {
+    private func launchAndWait(
+        _ key: Key, generation: UUID, connectTimeout: Duration, environment: [String: String], activity: AskpassActivity?, launched: LaunchedProcessID
+    ) async -> Result<any TunnelProcess, TunnelError> {
         guard let runtime, let socketID = tunnels[key]?.socketID else { return .failure(.shutDown) }
         let path: String, arguments: [String]
         do throws(RuntimeDirectoryError) { path = try runtime.socketPath(id: socketID) } catch { return .failure(.runtimeDirectory(error)) }
@@ -190,17 +207,25 @@ public actor TunnelManager {
         } catch {
             return .failure(error)
         }
+        launched.pid = process.group.pid
         // Record the ssh so a crashed run's tunnel is terminated on the next launch; a failed record isn't fatal.
         if let identity = process.group.identity { try? runtime.writeRecord(identity, named: runtime.recordName(id: socketID)) }
-        for _ in 0..<pollAttempts(within: connectTimeout) {
-            if let exit = process.exit { runtime.removeTunnelFiles(id: socketID); return .failure(.exited(exit)) }
+        // A rejected host key makes ssh exit; report the person's decision, not ssh's generic failure.
+        let exited = { (exit: TunnelExit) -> TunnelError in activity?.hostKeyDeclined == true ? .hostKeyNotAccepted(exit) : .exited(exit) }
+        var attempts = 0
+        let limit = pollAttempts(within: connectTimeout)
+        while attempts < limit {
+            if let exit = process.exit { runtime.removeTunnelFiles(id: socketID); return .failure(exited(exit)) }
             if isShutDown || tunnels[key]?.generation != generation { await stop(process, socketID: socketID); return .failure(.shutDown) }
             if probe(path) { return .success(process) }
+            // While a prompt is on screen the deadline starts over, so ssh gets the full connect timeout after the
+            // answer to finish authenticating; the relay's own timeout bounds the wait for the person.
+            if activity?.isAsking == true { attempts = 0 } else { attempts += 1 }
             try? await sleep(options.pollInterval)
         }
         await stop(process, socketID: socketID)
         // ssh may have failed right at the deadline; its own reason beats a generic timeout.
-        if let exit = process.exit, case .exited(let code) = exit.status, code != 0 { return .failure(.exited(exit)) }
+        if let exit = process.exit, case .exited(let code) = exit.status, code != 0 { return .failure(exited(exit)) }
         return .failure(.timeout(connectTimeout))
     }
 
@@ -262,6 +287,16 @@ public actor TunnelManager {
 
     private func lease(_ key: Key, _ tunnel: Tunnel, _ id: UUID) -> TunnelLease {
         TunnelLease(profileID: key.profileID, socketPath: (try? runtime?.socketPath(id: tunnel.socketID)) ?? "", key: key, generation: tunnel.generation, id: id)
+    }
+}
+
+/// The pid of a launch's ssh once spawned; the askpass broker reads it to check a helper's parent.
+final class LaunchedProcessID: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Int32?
+    var pid: Int32? {
+        get { lock.withLock { value } }
+        set { lock.withLock { value = newValue } }
     }
 }
 
