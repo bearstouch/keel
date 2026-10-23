@@ -32,6 +32,20 @@ KeyDB isn't detected separately in v1: it reports `redis_version` 6.x and is tre
 
 Mode: `redis_mode` (`standalone`, `cluster`, `sentinel`) and `role` from `INFO replication`. Features are enabled by **capability probing** (FR-CN12), never by version alone; version only selects the bundled command catalog when `COMMAND` is unavailable.
 
+A family with a minimum version (Redis 6.0) that reports an older or unparseable version is refused with
+`UNSUPPORTED_SERVER`. Versions compare numerically on their leading numbers (`df-v1.24.0` is 1.24.0).
+
+**Probes.** Each FR-CN12 probe is one read-only command on a key named `keel:probe:<uuid>` that almost surely doesn't
+exist: `MEMORY USAGE`, `OBJECT ENCODING`, `COMMAND DOCS GET`, `ZRANGE <key> 0 0 BYSCORE`, `XRANGE <key> (0-0 + COUNT 1`,
+`PEXPIRETIME`, `EVAL_RO "return 0" 0`. Any non-error reply (or "no such key") means available. A cluster redirect
+(`MOVED`/`ASK`: the probe key hashes to another node) or an ACL denial for the key only comes after the server accepted
+the command, so it means available for `MEMORY USAGE`, `OBJECT ENCODING` and `PEXPIRETIME`, and unavailable for the
+argument forms (`BYSCORE`, exclusive `XRANGE`), whose fallbacks work everywhere. Any other error reply (unknown command
+or subcommand, syntax, a command `NOPERM`, a disabled command) means unavailable and the feature takes its fallback
+(`ZRANGEBYSCORE`, `PTTL`, an inclusive start one past the last stream ID) or shows "unavailable" (`UNSUPPORTED`).
+Results are cached for the session; a connection failure or a transient error (`LOADING`, `BUSY`, `TRYAGAIN`,
+`MASTERDOWN`, `CLUSTERDOWN`) is not cached and is probed again on the next use.
+
 ## Protocol
 
 **INT-03 (P0).**

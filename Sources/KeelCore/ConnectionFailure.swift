@@ -28,6 +28,8 @@ public enum ConnectionErrorCategory: String, Sendable, CaseIterable {
     case connectionFailed = "CONNECTION_FAILED"
     /// Any other error reply during the handshake.
     case serverError = "SERVER_ERROR"
+    /// The server is older than Keel supports (Redis < 6.0, FR-CN11); no tab opens.
+    case unsupportedServer = "UNSUPPORTED_SERVER"
 }
 
 /// Why opening a connection failed, in words the user can act on (FR-CN10). Messages name the host, user, phase or
@@ -66,6 +68,14 @@ public struct ConnectionFailure: Error, Equatable, Sendable, CustomStringConvert
         default:
             self.init(category: .connectionFailed, message: "Couldn't connect to \(place).", suggestion: "Check the host and port.")
         }
+    }
+
+    /// A server below the minimum version of its family (FR-CN11): "Keel requires Redis 6.0 or later; this server is Redis 5.0.7".
+    public init(unsupported kind: ServerKind, version: ServerVersion?, minimum: ServerVersion) {
+        let found = version.map { "this server is \(kind.displayName) \($0)" } ?? "this server doesn't report its \(kind.displayName) version"
+        self.init(
+            category: .unsupportedServer, message: "Keel requires \(kind.displayName) \(minimum) or later; \(found).",
+            suggestion: "Upgrade the server to \(kind.displayName) \(minimum) or later, or connect to a newer one.")
     }
 
     /// A custom CA file that couldn't be used before connecting; no connection was attempted. Names the path (AC3).

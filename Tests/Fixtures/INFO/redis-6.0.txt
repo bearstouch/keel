@@ -1,0 +1,25 @@
+# Server
+redis_version:6.0.20
+redis_git_sha1:00000000
+redis_git_dirty:0
+redis_build_id:4c2a8f5e7d3b1a09
+redis_mode:standalone
+os:Linux 5.15.0 x86_64
+arch_bits:64
+multiplexing_api:epoll
+atomicvar_api:atomic-builtin
+gcc_version:10.2.1
+process_id:1
+run_id:1c2a3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b
+tcp_port:6379
+uptime_in_seconds:120
+hz:10
+executable:/data/redis-server
+config_file:
+io_threads_active:0
+
+# Replication
+role:master
+connected_slaves:0
+master_replid:8f9e7d6c5b4a39281706f5e4d3c2b1a098765432
+master_repl_offset:0

@@ -1,0 +1,16 @@
+# Server
+redis_version:7.4.0
+dragonfly_version:df-v1.24.0
+redis_mode:standalone
+arch_bits:64
+os:Linux 6.8.0 x86_64
+thread_count:4
+multiplexing_api:iouring
+tcp_port:6379
+uptime_in_seconds:30
+uptime_in_days:0
+
+# Replication
+role:master
+connected_slaves:0
+master_replid:a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0

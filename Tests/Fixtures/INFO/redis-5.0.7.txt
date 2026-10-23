@@ -1,0 +1,21 @@
+# Server
+redis_version:5.0.7
+redis_git_sha1:00000000
+redis_git_dirty:0
+redis_build_id:66bd629f924ac924
+redis_mode:standalone
+os:Linux 5.15.0 x86_64
+arch_bits:64
+multiplexing_api:epoll
+gcc_version:9.3.0
+process_id:1
+run_id:0b2a3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b
+tcp_port:6379
+uptime_in_seconds:42
+hz:10
+executable:/data/redis-server
+config_file:
+
+# Replication
+role:master
+connected_slaves:0
