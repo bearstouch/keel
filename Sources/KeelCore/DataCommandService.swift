@@ -11,6 +11,8 @@ public enum DataOperation: Sendable, Equatable {
     /// `MEMORY USAGE key SAMPLES 0`: sent only when the user asks for sizes (FR-KB07).
     case memoryUsage(key: Data)
     case get(key: Data)
+    /// `GETRANGE key start end` (inclusive offsets): a large string's first page (FR-ED01).
+    case getRange(key: Data, start: Int, end: Int)
     /// `DBSIZE` for the context's database: the footer's total (FR-KB09).
     case databaseSize
     /// `INFO section`; the database switcher asks for `keyspace` (FR-KB08).
@@ -65,6 +67,7 @@ public enum DataOperation: Sendable, Equatable {
         case .pttl(let key): return [d("PTTL"), key]
         case .memoryUsage(let key): return [d("MEMORY"), d("USAGE"), key, d("SAMPLES"), d("0")]
         case .get(let key): return [d("GET"), key]
+        case .getRange(let key, let start, let end): return [d("GETRANGE"), key, d(String(start)), d(String(end))]
         case .databaseSize: return [d("DBSIZE")]
         case .info(let section): return [d("INFO"), section]
         case .objectEncoding(let key): return [d("OBJECT"), d("ENCODING"), key]

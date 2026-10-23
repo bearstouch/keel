@@ -129,6 +129,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
   (offset, hex, ASCII, drawn lazily) and Raw (redis-cli quoting); Text and Raw edits save byte-exactly, invalid JSON
   can't be saved from JSON view, the chosen view is remembered per key pattern for the session, and values over
   64 KiB are prepared off the main thread. Adds the standard Edit menu (Cut, Copy, Paste, Select All) (KEEL-028).
+- String editor: values up to 1 MiB open whole; larger ones show their first 1 MiB as "Partial (1 MiB of 2 MiB)",
+  read-only until **Load all** (up to 64 MiB); saving sends `SET … KEEPTTL` inside `WATCH`/`MULTI`/`EXEC`, so the TTL
+  is kept, and an unchanged value sends nothing (KEEL-029).
 
 ### Removed
 

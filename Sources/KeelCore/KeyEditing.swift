@@ -47,8 +47,34 @@ public struct EditorRow: Sendable, Equatable, Identifiable {
 public struct LoadedValue: Sendable, Equatable {
     public var rows: [EditorRow]
     public var watch: WatchGuard
+    /// Set when only part of the value was read (a string over 1 MiB): the shell shows it but refuses edits.
+    public var partial: PartialLoad?
 
-    public init(rows: [EditorRow], watch: WatchGuard) { self.rows = rows; self.watch = watch }
+    public init(rows: [EditorRow], watch: WatchGuard, partial: PartialLoad? = nil) { self.rows = rows; self.watch = watch; self.partial = partial }
+}
+
+/// How much of a value an editor read, out of its full size (FR-ED01: "Partial (1 MiB of 2 MiB)").
+public struct PartialLoad: Sendable, Equatable {
+    public var loadedBytes: Int64
+    public var totalBytes: Int64
+    /// Whether "Load all" may read the rest: false when the whole value wouldn't fit one bounded reply.
+    public var canLoadAll: Bool
+
+    public init(loadedBytes: Int64, totalBytes: Int64, canLoadAll: Bool) {
+        self.loadedBytes = loadedBytes; self.totalBytes = totalBytes; self.canLoadAll = canLoadAll
+    }
+
+    public var text: String { "Partial (\(Self.binary(loadedBytes)) of \(Self.binary(totalBytes)))" }
+
+    /// "1 MiB", "2.5 MiB", "640 KiB": binary units, the way the limits are stated.
+    static func binary(_ bytes: Int64) -> String {
+        guard bytes >= 1_024 else { return "\(max(bytes, 0)) bytes" }
+        var value = Double(bytes) / 1_024, unit = "KiB"
+        for larger in ["MiB", "GiB"] where value >= 1_024 { value /= 1_024; unit = larger }
+        // One decimal, dropped when whole, so the 1 MiB page reads "1 MiB" rather than "1.0 MiB".
+        let rounded = (value * 10).rounded() / 10
+        return rounded == rounded.rounded() ? "\(Int(rounded)) \(unit)" : String(format: "%.1f %@", rounded, unit)
+    }
 }
 
 /// How one type's editor (KEEL-029…034) loads and saves through the editor shell: the shell keeps the loaded rows and
@@ -60,8 +86,18 @@ public struct EditorBinding: Sendable {
 
     public var load: Load
     public var writes: Writes
+    /// "Load all" after a partial load: reads the whole value. Nil for types that never load partially.
+    public var loadAll: Load?
 
-    public init(load: @escaping Load, writes: @escaping Writes) { self.load = load; self.writes = writes }
+    public init(load: @escaping Load, writes: @escaping Writes, loadAll: Load? = nil) { self.load = load; self.writes = writes; self.loadAll = loadAll }
+
+    /// The editor for a core type; nil while its editor isn't built (the shell shows the header and a notice).
+    public static func editor(for type: KeyType) -> EditorBinding? {
+        switch type {
+        case .string: return StringEditor.binding
+        default: return nil
+        }
+    }
 }
 
 public enum EditorChanges {

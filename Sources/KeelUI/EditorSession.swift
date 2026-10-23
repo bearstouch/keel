@@ -31,6 +31,8 @@ public final class EditorSession: ObservableObject {
     /// Rows that differ from the loaded value (the accent dots); its count is the save bar's.
     @Published public private(set) var changedRows: Set<Data> = []
     @Published public private(set) var details: KeyDetails?
+    /// Why the last "Load all" failed; the first page stays shown.
+    @Published public private(set) var loadAllFailure: String?
     /// Why Save is refused while the viewer shows what it shows: invalid JSON in JSON view, Raw text that doesn't parse.
     @Published public private(set) var saveBlock: String?
     /// The value viewer (KEEL-028): a string's whole value; collection editors open their selected element in it.
@@ -53,6 +55,10 @@ public final class EditorSession: ObservableObject {
 
     /// A string is one row, its whole value, shown and edited in the viewer.
     public var showsWholeValue: Bool { type == .string && binding != nil && loaded != nil }
+    /// Only part of the value is loaded (a string over 1 MiB): shown, never edited, until "Load all" (FR-ED01).
+    public var partial: PartialLoad? { loaded?.partial }
+    /// "Load all" for a partial load the binding can read whole (not over 64 MiB) while nothing else runs.
+    public var canLoadAll: Bool { partial?.canLoadAll == true && phase != .loading && phase != .saving }
 
     public var unsavedChangeCount: Int { changedRows.count }
     public var hasUnsavedChanges: Bool { !changedRows.isEmpty }
@@ -76,11 +82,26 @@ public final class EditorSession: ObservableObject {
         }
     }
 
+    /// "Load all" after a partial load: the whole value replaces the first page and editing opens. A failure keeps the
+    /// page on screen (still read-only) and says why beside the partial notice.
+    public func loadAll() async {
+        guard canLoadAll, let loadAll = binding?.loadAll else { return }
+        phase = .loading; loadAllFailure = nil
+        do throws(DataCommandError) {
+            adopt(try await loadAll(key, service, context))
+        } catch {
+            phase = .ready; loadAllFailure = Self.message(error)
+        }
+        // The value may have changed since the first page, so its size and TTL in the header are re-read too.
+        header = await KeyHeader.load(key: key, type: type, service: service, context: context)
+    }
+
     // MARK: - Editing
 
-    /// The type's editor hands over its rows after each change. Ignored on read-only profiles and before loading.
+    /// The type's editor hands over its rows after each change. Ignored on read-only profiles, before loading and for
+    /// a partial load (saving a first page would truncate the value).
     public func update(_ rows: [EditorRow]) {
-        guard !isReadOnly, let loaded, phase != .saving else { return }
+        guard !isReadOnly, let loaded, loaded.partial == nil, phase != .saving else { return }
         draft = rows
         changedRows = EditorChanges.changedRows(loaded: loaded.rows, draft: rows)
         syncViewer()
@@ -111,7 +132,7 @@ public final class EditorSession: ObservableObject {
 
     private func save(guarded: Bool) async {
         // While the viewer prepares a large value its view's complaint isn't known yet (JSON view of invalid JSON).
-        guard !isReadOnly, let binding, let loaded, phase != .saving, hasUnsavedChanges, saveBlock == nil, !(showsWholeValue && viewer.state == nil)
+        guard !isReadOnly, let binding, let loaded, loaded.partial == nil, phase != .saving, hasUnsavedChanges, saveBlock == nil, !(showsWholeValue && viewer.state == nil)
         else { return }
         let writes = binding.writes(key, loaded.rows, draft)
         guard !writes.isEmpty else { revert(); return }
@@ -138,7 +159,7 @@ public final class EditorSession: ObservableObject {
         }
         // Saved: the server's value (and the guard's snapshot) is what the next save compares with.
         do throws(DataCommandError) {
-            adopt(try await binding.load(key, service, context))
+            adopt(try await reread(binding))
         } catch {
             self.loaded = LoadedValue(rows: draft, watch: loaded.watch); changedRows = []
             phase = .failed("Saved, but reading the value back failed: \(Self.message(error))")
@@ -146,10 +167,19 @@ public final class EditorSession: ObservableObject {
         header = await KeyHeader.load(key: key, type: type, service: service, context: context)
     }
 
+    /// A save's read-back reads the whole value again: through `load` a saved string over 1 MiB would come back as a
+    /// first page, read-only, and an unknown outcome would leave a whole draft beside a partial `loaded`.
+    private func reread(_ binding: EditorBinding) async throws(DataCommandError) -> LoadedValue {
+        // `if let`, not a nil comparison: comparing an optional typed-throws closure to nil fails on macOS 14.
+        if let loadAll = binding.loadAll { return try await loadAll(key, service, context) }
+        return try await binding.load(key, service, context)
+    }
+
     /// The server's value replaces the draft: nothing is unsaved.
     private func adopt(_ value: LoadedValue) {
-        loaded = value; draft = value.rows; changedRows = []
+        loaded = value; draft = value.rows; changedRows = []; loadAllFailure = nil
         phase = .ready
+        viewer.isEditable = !isReadOnly && value.partial == nil
         syncViewer()
     }
 
@@ -173,7 +203,7 @@ public final class EditorSession: ObservableObject {
 
     /// After an unknown outcome: the loaded value becomes the server's, the draft stays so the dots show what differs.
     private func refreshLoaded() async {
-        guard let binding, let value = try? await binding.load(key, service, context) else { return }
+        guard let binding, let value = try? await reread(binding) else { return }
         loaded = value
         changedRows = EditorChanges.changedRows(loaded: value.rows, draft: draft)
     }
