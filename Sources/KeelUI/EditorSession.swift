@@ -297,6 +297,12 @@ public final class EditorSession: ObservableObject {
         return reply
     }
 
+    /// An immediate action's known result (a sorted set member's new score) replaces the loaded value, without another read.
+    public func replaceLoaded(_ value: LoadedValue) {
+        guard canRunAction else { return }
+        adopt(value)
+    }
+
     /// Another window of the value replaces the loaded one (a list's "Jump to index"); a failure keeps the current one.
     public func loadWindow(_ read: (Data, DataCommandService, DataContext) async throws(DataCommandError) -> LoadedValue) async {
         guard canRunAction else { return }
@@ -318,10 +324,15 @@ public final class EditorSession: ObservableObject {
             if type != .string { viewedRowID = nil; saveBlock = nil }
             return
         }
-        guard row.id != viewedRowID || row.value != viewer.state?.bytes else { return }
+        let bytes = shownBytes(row)
+        guard row.id != viewedRowID || bytes != viewer.state?.bytes else { return }
         viewedRowID = row.id
-        viewer.open(row.value, title: type == .string ? "Value" : KeyDisplay.name(row.id))
+        viewer.open(bytes, title: type == .string ? "Value" : KeyDisplay.name(row.id))
     }
+
+    /// What the viewer shows of a row: its value, or its name where values aren't edited there (a sorted set's row value
+    /// is the score, shown in the table; the member's bytes are what the viewer is for).
+    private func shownBytes(_ row: EditorRow) -> Data { binding?.editsValues == false ? row.id : row.value }
 
     /// The draft row the viewer shows: a string's one row, or the selected collection row.
     var viewedRow: EditorRow? {
@@ -334,7 +345,7 @@ public final class EditorSession: ObservableObject {
     private func viewerChanged(_ state: ValueViewerState) {
         // A read-only viewer (a set member) saves nothing from its view, so invalid JSON shown there can't block the draft.
         saveBlock = binding?.editsValues == false ? nil : state.saveBlock
-        guard let row = viewedRow, row.id == viewedRowID, row.value != state.bytes else { return }
+        guard binding?.editsValues != false, let row = viewedRow, row.id == viewedRowID, row.value != state.bytes else { return }
         update(draft.map { $0.id == row.id ? EditorRow(id: row.id, value: state.bytes) : $0 })
         // Refused (typing while a save runs): the viewer shows the draft again, so what's on screen is what saves.
         if viewedRow?.value != state.bytes { syncViewer() }

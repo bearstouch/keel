@@ -144,6 +144,12 @@ and versions follow [Semantic Versioning](https://semver.org/).
   load with `SMEMBERS`, larger ones page with `SSCAN … COUNT 500` and **Load more**. **+ Add member** runs `SADD` at
   once and says "Already a member of this set." when `SADD` returns 0; removed members are saved together as one
   `SREM`. Members open read-only in the value viewer (KEEL-032).
+- Sorted set editor: a Member / Score table sorted by score, lowest first (the Score header reverses it), paged 500 at
+  a time with `ZRANGE … BYSCORE … LIMIT`, or `ZRANGEBYSCORE` on servers without it (probed once per session), so
+  members sharing a score are neither missed nor repeated. Change Score… (`ZADD XX`, guarded by `ZSCORE`) and Remove
+  save together; the row moves to its new place after the save. **+ Add member** (`ZADD`) and Increment… (`ZINCRBY`)
+  run at once. Pattern search with `ZSCAN … MATCH`. Scores show in full double precision with `inf` / `-inf`
+  (KEEL-033).
 
 ### Removed
 

@@ -116,6 +116,8 @@ struct EditorShell: View {
                 ListEditorView(session: session)
             } else if session.type == .set, session.binding != nil, session.loaded != nil {
                 SetEditorView(session: session)
+            } else if session.type == .zset, session.binding != nil, session.loaded != nil {
+                SortedSetEditorView(session: session)
             } else if session.binding == nil {
                 Notice(type: session.type)
             }

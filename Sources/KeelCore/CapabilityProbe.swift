@@ -60,9 +60,20 @@ public struct CapabilitySet: Sendable, Equatable {
     // MARK: - Editor fallbacks (FR-CN12)
 
     /// One page of a sorted set by score: `ZRANGE … BYSCORE LIMIT` (6.2+), else `ZRANGEBYSCORE … LIMIT` (6.0).
-    /// `min` / `max` are score bounds as Redis spells them (`-inf`, `(1.5`, `+inf`).
-    public func zrangeByScore(key: Data, min: Data, max: Data, offset: Int, count: Int, withScores: Bool = true) -> [Data] {
-        var args = supports(.zrangeByScore) ? [d("ZRANGE"), key, min, max, d("BYSCORE")] : [d("ZRANGEBYSCORE"), key, min, max]
+    /// `min` / `max` are score bounds as Redis spells them (`-inf`, `(1.5`, `+inf`); `reverse` pages from `max` down.
+    public func zrangeByScore(key: Data, min: Data, max: Data, offset: Int, count: Int, withScores: Bool = true, reverse: Bool = false) -> [Data] {
+        Self.zrangeByScore(byScore: supports(.zrangeByScore), key: key, min: min, max: max, offset: offset, count: count, withScores: withScores, reverse: reverse)
+    }
+
+    static func zrangeByScore(byScore: Bool, key: Data, min: Data, max: Data, offset: Int, count: Int, withScores: Bool = true, reverse: Bool = false) -> [Data] {
+        // Descending ranges name the upper bound first in every form.
+        let bounds = reverse ? [max, min] : [min, max]
+        var args: [Data]
+        if byScore {
+            args = [d("ZRANGE"), key] + bounds + [d("BYSCORE")] + (reverse ? [d("REV")] : [])
+        } else {
+            args = [d(reverse ? "ZREVRANGEBYSCORE" : "ZRANGEBYSCORE"), key] + bounds
+        }
         if withScores { args.append(d("WITHSCORES")) }
         return args + [d("LIMIT"), d(String(offset)), d(String(count))]
     }

@@ -35,6 +35,13 @@ public enum DataOperation: Sendable, Equatable {
     case setScan(key: Data, cursor: Data, count: Int)
     /// `SISMEMBER key member`: whether a removed member is gone after a save.
     case setIsMember(key: Data, member: Data)
+    /// One page of a sorted set by score, `WITHSCORES` (FR-ED05): `ZRANGE … BYSCORE [REV] … LIMIT` where the server
+    /// supports it (`byScore`, probed), else `ZRANGEBYSCORE` / `ZREVRANGEBYSCORE`. `min` / `max` are Redis's spelling.
+    case sortedSetRange(key: Data, min: Data, max: Data, offset: Int, count: Int, reverse: Bool, byScore: Bool)
+    /// `ZSCAN key cursor [MATCH pattern] COUNT n`: the sorted set editor's pattern search.
+    case sortedSetScan(key: Data, cursor: Data, match: Data?, count: Int)
+    /// `ZSCORE key member`: a score change's guard read, and its read-back after a save.
+    case sortedSetScore(key: Data, member: Data)
     // Writes
     case stringSet(key: Data, value: Data, keepTTL: Bool)
     case hashSetField(key: Data, field: Data, value: Data)
@@ -48,7 +55,10 @@ public enum DataOperation: Sendable, Equatable {
     case listInsert(key: Data, before: Bool, pivot: Data, value: Data)
     case setAdd(key: Data, members: [Data])
     case setRemove(key: Data, members: [Data])
-    case sortedSetAdd(key: Data, members: [ScoredMember])
+    /// `ZADD key [XX] score member …`; `existingOnly` (XX) changes scores without adding members.
+    case sortedSetAdd(key: Data, members: [ScoredMember], existingOnly: Bool = false)
+    /// `ZINCRBY key increment member`.
+    case sortedSetIncrement(key: Data, increment: Double, member: Data)
     case sortedSetRemove(key: Data, members: [Data])
     case streamAdd(key: Data, id: Data, fields: [FieldValue])
     case streamDelete(key: Data, ids: [Data])
@@ -97,6 +107,11 @@ public enum DataOperation: Sendable, Equatable {
         case .setMembers(let key): return [d("SMEMBERS"), key]
         case .setScan(let key, let cursor, let count): return [d("SSCAN"), key, cursor, d("COUNT"), d(String(count))]
         case .setIsMember(let key, let member): return [d("SISMEMBER"), key, member]
+        case .sortedSetRange(let key, let min, let max, let offset, let count, let reverse, let byScore):
+            return CapabilitySet.zrangeByScore(byScore: byScore, key: key, min: min, max: max, offset: offset, count: count, reverse: reverse)
+        case .sortedSetScan(let key, let cursor, let match, let count):
+            return [d("ZSCAN"), key, cursor] + (match.map { [d("MATCH"), $0] } ?? []) + [d("COUNT"), d(String(count))]
+        case .sortedSetScore(let key, let member): return [d("ZSCORE"), key, member]
         case .stringSet(let key, let value, let keepTTL): return [d("SET"), key, value] + (keepTTL ? [d("KEEPTTL")] : [])
         case .hashSetField(let key, let field, let value): return [d("HSET"), key, field, value]
         case .hashDeleteFields(let key, let fields): return [d("HDEL"), key] + fields
@@ -107,7 +122,9 @@ public enum DataOperation: Sendable, Equatable {
         case .listInsert(let key, let before, let pivot, let value): return [d("LINSERT"), key, d(before ? "BEFORE" : "AFTER"), pivot, value]
         case .setAdd(let key, let members): return [d("SADD"), key] + members
         case .setRemove(let key, let members): return [d("SREM"), key] + members
-        case .sortedSetAdd(let key, let members): return [d("ZADD"), key] + members.flatMap { [d(Self.score($0.score)), $0.member] }
+        case .sortedSetAdd(let key, let members, let existingOnly):
+            return [d("ZADD"), key] + (existingOnly ? [d("XX")] : []) + members.flatMap { [d(Self.score($0.score)), $0.member] }
+        case .sortedSetIncrement(let key, let increment, let member): return [d("ZINCRBY"), key, d(Self.score(increment)), member]
         case .sortedSetRemove(let key, let members): return [d("ZREM"), key] + members
         case .streamAdd(let key, let id, let fields): return [d("XADD"), key, id] + fields.flatMap { [$0.field, $0.value] }
         case .streamDelete(let key, let ids): return [d("XDEL"), key] + ids
@@ -213,7 +230,25 @@ public actor DataCommandService {
     private var transacting: Set<ConnectionRole> = []
     private var waitingTransactions: [ConnectionRole: [CheckedContinuation<Void, Never>]] = [:]
 
+    /// The session's FR-CN12 probes, made on first use (06 → Probes).
+    private var probe: CapabilityProbe?
+
     public init(session: ServerSession, catalog: CommandCatalog = .bundled) { self.session = session; self.catalog = catalog }
+
+    /// Whether the server has `capability`, probed once per session on the browser connection (a read, like the session's
+    /// other setup probes) and cached. A probe that can't be made answers false, so callers take the fallback that works
+    /// on every supported server; it is asked again next time.
+    public func supports(_ capability: ServerCapability, context: DataContext) async -> Bool {
+        let probe =
+            probe
+            ?? CapabilityProbe { [session, database = context.database] (arguments: [Data]) async throws(RedisError) -> RESPValue in
+                let connection: RedisConnection
+                do throws(ConnectionFailure) { connection = try await session.connection(for: .browser(database: database), database: database) } catch { throw .notConnected }
+                return try await connection.send(arguments, mayWrite: false)
+            }
+        self.probe = probe
+        return (try? await probe.status(capability))?.isAvailable ?? false
+    }
 
     public func execute(_ command: DataCommand, origin: CommandOrigin, context: DataContext) async throws(DataCommandError) -> DataCommandResult {
         let arguments = command.arguments
@@ -279,8 +314,8 @@ public actor DataCommandService {
                 if case .error = watched { return watched }
                 for (read, expected) in zip(watch.reads, watch.expected) {
                     let reply = try await send(read.arguments)
-                    // RESP2 and RESP3 spell a missing value differently (`$-1`, `_`): both mean "absent".
-                    guard reply == expected || (reply.isNull && expected.isNull), !Self.isError(reply) else {
+                    // RESP2 and RESP3 spell a missing value (`$-1`, `_`) and a score (`$3 1.5`, `,1.5`) differently.
+                    guard reply == expected || (reply.isNull && expected.isNull) || Self.sameScore(reply, expected), !Self.isError(reply) else {
                         await unwatch()
                         if Self.isError(reply) { return reply }
                         throw .conflict
@@ -311,6 +346,12 @@ public actor DataCommandService {
         // A nil EXEC: a watched key changed after the reads, so the server ran none of the writes.
         if exec.isNull { throw .conflict }
         return exec
+    }
+
+    /// A RESP2 score (a bulk string such as `0.10000000000000001` or `inf`) equal to the RESP3 double a guard expects.
+    static func sameScore(_ reply: RESPValue, _ expected: RESPValue) -> Bool {
+        guard case .double(let score) = expected, case .bulkString(let text) = reply, let value = Double(String(decoding: text, as: UTF8.self)) else { return false }
+        return value == score
     }
 
     private static func isError(_ reply: RESPValue) -> Bool {
