@@ -95,3 +95,7 @@ and versions follow [Semantic Versioning](https://semver.org/).
   (`a:b` beside `a:b:c`), live key counts per folder as pages load, folders before keys in byte order, and a rebuild
   when the separator changes; binary-safe names shown with redis-cli escaping (`\xff\x00a`) while every action uses
   the original bytes (KEEL-021).
+- Virtualized key list: an AppKit `NSOutlineView` tree and `NSTableView` flat view hosted in SwiftUI, 32 px rows with
+  name, folder count or TTL and a text type badge, names fetched only for visible rows, View → Toggle Tree / Flat
+  (⇧⌘T) keeping the selected key (the tree expands to reveal it), native keyboard navigation, a context menu to copy a
+  key name, a redis-cli argument or a folder path, and VoiceOver labels with name, type and TTL (KEEL-022).

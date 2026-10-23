@@ -66,6 +66,10 @@ public struct KeyIndexStatus: Sendable, Equatable {
     public var phase: KeyIndexPhase
     public var mode: KeyPagingMode
 
+    public init(loadedCount: Int, limit: Int, phase: KeyIndexPhase, mode: KeyPagingMode) {
+        self.loadedCount = loadedCount; self.limit = limit; self.phase = phase; self.mode = mode
+    }
+
     /// Continue is offered at the limit unless the limit is already the hard maximum.
     public var canContinue: Bool { phase == .limitReached && limit < KeyIndexConfiguration.maximumLimit }
 }
@@ -101,7 +105,7 @@ public struct KeyIndexFooter: Sendable, Equatable {
     }
 
     /// 250000 → "250,000". Fixed grouping so the footer reads the same in every locale, like the spec's examples.
-    static func grouped(_ value: Int) -> String {
+    public static func grouped(_ value: Int) -> String {
         let digits = String(value.magnitude)
         var out = ""
         for (offset, digit) in digits.enumerated() {
@@ -178,7 +182,7 @@ public actor KeyIndex {
 
     public func metadata(at index: Int) -> KeyMetadata { metadata[index] }
 
-    public func updateMetadata(at index: Int, _ update: (inout KeyMetadata) -> Void) {
+    public func updateMetadata(at index: Int, _ update: @Sendable (inout KeyMetadata) -> Void) {
         guard metadata.indices.contains(index) else { return }
         update(&metadata[index])
     }
@@ -214,18 +218,25 @@ public actor KeyIndex {
     }
 
     /// Names and counts for the rows in view; folders from an earlier tree and keys past the loaded range are skipped.
-    public func namespaceEntries(_ children: some Sequence<NamespaceChild>) -> [NamespaceEntry] {
+    /// `fullNames` gives keys their whole name (the flat view) instead of the last segment.
+    public func namespaceEntries(_ children: some Sequence<NamespaceChild>, fullNames: Bool = false) -> [NamespaceEntry] {
         withKeyBytes { keys in
             children.compactMap { child in
-                let keyCount: Int
                 switch child {
-                case .folder(let id) where hasFolder(id): keyCount = Int(tree.folders[id.rawValue].keyCount)
-                case .key(let index) where ends.indices.contains(index): keyCount = 1
+                case .folder(let id) where hasFolder(id):
+                    return NamespaceEntry(child: child, name: Data(tree.name(of: child, keys)), keyCount: Int(tree.folders[id.rawValue].keyCount))
+                case .key(let index) where ends.indices.contains(index):
+                    return NamespaceEntry(child: child, name: Data(fullNames ? keys[index] : tree.name(of: child, keys)), keyCount: 1, metadata: metadata[index])
                 default: return nil
                 }
-                return NamespaceEntry(child: child, name: Data(tree.name(of: child, keys)), keyCount: keyCount)
             }
         }
+    }
+
+    /// The folders to expand to reveal a key, outermost first (root excluded); empty for a key past the loaded range.
+    public func namespaceAncestors(ofKey index: Int) -> [NamespaceFolderID] {
+        guard ends.indices.contains(index) else { return [] }
+        return withKeyBytes { keys in tree.ancestors(of: index, keys).map { NamespaceFolderID(rawValue: $0, build: tree.build) } }
     }
 
     /// Loaded keys at or below a folder (the root counts every key).

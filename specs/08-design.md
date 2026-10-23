@@ -82,6 +82,7 @@ Keel's visual contract. The reference is the **Keel — Native calm** design can
 | SET | `#216B3B` / `#E2F2E7` | `#8DDAA4` / `#183025` |
 | ZSET | `#805400` / `#F8EDD8` | `#F2CC7A` / `#342B19` |
 | STREAM | `#A02D6A` / `#F8E4EF` | `#F5A3CF` / `#36202E` |
+| OTHER | `muted` / `soft` | `muted` / `soft` |
 
 Badges distinguish types, not brand, so they keep their own hues. JSON syntax in the viewer uses keys `#185AA8`/`#8BB8F0`, strings `#216B3B`/`#8DDAA4`, literals `#805400`/`#F2CC7A`.
 
@@ -151,7 +152,7 @@ Under the tab bar, only for production connections: centered "Production · Read
 
 ### Key list
 
-Filter field (glob pattern) on `soft`; tree rows with chevron, name, child count (folders) or short TTL (only for expiring keys) and type badge; footer "250,000 of 1.2M keys loaded · Load more".
+Filter field (glob pattern) on `soft`; 32 px tree rows (18 px indent per level) with chevron, name, child count (folders) or short TTL (only for expiring keys) and a 40 px type badge (none until the type is loaded); the selected row is a 7 px rounded `selection` fill with unchanged text; footer "250,000 of 1.2M keys loaded · Load more".
 
 ### Editor
 

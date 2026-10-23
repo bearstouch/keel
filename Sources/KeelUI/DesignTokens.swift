@@ -36,17 +36,51 @@ enum Tokens {
         }
     }
 
+    /// The AppKit key list's colors and fonts: the same tokens as `NSColor`, for cells drawn by AppKit.
+    enum NS {
+        static let bg = NSColor(light: 0xFFFFFF, dark: 0x1E1E1E)
+        static let fg = NSColor(light: 0x18212F, dark: 0xE5E5E7)
+        static let muted = NSColor(light: 0x4E5B6D, dark: 0xA1A1A6)
+        static let selection = NSColor(light: 0xFCEAE8, dark: 0x3D2826)
+        static let soft = NSColor(light: 0xF1F4F8, dark: 0x2C2C2E)
+
+        /// 08 Design → Type badges; `other` (and a type not loaded yet) is `muted` on `soft`.
+        static func badge(_ type: KeyType) -> (fg: NSColor, fill: NSColor) {
+            switch type {
+            case .string: (NSColor(light: 0x185AA8, dark: 0x8BB8F0), NSColor(light: 0xE3EDF9, dark: 0x1E2B3E))
+            case .hash: (NSColor(light: 0x6B3FA0, dark: 0xC6A0E8), NSColor(light: 0xEFE7F8, dark: 0x2A2238))
+            case .list: (NSColor(light: 0x0F6A6E, dark: 0x7FD5DD), NSColor(light: 0xDDF1F1, dark: 0x163034))
+            case .set: (NSColor(light: 0x216B3B, dark: 0x8DDAA4), NSColor(light: 0xE2F2E7, dark: 0x183025))
+            case .zset: (NSColor(light: 0x805400, dark: 0xF2CC7A), NSColor(light: 0xF8EDD8, dark: 0x342B19))
+            case .stream: (NSColor(light: 0xA02D6A, dark: 0xF5A3CF), NSColor(light: 0xF8E4EF, dark: 0x36202E))
+            case .other, .unknown: (muted, soft)
+            }
+        }
+
+        /// Inter is matched by name, so a weight can only be reached through its bold face; the system font is the fallback.
+        static func interface(_ size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
+            NSFont(name: "Inter", size: size).map { NSFontManager.shared.convert($0, toHaveTrait: weight >= .semibold ? .boldFontMask : []) }
+                ?? .systemFont(ofSize: size, weight: weight)
+        }
+
+        static func mono(_ size: CGFloat) -> NSFont { NSFont(name: "JetBrains Mono", size: size) ?? .monospacedSystemFont(ofSize: size, weight: .regular) }
+    }
+
     static func interface(_ size: CGFloat, weight: Font.Weight = .regular) -> Font { .custom("Inter", size: size).weight(weight) }
     static func mono(_ size: CGFloat = 12.5) -> Font { .custom("JetBrains Mono", size: size) }
 }
 
 extension Color {
     /// A color that follows the window's appearance.
-    init(light: UInt32, dark: UInt32) {
-        self.init(
-            nsColor: NSColor(name: nil) { appearance in
-                let value = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light
-                return NSColor(srgbRed: CGFloat(value >> 16 & 0xFF) / 255, green: CGFloat(value >> 8 & 0xFF) / 255, blue: CGFloat(value & 0xFF) / 255, alpha: 1)
-            })
+    init(light: UInt32, dark: UInt32) { self.init(nsColor: NSColor(light: light, dark: dark)) }
+}
+
+extension NSColor {
+    /// A color that follows the appearance it is drawn in.
+    convenience init(light: UInt32, dark: UInt32) {
+        self.init(name: nil) { appearance in
+            let value = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light
+            return NSColor(srgbRed: CGFloat(value >> 16 & 0xFF) / 255, green: CGFloat(value >> 8 & 0xFF) / 255, blue: CGFloat(value & 0xFF) / 255, alpha: 1)
+        }
     }
 }
