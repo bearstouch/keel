@@ -49,8 +49,21 @@ public struct LoadedValue: Sendable, Equatable {
     public var watch: WatchGuard
     /// Set when only part of the value was read (a string over 1 MiB): the shell shows it but refuses edits.
     public var partial: PartialLoad?
+    /// Where "Load more" continues (an `HSCAN` cursor); nil once every element is loaded. Unlike `partial`, a paged
+    /// collection stays editable: edits touch only loaded elements (03 → Value editors).
+    public var next: Data?
 
-    public init(rows: [EditorRow], watch: WatchGuard, partial: PartialLoad? = nil) { self.rows = rows; self.watch = watch; self.partial = partial }
+    public init(rows: [EditorRow], watch: WatchGuard, partial: PartialLoad? = nil, next: Data? = nil) {
+        self.rows = rows; self.watch = watch; self.partial = partial; self.next = next
+    }
+}
+
+/// One more page of a paged collection: its rows and where the page after it starts (nil at the end).
+public struct EditorPage: Sendable, Equatable {
+    public var rows: [EditorRow]
+    public var next: Data?
+
+    public init(rows: [EditorRow], next: Data?) { self.rows = rows; self.next = next }
 }
 
 /// How much of a value an editor read, out of its full size (FR-ED01: "Partial (1 MiB of 2 MiB)").
@@ -84,20 +97,65 @@ public struct EditorBinding: Sendable {
     /// The writes that turn `loaded` into `draft`; empty when they are the same.
     public typealias Writes = @Sendable (_ key: Data, _ loaded: [EditorRow], _ draft: [EditorRow]) -> [DataOperation]
 
+    /// The next page after `cursor` ("Load more").
+    public typealias LoadMore = @Sendable (_ key: Data, _ cursor: Data, DataCommandService, DataContext) async throws(DataCommandError) -> EditorPage
+    /// The guard of one save, when it depends on what changed (a hash guards each touched field).
+    public typealias Guard = @Sendable (_ key: Data, _ loaded: [EditorRow], _ draft: [EditorRow]) -> WatchGuard
+    /// The value as the server has it after a save (or a save with an unknown outcome).
+    public typealias Reread =
+        @Sendable (_ key: Data, _ loaded: LoadedValue, _ draft: [EditorRow], DataCommandService, DataContext) async throws(DataCommandError)
+        -> LoadedValue
+
     public var load: Load
     public var writes: Writes
     /// "Load all" after a partial load: reads the whole value. Nil for types that never load partially.
     public var loadAll: Load?
+    /// Nil for types that load whole.
+    public var loadMore: LoadMore?
+    /// Nil: saves are guarded by `LoadedValue.watch`, the reads made on load.
+    public var saveGuard: Guard?
+    /// Nil: the shell reads the value again with `loadAll`, else `load`. A paged collection re-reads only what it touched,
+    /// so the pages already loaded stay.
+    public var reread: Reread?
 
-    public init(load: @escaping Load, writes: @escaping Writes, loadAll: Load? = nil) { self.load = load; self.writes = writes; self.loadAll = loadAll }
+    public init(
+        load: @escaping Load, writes: @escaping Writes, loadAll: Load? = nil, loadMore: LoadMore? = nil, saveGuard: Guard? = nil, reread: Reread? = nil
+    ) {
+        self.load = load; self.writes = writes; self.loadAll = loadAll; self.loadMore = loadMore; self.saveGuard = saveGuard; self.reread = reread
+    }
 
     /// The editor for a core type; nil while its editor isn't built (the shell shows the header and a notice).
     public static func editor(for type: KeyType) -> EditorBinding? {
         switch type {
         case .string: return StringEditor.binding
+        case .hash: return HashEditor.binding
         default: return nil
         }
     }
+}
+
+/// The reads editors share: one command on the browser connection, and the error for a reply of the wrong shape.
+enum EditorReads {
+    static func read(_ operation: DataOperation, _ service: DataCommandService, _ context: DataContext) async throws(DataCommandError) -> RESPValue {
+        try await service.execute(.operation(operation), origin: .editor, context: context).reply
+    }
+
+    static func integer(_ operation: DataOperation, _ service: DataCommandService, _ context: DataContext, type: String) async throws(DataCommandError) -> Int64 {
+        let reply = try await read(operation, service, context)
+        guard case .integer(let value) = reply else { throw unexpected(reply, type: type) }
+        return value
+    }
+
+    /// A nil reply means the key went away after it was listed; a server error (`WRONGTYPE`, an ACL refusal) is shown as sent.
+    static func unexpected(_ reply: RESPValue, type: String) -> DataCommandError {
+        switch reply {
+        case .error(let text), .blobError(let text): return .invalidRequest(String(decoding: text.prefix(512), as: UTF8.self))
+        case _ where reply.isNull: return gone
+        default: return .invalidRequest("The server sent an unexpected reply for a \(type).")
+        }
+    }
+
+    static let gone = DataCommandError.invalidRequest("The key no longer exists.")
 }
 
 public enum EditorChanges {

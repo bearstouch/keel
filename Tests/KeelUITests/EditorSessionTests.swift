@@ -11,12 +11,28 @@ import XCTest
 final class TransactionalKeyspace: @unchecked Sendable {
     private let lock = NSLock()
     private var values: [String: String]
+    /// Hash keys: fields in insertion order; `HSCAN`'s cursor is an offset.
+    private var hashes: [String: [(String, String)]] = [:]
     private var versions: [String: Int] = [:]
     private var sent: [[String]] = []
     /// Another client's write, made right after the save's guard read (between `GET` and `EXEC`).
     var changeAfterGuardRead: (key: String, value: String)?
 
     init(_ values: [String: String]) { self.values = values }
+    init(hashes: [String: [(String, String)]]) { values = [:]; self.hashes = hashes }
+
+    func hash(_ key: String) -> [String: String]? { lock.withLock { hashes[key].map { Dictionary($0, uniquingKeysWith: { a, _ in a }) } } }
+    /// Another client's `HSET`.
+    func hset(_ key: String, _ field: String, _ value: String) {
+        lock.withLock {
+            setField(key, field, value); versions[key, default: 0] += 1
+        }
+    }
+    private func setField(_ key: String, _ field: String, _ value: String) {
+        var fields = hashes[key] ?? []
+        if let index = fields.firstIndex(where: { $0.0 == field }) { fields[index].1 = value } else { fields.append((field, value)) }
+        hashes[key] = fields
+    }
 
     func set(_ key: String, _ value: String) {
         lock.withLock {
@@ -27,7 +43,7 @@ final class TransactionalKeyspace: @unchecked Sendable {
     var commands: [[String]] { lock.withLock { sent } }
     var commandNames: [String] { commands.compactMap(\.first) }
 
-    @MainActor func session(_ key: String, readOnly: Bool = false) -> EditorSession {
+    @MainActor func session(_ key: String, type: KeyType = .string, readOnly: Bool = false) -> EditorSession {
         let server = ServerSession { (_: ConnectionRole, _: Int) async throws(ConnectionFailure) -> RedisConnection in
             let connection = RedisConnection(transport: Transport(self))
             do throws(RedisError) { try await connection.connect() } catch {
@@ -36,7 +52,7 @@ final class TransactionalKeyspace: @unchecked Sendable {
             return connection
         }
         let context = DataContext(profile: SafetyProfile(name: readOnly ? "payments-prod" : "local", readOnly: readOnly))
-        return EditorSession(key: Data(key.utf8), type: .string, binding: Self.stringBinding, service: DataCommandService(session: server), context: context)
+        return EditorSession(key: Data(key.utf8), type: type, binding: EditorBinding.editor(for: type), service: DataCommandService(session: server), context: context)
     }
 
     /// The string editor (KEEL-029): `STRLEN`, then `GET` (or `GETRANGE` over 1 MiB); `GET` guards, `SET … KEEPTTL` saves.
@@ -111,7 +127,26 @@ final class TransactionalKeyspace: @unchecked Sendable {
                 case "SET":
                     keyspace.values[arguments[1]] = arguments[2]; keyspace.versions[arguments[1], default: 0] += 1
                     return "+OK\r\n"
-                case "PTTL": return keyspace.values[arguments[1]] == nil ? ":-2\r\n" : ":-1\r\n"
+                case "PTTL": return keyspace.values[arguments[1]] == nil && keyspace.hashes[arguments[1]] == nil ? ":-2\r\n" : ":-1\r\n"
+                case "HLEN": return ":\(keyspace.hashes[arguments[1]]?.count ?? 0)\r\n"
+                case "HGETALL":
+                    let fields = keyspace.hashes[arguments[1]] ?? []
+                    return "*\(fields.count * 2)\r\n" + fields.map { Self.bulk($0.0) + Self.bulk($0.1) }.joined()
+                case "HSCAN":
+                    let fields = keyspace.hashes[arguments[1]] ?? [], start = Int(arguments[2])!, count = Int(arguments[4])!
+                    let page = fields[min(start, fields.count)..<min(start + count, fields.count)]
+                    let next = start + count >= fields.count ? 0 : start + count
+                    return "*2\r\n" + Self.bulk(String(next)) + "*\(page.count * 2)\r\n" + page.map { Self.bulk($0.0) + Self.bulk($0.1) }.joined()
+                case "HGET": return keyspace.hashes[arguments[1]]?.first { $0.0 == arguments[2] }.map { Self.bulk($0.1) } ?? "$-1\r\n"
+                case "HSET":
+                    keyspace.setField(arguments[1], arguments[2], arguments[3]); keyspace.versions[arguments[1], default: 0] += 1
+                    return ":1\r\n"
+                case "HDEL":
+                    let removed = Set(arguments.dropFirst(2))
+                    keyspace.hashes[arguments[1]]?.removeAll { removed.contains($0.0) }
+                    if keyspace.hashes[arguments[1]]?.isEmpty == true { keyspace.hashes[arguments[1]] = nil }
+                    keyspace.versions[arguments[1], default: 0] += 1
+                    return ":\(removed.count)\r\n"
                 case "STRLEN": return ":\(keyspace.values[arguments[1]]?.utf8.count ?? 0)\r\n"
                 case "GETRANGE":
                     let bytes = Array((keyspace.values[arguments[1]] ?? "").utf8), end = min(Int(arguments[3])!, bytes.count - 1)
@@ -121,6 +156,8 @@ final class TransactionalKeyspace: @unchecked Sendable {
                 }
             }
         }
+
+        private static func bulk(_ text: String) -> String { "$\(text.utf8.count)\r\n\(text)\r\n" }
 
         func receive() async throws(TransportError) -> Data {
             let result = await withCheckedContinuation { waiter in
