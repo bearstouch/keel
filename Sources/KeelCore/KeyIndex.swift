@@ -124,7 +124,8 @@ public struct KeyIndexFooter: Sendable, Equatable {
 
 /// The browser's SCAN results for one database (02 Architecture → Key index). Keys live back to back in one byte
 /// arena with an end-offset array and a parallel metadata array; an open-addressing table of indices deduplicates
-/// keys SCAN returns more than once. Display strings are never stored: the UI derives them for visible rows only.
+/// keys SCAN returns more than once. Display strings are never stored: the UI derives them for visible rows only
+/// (`KeyDisplay`). The namespace tree grows with every page and points into the same arena (FR-KB03).
 ///
 /// Every page is one `SCAN` sent through `DataCommandService` from the `.browser` origin — never `KEYS` (FR-KB01).
 public actor KeyIndex {
@@ -138,6 +139,9 @@ public actor KeyIndex {
     private var metadata = ContiguousArray<KeyMetadata>()
     /// Open addressing with linear probing; a slot holds index + 1, 0 is empty. Capacity is a power of two.
     private var slots = ContiguousArray<UInt32>(repeating: 0, count: 1_024)
+    private var tree: NamespaceTree
+    /// Bumped on every new tree (separator change, restart) so folder IDs from the old one are refused.
+    private var treeBuild = 0
 
     private var cursor = Data("0".utf8)
     private var started = false
@@ -151,8 +155,11 @@ public actor KeyIndex {
     /// Bumped by `restart`, so a page still in flight for the previous scan is dropped when it lands.
     private var generation = 0
 
-    public init(service: DataCommandService, context: DataContext, configuration: KeyIndexConfiguration = KeyIndexConfiguration()) {
+    public init(
+        service: DataCommandService, context: DataContext, configuration: KeyIndexConfiguration = KeyIndexConfiguration(), separator: NamespaceSeparator = .default
+    ) {
         self.service = service; self.context = context; self.configuration = configuration; self.limit = configuration.limit
+        tree = NamespaceTree(separator: separator)
     }
 
     // MARK: - Reading
@@ -182,8 +189,64 @@ public actor KeyIndex {
             + slots.capacity * MemoryLayout<UInt32>.stride
     }
 
+    /// Bytes the namespace tree holds in its buffers; NFR-RS01 budgets it with the index (< 200 MB for 1M keys).
+    public var treeStorageBytes: Int { tree.storageBytes }
+
     /// Total bytes of the key names themselves.
     public var keyBytes: Int { arena.count }
+
+    // MARK: - Namespace tree
+
+    public var separator: NamespaceSeparator { tree.separator }
+
+    /// Rebuilds the tree when the separator changes (AC2); folder IDs from the old tree are no longer valid.
+    public func setSeparator(_ separator: NamespaceSeparator) {
+        guard separator != tree.separator else { return }
+        treeBuild += 1
+        tree = NamespaceTree(separator: separator, build: treeBuild)
+        withKeyBytes { tree.extend(with: $0) }
+    }
+
+    /// A folder's rows, sub-folders first, each group in byte order (expanding a node).
+    public func namespaceChildren(of folder: NamespaceFolderID = .root) -> [NamespaceChild] {
+        guard hasFolder(folder) else { return [] }
+        return withKeyBytes { tree.children(of: folder.rawValue, $0) }
+    }
+
+    /// Names and counts for the rows in view; folders from an earlier tree and keys past the loaded range are skipped.
+    public func namespaceEntries(_ children: some Sequence<NamespaceChild>) -> [NamespaceEntry] {
+        withKeyBytes { keys in
+            children.compactMap { child in
+                let keyCount: Int
+                switch child {
+                case .folder(let id) where hasFolder(id): keyCount = Int(tree.folders[id.rawValue].keyCount)
+                case .key(let index) where ends.indices.contains(index): keyCount = 1
+                default: return nil
+                }
+                return NamespaceEntry(child: child, name: Data(tree.name(of: child, keys)), keyCount: keyCount)
+            }
+        }
+    }
+
+    /// Loaded keys at or below a folder (the root counts every key).
+    public func namespaceKeyCount(of folder: NamespaceFolderID) -> Int {
+        hasFolder(folder) ? Int(tree.folders[folder.rawValue].keyCount) : 0
+    }
+
+    /// A folder's full path without a trailing separator ("a:b"), e.g. to filter by it.
+    public func namespacePath(of folder: NamespaceFolderID) -> Data? {
+        guard hasFolder(folder) else { return nil }
+        return withKeyBytes { Data(tree.path(of: folder.rawValue, $0)) }
+    }
+
+    /// False for IDs from a tree that was since rebuilt or restarted: a stale ID must never resolve to another folder.
+    private func hasFolder(_ folder: NamespaceFolderID) -> Bool {
+        folder.rawValue == 0 || (folder.build == tree.build && tree.folders.indices.contains(folder.rawValue))
+    }
+
+    private func withKeyBytes<T: Sendable>(_ body: (KeyBytes) -> T) -> T {
+        arena.withUnsafeBytes { arena in ends.withUnsafeBufferPointer { body(KeyBytes(arena: arena, ends: $0)) } }
+    }
 
     // MARK: - Scanning
 
@@ -239,6 +302,8 @@ public actor KeyIndex {
         generation += 1
         arena = []; ends = []; metadata = []; overflow = []
         slots = ContiguousArray(repeating: 0, count: 1_024)
+        treeBuild += 1
+        tree = NamespaceTree(separator: tree.separator, build: treeBuild)
         cursor = Data("0".utf8); started = false
         limit = configuration.limit; phase = .idle; inFlight = false; pauseRequested = false
     }
@@ -296,6 +361,8 @@ public actor KeyIndex {
     /// Adds new keys until `room` new ones were added; duplicates take no room. Returns the keys left over.
     @discardableResult
     func ingest(_ keys: [Data], room: Int = .max) -> [Data] {
+        // The tree takes the new keys in one pass once they are all in the arena.
+        defer { withKeyBytes { tree.extend(with: $0) } }
         var added = 0
         for (offset, key) in keys.enumerated() {
             if added == room { return keys[offset...].filter { !contains($0) } }

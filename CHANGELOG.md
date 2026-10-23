@@ -91,3 +91,7 @@ and versions follow [Semantic Versioning](https://semver.org/).
   **Load more** (one SCAN per click) or **Auto-page** with pause, up to a loaded-key limit (default 1M, max 10M) with
   **Continue**; repeated keys are listed once, a failed page keeps what was loaded, and the footer reads
   "250,000 of 1.2M keys loaded · Load more" / "All keys loaded". About 36 bytes per key beyond the names (KEEL-020).
+- Namespace tree over the loaded keys: a 1–4 byte separator per profile (default `:`), keys that are also folders
+  (`a:b` beside `a:b:c`), live key counts per folder as pages load, folders before keys in byte order, and a rebuild
+  when the separator changes; binary-safe names shown with redis-cli escaping (`\xff\x00a`) while every action uses
+  the original bytes (KEEL-021).
