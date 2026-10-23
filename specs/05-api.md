@@ -79,7 +79,7 @@ These controls don't protect against malware running as the same user.
 
 ### Connection scope
 
-- `all` or an explicit set of profile IDs. Each approved profile is bound to its **connection revision** (host, port, username, TLS server name, tunnel). If those change, calls return `PERMISSION_DENIED` until the user re-approves the profile for that grant.
+- `all` or an explicit set of profile IDs. Each approved profile is bound to its **connection revision** (host, port, username, TLS server name, tunnel; turning TLS off or Skip verification on also counts). If those change, calls return `PERMISSION_DENIED` until the user re-approves the profile for that grant.
 - Creating a profile with `connection.write` requires `all` scope; a profile created by an agent is added to that grant's scope only.
 - Out-of-scope IDs return `NOT_FOUND`.
 

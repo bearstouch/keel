@@ -60,3 +60,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
   and FLUSHALL need a typed confirmation or an agent approval bound to the exact command and database; agents are
   always refused admin commands, `KEYS`, `MONITOR`, `SUBSCRIBE` and unknown commands. `ServerSession` keeps
   `browser`, `console`, `stream`, `job` and `agent` connections apart and never replays a command (KEEL-013).
+- Connection profiles and folders in `connections.json`: create, edit, duplicate, delete and reorder, with revisions
+  that refuse stale edits and color labels with editable names (red is the built-in Production label). Passwords and TLS
+  secrets live only in the Keychain (`Keel Connection`, `Keel TLS`), written before the metadata and restored if it can't
+  be saved; changing the host, port, username, TLS server name or tunnel, turning TLS off or turning Skip verification
+  on removes the saved password (KEEL-014).
