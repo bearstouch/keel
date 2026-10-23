@@ -1,0 +1,24 @@
+# Server
+redis_version:7.2.4
+server_name:valkey
+valkey_version:7.2.7
+redis_git_sha1:00000000
+redis_git_dirty:0
+redis_build_id:5d1e3c7a9b2f4e61
+redis_mode:standalone
+os:Linux 6.8.0 x86_64
+arch_bits:64
+monotonic_clock:POSIX clock_gettime
+multiplexing_api:epoll
+gcc_version:12.2.0
+process_id:1
+run_id:4c2a3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b
+tcp_port:6379
+uptime_in_seconds:60
+hz:10
+executable:/usr/local/bin/valkey-server
+config_file:
+
+# Replication
+role:master
+connected_slaves:0

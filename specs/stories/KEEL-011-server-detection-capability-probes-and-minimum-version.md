@@ -19,10 +19,15 @@ As a user, I want Keel to recognise Redis, Valkey and Dragonfly and adapt to wha
 
 ## Acceptance criteria
 
-- [ ] **AC1.** Fixtures for Redis 6.0/7.4/8.x, Valkey 7.2/8.x/9.x and Dragonfly are identified with the right version.
-- [ ] **AC2.** Redis 5.0.7 is refused with "Keel requires Redis 6.0 or later; this server is Redis 5.0.7".
-- [ ] **AC3.** A cluster node sets the cluster banner flag.
+- [x] **AC1.** Fixtures for Redis 6.0/7.4/8.x, Valkey 7.2/8.x/9.x and Dragonfly are identified with the right version.
+- [x] **AC2.** Redis 5.0.7 is refused with "Keel requires Redis 6.0 or later; this server is Redis 5.0.7".
+- [x] **AC3.** A cluster node sets the cluster banner flag.
 - [ ] **AC4.** Each probe result is cached per session and drives editor fallbacks (e.g. `ZRANGEBYSCORE` on 6.0).
+
+**Verification (KEEL-011).** AC1–AC3 observed in `ServerDetectionTests` against the `Tests/Fixtures/INFO` fixtures.
+AC4 is **pending**: per-session caching and the fallback commands (`ZRANGEBYSCORE`, `PTTL`, inclusive stream paging)
+are observed in `CapabilityProbeTests`, but no editor consumes them yet (KEEL-033, KEEL-034); real servers are
+pending the integration matrix (KEEL-053).
 
 ## Unit tests
 

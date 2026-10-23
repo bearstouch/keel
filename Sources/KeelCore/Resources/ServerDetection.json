@@ -1,0 +1,21 @@
+{
+    "version": 1,
+    "rules": [
+        {
+            "server": "dragonfly",
+            "anyOf": [{ "field": "dragonfly_version" }],
+            "versionFields": ["dragonfly_version"]
+        },
+        {
+            "server": "valkey",
+            "anyOf": [{ "field": "server_name", "equals": "valkey" }, { "field": "valkey_version" }],
+            "versionFields": ["valkey_version", "redis_version"]
+        },
+        {
+            "server": "redis",
+            "anyOf": [{ "field": "redis_version" }],
+            "versionFields": ["redis_version"],
+            "minimumVersion": "6.0"
+        }
+    ]
+}

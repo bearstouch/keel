@@ -45,3 +45,7 @@ and versions follow [Semantic Versioning](https://semver.org/).
   unknown or changed host key, key passphrase, one-time code, a second password prompt — in a sheet with ssh's own
   text. Host keys need a click on **Accept**; **Reject** (or 90 s without an answer) fails the connection with "Host
   key not accepted". Only the bundled helper whose parent is that tunnel's ssh is answered (KEEL-010).
+- Server detection from `INFO` with data-driven rules (`Resources/ServerDetection.json`: Dragonfly, Valkey, Redis,
+  else "Redis-compatible (unrecognized)"), mode from `redis_mode` / `role` with the cluster banner flag, Redis below
+  6.0 refused with `UNSUPPORTED_SERVER`, and FR-CN12 capability probes cached per session that pick editor fallbacks
+  (`ZRANGEBYSCORE`, `PTTL`, inclusive stream paging) (KEEL-011).
