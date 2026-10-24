@@ -6,10 +6,12 @@ import KeelCore
 @MainActor
 public final class ValueViewerChoices {
     private var memory = ValueViewerMemory()
+    /// Settings → Editors' default viewer for patterns without a remembered choice; nil picks JSON or Text by value.
+    private let defaultMode: ValueViewMode?
 
-    public init() {}
+    public init(defaultMode: ValueViewMode? = nil) { self.defaultMode = defaultMode }
 
-    func mode(for pattern: Data) -> ValueViewMode? { memory.mode(for: pattern) }
+    func mode(for pattern: Data) -> ValueViewMode? { memory.mode(for: pattern) ?? defaultMode }
     func remember(_ mode: ValueViewMode, for pattern: Data) { memory.remember(mode, for: pattern) }
 }
 

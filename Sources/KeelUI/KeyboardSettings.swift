@@ -79,25 +79,6 @@ public final class KeyboardSettingsModel: ObservableObject {
     }
 }
 
-/// The Settings window (⌘,). KEEL-049 adds its other panes; Keyboard is the first.
-@MainActor
-public enum SettingsWindow {
-    public enum Pane: String, CaseIterable, Sendable {
-        case keyboard
-
-        public var title: String { "Keyboard" }
-    }
-
-    public static func make(model: KeyboardSettingsModel) -> NSWindow {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 600), styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        window.title = "Keyboard"
-        window.isReleasedWhenClosed = false
-        window.contentView = NSHostingView(rootView: KeyboardSettingsView(model: model, bindings: model.bindings).font(Tokens.interface(13)))
-        window.center()
-        return window
-    }
-}
-
 struct KeyboardSettingsView: View {
     @ObservedObject var model: KeyboardSettingsModel
     @ObservedObject var bindings: ShortcutBindings

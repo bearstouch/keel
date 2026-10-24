@@ -34,6 +34,8 @@ public final class TabSession: ObservableObject, Identifiable {
     private static let log = KeelLog(.connection)
     private let connector: any SessionConnecting
     private let histories: ConsoleHistoryBook
+    /// The applied settings (FR-AP09): a new browser reads the Editors pane, and each new scan the Browser pane.
+    private let settings: SettingsSnapshot
     private var connected: ConnectedServer?
     /// Bumped by every connect and disconnect, so a connect that lands after a newer one (or a disconnect) is closed.
     private var attempt = 0
@@ -49,8 +51,8 @@ public final class TabSession: ObservableObject, Identifiable {
     /// A recent key picked in the palette before the browser existed; revealed once the first page is loaded.
     private var pendingReveal: Data?
 
-    init(id: UUID, profileID: UUID, connector: any SessionConnecting, histories: ConsoleHistoryBook = ConsoleHistoryBook()) {
-        self.id = id; self.profileID = profileID; self.connector = connector; self.histories = histories
+    init(id: UUID, profileID: UUID, connector: any SessionConnecting, histories: ConsoleHistoryBook = ConsoleHistoryBook(), settings: SettingsSnapshot = SettingsSnapshot()) {
+        self.id = id; self.profileID = profileID; self.connector = connector; self.histories = histories; self.settings = settings
     }
 
     /// Connects on `database` (Connect, Reconnect, opening from the sidebar, Reconnect on launch). Does nothing while
@@ -79,7 +81,7 @@ public final class TabSession: ObservableObject, Identifiable {
             DiagnosticsRecorder.shared.recordConnection(server.identity.kind)
             connected = server; self.server = server.identity
             isProduction = server.safety.production; writesBlocked = server.safety.readOnly; serverReadOnly = false
-            let browser = Self.browser(for: server, database: database)
+            let browser = Self.browser(for: server, database: database, settings: settings)
             browser.onKeyOpened = { [weak self] key, database in self?.onKeyOpened?(key, database) }
             self.browser = browser
             // The tab saves the database the switcher moves to (FR-AP01 restores it).
@@ -177,11 +179,12 @@ public final class TabSession: ObservableObject, Identifiable {
     }
 
     /// The browser over a new session: index, row metadata, list, filters and the database switcher.
-    static func browser(for server: ConnectedServer, database: Int) -> BrowserModel {
-        let index = KeyIndex(service: server.service, context: DataContext(profile: server.safety, database: database), separator: server.separator)
+    static func browser(for server: ConnectedServer, database: Int, settings: SettingsSnapshot) -> BrowserModel {
+        let index = KeyIndex(
+            service: server.service, context: DataContext(profile: server.safety, database: database), separator: server.separator, defaults: { settings.current.browser })
         let list = KeyListDataSource(index: index, metadataLoader: RowMetadataLoader(index: index))
         return BrowserModel(
             list: list, filter: KeyFilterModel(list: list), database: database, serverMode: server.identity.mode, databaseCount: server.databaseCount,
-            editorBinding: { EditorBinding.editor(for: $0) })
+            editorBinding: { EditorBinding.editor(for: $0) }, defaultViewer: settings.current.editors.defaultViewer.mode)
     }
 }

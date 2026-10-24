@@ -42,8 +42,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private var palettes: [UUID: CommandPaletteModel] = [:]
     private var sidebars: [UUID: SidebarModel] = [:]
     private var settingsWindow: NSWindow?
-    /// The single owner of `settings.json`: the theme (FR-AP04) and the Increase Contrast flag the tokens read.
+    /// The single owner of `settings.json` (FR-AP09): the applied settings, the theme (FR-AP04) and the Increase Contrast
+    /// flag the tokens read.
     let settings: SettingsModel
+    /// The Settings window's edits, kept until Apply or Cancel.
+    private var settingsDraft: SettingsDraft?
     private var accessibilityObserver: NSObjectProtocol?
 
     init(arguments: LaunchArguments, stateDirectory: URL) {
@@ -80,13 +83,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         let resolveSavedHost: ConnectionTester.ResolveSavedHost = { id in await hosts.hosts.first { $0.id == id } }
         // Touch ID (or the Mac password) is asked for inside the lookup; declining sends ssh's prompt to the person.
         let savedHostPassword: ConnectionTester.SavedHostPassword = { hosts.savedPassword(for: $0, gate: LocalAuthenticationGate()) }
-        let tester = ConnectionTester(tunnels: tunnels, resolveSavedHost: resolveSavedHost, savedHostPassword: savedHostPassword)
+        // Test and connect read the applied settings (Advanced, Console) when they start, so an Apply reaches the next one.
+        let snapshot = settings.snapshot
+        let tester = ConnectionTester(tunnels: tunnels, resolveSavedHost: resolveSavedHost, savedHostPassword: savedHostPassword, advanced: { snapshot.current.advanced })
         connections = ConnectionSheetPresenter(store: profiles, tester: tester, hostLibrary: sshHosts)
         transfer = ProfileTransferModel(store: profiles)
         let connector = ProfileSessionConnector(
             profiles: profiles, knownCA: knownCA, tunnels: tunnels, resolveSavedHost: resolveSavedHost, savedHostPassword: savedHostPassword,
-            confirmCAChange: { change in await MainActor.run { Self.confirm(change) } })
-        let app = AppModel(profiles: profiles, connector: connector, persistence: Persistence(directory: stateDirectory))
+            confirmCAChange: { change in await MainActor.run { Self.confirm(change) } }, settings: { snapshot.current })
+        let app = AppModel(profiles: profiles, connector: connector, persistence: Persistence(directory: stateDirectory), settings: snapshot)
         app.presentWindow = { [weak self] in self?.show($0, frame: nil) }
         app.focusWindow = { [weak self] in self?.nativeWindows[$0]?.makeKeyAndOrderFront(nil) }
         self.app = app
@@ -96,7 +101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             // Tabs restore against the profiles, so they load first. A connections.json that needs recovery keeps the
             // store read-only (KEEL-050 offers the choice); its tabs then have no profile and aren't restored.
             _ = await profiles.load()
-            for (window, frame) in await app.restore() { show(window, frame: frame) }
+            for (window, frame) in await app.restore(reopens: settings.applied.restoresWindows) { show(window, frame: frame) }
             NSApp.activate()
         }
     }
@@ -235,11 +240,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     @objc private func setTheme(_ sender: NSMenuItem) {
         guard ThemeChoice.allCases.indices.contains(sender.tag) else { return }
         settings.setTheme(ThemeChoice.allCases[sender.tag])
+        // An open Settings draft follows, so its Apply never brings the replaced theme back.
+        settingsDraft?.document.theme = settings.theme
     }
 
-    /// Settings… (⌘,): one window, brought back when already open.
-    @objc private func showSettings(_ sender: Any?) {
-        if settingsWindow == nil { settingsWindow = SettingsWindow.make(model: KeyboardSettingsModel(bindings: bindings)) }
+    /// Settings… (⌘,): one window, brought back when already open; `pane` (from the palette) is shown first.
+    @objc private func showSettings(_ sender: Any?) { showSettings(pane: nil) }
+
+    private func showSettings(pane: SettingsDraft.Pane?) {
+        if settingsWindow == nil {
+            let draft = SettingsDraft(settings: settings)
+            settingsDraft = draft
+            settingsWindow = SettingsWindow.make(draft: draft, keyboard: KeyboardSettingsModel(bindings: bindings))
+        }
+        // A window brought back keeps its unapplied edits; one opened again starts from the applied settings.
+        if settingsWindow?.isVisible == false { settingsDraft?.begin() }
+        if let pane { settingsDraft?.pane = pane }
         settingsWindow?.makeKeyAndOrderFront(nil)
     }
     @objc private func setMode(_ sender: NSMenuItem) {
@@ -480,11 +496,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     private func fixedChord(_ item: NSMenuItem) -> String? { KeelShortcut.fixed.first { $0.title == item.title }?.chord.description }
 
-    /// The palette's settings rows: each Settings pane.
+    /// The palette's settings rows: each Settings pane, opened at that pane.
     private func paletteSettings() -> [PaletteEntry] {
-        SettingsWindow.Pane.allCases.map { pane in
-            PaletteEntry(PaletteItem(id: "settings:\(pane.rawValue)", kind: .settings, title: "\(pane.title) Shortcuts", subtitle: "Settings")) { [weak self] in
-                self?.showSettings(nil)
+        SettingsDraft.Pane.allCases.map { pane in
+            let title = pane == .keyboard ? "Keyboard Shortcuts" : "\(pane.title) Settings"
+            return PaletteEntry(PaletteItem(id: "settings:\(pane.rawValue)", kind: .settings, title: title, subtitle: "Settings")) { [weak self] in
+                self?.showSettings(pane: pane)
             }
         }
     }

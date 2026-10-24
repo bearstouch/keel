@@ -252,12 +252,22 @@ public actor KeyIndex {
     /// list and metadata answers from before are dropped; the list reads it to notice a restart even when more keys
     /// than before are loaded by the time it reloads.
     public private(set) var generation = 0
+    /// Settings → Browser (FR-AP09), read again by every restart, so a new scan takes the applied page size, limit and
+    /// default separator while the scan already loaded keeps what it started with. Nil keeps `configuration`.
+    private let defaults: (@Sendable () -> BrowserSettings)?
+    /// The profile's own separator, which wins over the default one; nil follows the default (FR-KB03).
+    private var profileSeparator: NamespaceSeparator?
 
+    /// `separator` is the profile's; nil uses the default separator of `defaults`, or `:` without them.
     public init(
-        service: DataCommandService, context: DataContext, configuration: KeyIndexConfiguration = KeyIndexConfiguration(), separator: NamespaceSeparator = .default
+        service: DataCommandService, context: DataContext, configuration: KeyIndexConfiguration = KeyIndexConfiguration(), separator: NamespaceSeparator? = .default,
+        defaults: (@Sendable () -> BrowserSettings)? = nil
     ) {
+        let browser = defaults?()
+        let configuration = browser?.configuration(filter: configuration.filter) ?? configuration
         self.service = service; self.context = context; self.configuration = configuration; self.limit = configuration.limit
-        tree = NamespaceTree(separator: separator)
+        self.defaults = defaults; profileSeparator = separator
+        tree = NamespaceTree(separator: separator ?? browser?.namespaceSeparator ?? .default)
     }
 
     // MARK: - Reading
@@ -349,6 +359,7 @@ public actor KeyIndex {
 
     /// Rebuilds the tree when the separator changes (AC2); folder IDs from the old tree are no longer valid.
     public func setSeparator(_ separator: NamespaceSeparator) {
+        profileSeparator = separator
         guard separator != tree.separator else { return }
         treeBuild += 1
         tree = NamespaceTree(separator: separator, build: treeBuild)
@@ -455,11 +466,15 @@ public actor KeyIndex {
     /// without one the filter is kept, as Refresh wants (FR-KB09).
     public func restart(filter: KeyFilter? = nil) {
         if let filter { configuration.filter = filter }
+        // A new scan starts from the applied settings; the tree is rebuilt below anyway, so a new default separator
+        // costs nothing extra here.
+        let browser = defaults?()
+        if let browser { configuration = browser.configuration(filter: configuration.filter) }
         scanEpoch += 1; generation += 1
         arena = []; ends = []; metadata = []; sizes = [:]; overflow = []
         slots = ContiguousArray(repeating: 0, count: 1_024)
         treeBuild += 1
-        tree = NamespaceTree(separator: tree.separator, build: treeBuild)
+        tree = NamespaceTree(separator: profileSeparator ?? browser?.namespaceSeparator ?? tree.separator, build: treeBuild)
         cursor = Data("0".utf8); started = false
         limit = configuration.limit; phase = .idle; inFlight = false; pauseRequested = false
     }
