@@ -175,6 +175,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
   (and core type filter), an estimated count with **Preview matches** (first 100), typed confirmation and a throttle
   (default 10 batches/s, 1–100 or unthrottled); `SCAN MATCH … COUNT 1000` + `UNLINK` batches of 1,000 on the job's
   own connection, with progress, ETA, Cancel after the current batch and a final report. `*` is refused (KEEL-039).
+- Console parsing and output like redis-cli: lines split with redis-cli's quoting and escape rules (`"a\x00b"` is three
+  bytes; unbalanced quotes are an error and send nothing), and replies printed in redis-cli 7 notation for RESP2 and
+  RESP3, checked against golden redis-cli output (KEEL-040).
 
 ### Removed
 

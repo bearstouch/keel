@@ -1,0 +1,1 @@
+(error) ERR unknown command 'NOSUCHCOMMAND', with args beginning with: 'a' 'b' 

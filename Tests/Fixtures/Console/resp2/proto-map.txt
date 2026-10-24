@@ -1,0 +1,6 @@
+1) (integer) 0
+2) (integer) 0
+3) (integer) 1
+4) (integer) 1
+5) (integer) 2
+6) (integer) 0

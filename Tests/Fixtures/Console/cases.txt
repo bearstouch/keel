@@ -1,0 +1,37 @@
+status	PING
+status-ok	SET scratch 1
+integer	DBSIZE
+integer-negative	TTL plain
+bulk	GET plain
+bulk-binary	GET bin
+bulk-escapes	GET escapes
+bulk-empty	GET empty
+nil	GET missing
+error	INCR plain
+error-wrongtype	LLEN plain
+error-unknown	NOSUCHCOMMAND a b
+empty-array	LRANGE missing 0 -1
+array-padded	LRANGE list 0 -1
+array-short	LRANGE list 0 2
+hash	HGETALL hash
+empty-hash	HGETALL missing
+set	SMEMBERS set
+empty-set	SMEMBERS missing
+score-integral	ZSCORE zset one
+score-fraction	ZSCORE zset one-and-half
+score-inf	ZSCORE zset infinite
+score-sum	ZSCORE zsum m
+withscores	ZRANGE zset 0 -1 WITHSCORES
+nested	XRANGE stream - +
+nested-deep	XINFO STREAM stream FULL
+mget	MGET plain missing bin
+command-docs	COMMAND DOCS GET
+proto-true	DEBUG PROTOCOL true
+proto-false	DEBUG PROTOCOL false
+proto-double	DEBUG PROTOCOL double
+proto-bignum	DEBUG PROTOCOL bignum
+proto-null	DEBUG PROTOCOL null
+proto-map	DEBUG PROTOCOL map
+proto-set	DEBUG PROTOCOL set
+proto-verbatim	DEBUG PROTOCOL verbatim
+proto-attrib	DEBUG PROTOCOL attrib

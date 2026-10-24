@@ -1,0 +1,10 @@
+1# "get" => 
+   1# "summary" => "Returns the string value of a key."
+   2# "since" => "1.0.0"
+   3# "group" => "string"
+   4# "complexity" => "O(1)"
+   5# "arguments" => 
+      1) 1# "name" => "key"
+         2# "type" => "key"
+         3# "display_text" => "key"
+         4# "key_spec_index" => (integer) 0
