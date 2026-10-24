@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import KeelCore
 import KeelSSH
 import KeelUI
@@ -30,6 +31,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private var terminating = false
     /// A window whose close the user confirmed despite unsaved edits.
     private var confirmedClose: Set<UUID> = []
+    /// Keeps each window's title (and so its Window menu item) on its selected tab, "[PROD]" included (FR-SF02).
+    private var titleUpdates: [UUID: AnyCancellable] = [:]
 
     init(arguments: LaunchArguments, stateDirectory: URL) {
         self.arguments = arguments; self.stateDirectory = stateDirectory
@@ -108,6 +111,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             window.center()
         }
         nativeWindows[tabs.id] = window
+        window.title = sidebar.windowTitle
+        // `objectWillChange` fires before the change lands, so the title is read on the next turn of the main queue.
+        titleUpdates[tabs.id] = sidebar.objectWillChange.receive(on: DispatchQueue.main).sink { [weak window, weak sidebar] _ in
+            guard let window, let sidebar, window.title != sidebar.windowTitle else { return }
+            window.title = sidebar.windowTitle
+        }
         window.makeKeyAndOrderFront(nil)
     }
 
@@ -150,7 +159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     func windowWillClose(_ notification: Notification) {
         guard let id = windowID(notification.object as? NSWindow) else { return }
-        nativeWindows[id] = nil; confirmedClose.remove(id)
+        nativeWindows[id] = nil; confirmedClose.remove(id); titleUpdates[id] = nil
         // The app-wide sheets move to a window that is still open.
         if app?.sheetWindowID == id { app?.sheetWindowID = nativeWindows.keys.first }
         // Quitting keeps the window in windows.json, and so does closing the last one (the app quits then, and the

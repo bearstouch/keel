@@ -5,7 +5,7 @@ import SwiftUI
 /// The colors of 08 Design that the sheets and the sidebar use, light and dark (DS-06: nothing else). KEEL-044 completes the set and
 /// bundles the fonts; until then `Font.custom` falls back to the system font.
 enum Tokens {
-    static let bg = Color(light: 0xFFFFFF, dark: 0x1E1E1E)
+    static let bg = Color(light: Hex.bg.light, dark: Hex.bg.dark)
     /// Sheets are `bg` in light and `sheet` in dark.
     static let sheet = Color(light: 0xFFFFFF, dark: 0x2A2A2C)
     /// The sidebar's soft Redis-red tint in light, graphite in dark; its edge and selected row.
@@ -22,7 +22,7 @@ enum Tokens {
     /// A row with an unsaved edit.
     static let changedRow = Color(light: 0xFDF3F2, dark: 0x2E2423)
     /// The tab bar's strip under the toolbar.
-    static let tabBar = Color(light: 0xF6F8FB, dark: 0x29292B)
+    static let tabBar = Color(light: Hex.tabBar.light, dark: Hex.tabBar.dark)
     /// The selected segment of the mode switch (on a `soft` track).
     static let segOn = Color(light: 0xFFFFFF, dark: 0x48484A)
     /// The selected segment's lift: a soft shadow in light, none in dark.
@@ -35,11 +35,37 @@ enum Tokens {
     static let onSaveBar = Color(light: 0xFFFFFF, dark: 0x1E1E1E)
     static let fg = Color(light: 0x18212F, dark: 0xE5E5E7)
     static let muted = Color(light: 0x4E5B6D, dark: 0xA1A1A6)
-    static let accent = Color(light: 0xC7302A, dark: 0xFF6F61)
+    static let accent = Color(light: Hex.accent.light, dark: Hex.accent.dark)
     static let onAccent = Color(light: 0xFFFFFF, dark: 0x2A0B08)
     static let success = Color(light: 0x216B3B, dark: 0x8DDAA4)
     static let warning = Color(light: 0x805400, dark: 0xF2CC7A)
     static let danger = Color(light: 0xB22D32, dark: 0xFFA4A4)
+    /// The production strip and its text (FR-SF02, DS-03): a deep maroon, deliberately apart from `accent`.
+    static let prodStrip = Color(light: Hex.prodStrip.light, dark: Hex.prodStrip.dark)
+    static let onProdStrip = Color(light: Hex.onProdStrip.light, dark: Hex.onProdStrip.dark)
+
+    /// Raw values of the tokens whose contrast is checked in tests (light, dark).
+    enum Hex {
+        typealias Pair = (light: UInt32, dark: UInt32)
+        static let prodStrip: Pair = (0x7A1A14, 0x4A1F1C)
+        static let onProdStrip: Pair = (0xFFFFFF, 0xFFD6D1)
+        static let tabBar: Pair = (0xF6F8FB, 0x29292B)
+        static let bg: Pair = (0xFFFFFF, 0x1E1E1E)
+        static let accent: Pair = (0xC7302A, 0xFF6F61)
+    }
+
+    /// WCAG 2 contrast ratio of two sRGB colors (1…21).
+    static func contrast(_ a: UInt32, _ b: UInt32) -> Double {
+        func luminance(_ value: UInt32) -> Double {
+            func channel(_ shift: UInt32) -> Double {
+                let c = Double(value >> shift & 0xFF) / 255
+                return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
+            }
+            return 0.2126 * channel(16) + 0.7152 * channel(8) + 0.0722 * channel(0)
+        }
+        let (x, y) = (luminance(a), luminance(b))
+        return (max(x, y) + 0.05) / (min(x, y) + 0.05)
+    }
 
     /// Label dots (08 Design → Type badges and labels). `none` has no dot; the sheet draws an empty ring.
     static func label(_ color: LabelColor) -> Color? {
