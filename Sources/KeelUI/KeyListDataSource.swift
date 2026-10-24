@@ -55,6 +55,11 @@ public final class KeyListDataSource: NSObject, ObservableObject {
     @Published public private(set) var selectedKey: Int?
     /// The selected folder (tree only; the flat view has no folders, so toggling drops it).
     @Published public private(set) var selectedFolder: NamespaceFolderID?
+    /// The keys of a selection of more than one row, in row order (folders in it are skipped); empty otherwise, and
+    /// `selectedKey` is nil then. Only keys shown selected are kept: a reload that can't show one drops it (FR-KB11).
+    @Published public private(set) var selectedKeys: [Int] = []
+    /// ⌫ in the list (FR-KB11); the browser asks for the typed confirmation.
+    var onDelete: (() -> Void)?
     @Published public private(set) var footer: KeyIndexFooter
     /// The database's `DBSIZE`, shown in the footer beside the loaded count (FR-KB09); nil until known.
     @Published public private(set) var totalKeys: Int?
@@ -86,6 +91,8 @@ public final class KeyListDataSource: NSObject, ObservableObject {
     private var pendingSelection: Data?
     /// True while the model itself changes the views' selection, so the delegate doesn't echo it back.
     private var applyingSelection = false
+    /// The index generation `selectedKeys` was taken at: their indices name other keys after a restart or removal.
+    private var selectedKeysGeneration = 0
     /// The local filter's text as typed; empty when it's off (FR-KB05).
     @Published public private(set) var localQuery = ""
     /// Keys matching the local filter so far, in index order; nil when it's off. While on, the flat table lists
@@ -150,7 +157,7 @@ public final class KeyListDataSource: NSObject, ObservableObject {
         view.columnAutoresizingStyle = .firstColumnOnlyAutoresizingStyle
         // Type-select would ask for the name of every row; with lazily fetched names it can't work (KEEL-023 filters).
         view.allowsTypeSelect = false
-        view.allowsMultipleSelection = false
+        view.allowsMultipleSelection = true
         view.usesAutomaticRowHeights = false
         view.menu = NSMenu()
         view.menu?.delegate = self
@@ -199,6 +206,7 @@ public final class KeyListDataSource: NSObject, ObservableObject {
         // so the local search starts over. The index may already hold more keys than before by now.
         if count < keyCount || generation != indexGeneration {
             flatRows.removeAll()
+            selectedKeys = []
             if localMatches != nil { localMatches = []; localSearched = 0 }
         }
         keyCount = count; indexGeneration = generation
@@ -220,6 +228,7 @@ public final class KeyListDataSource: NSObject, ObservableObject {
         restore(root)
         expanded = stillExpanded
         if !selectionStillValid { selectedKey = nil; selectedKeyBytes = nil; selectedFolder = nil }
+        if selectedKeysGeneration != generation { selectedKeys = [] }
         // The pending key is loaded now (and nothing else was selected meanwhile): it becomes the selection.
         if let pending, let found, pendingSelection == pending, found < count {
             pendingSelection = nil
@@ -246,6 +255,7 @@ public final class KeyListDataSource: NSObject, ObservableObject {
     /// Selects the key with these bytes: now if it is loaded, otherwise as soon as a reload finds it (a refresh keeps
     /// the selection this way, FR-KB09). Nil clears the selection and any pending key.
     public func select(keyBytes: Data?) async {
+        selectedKeys = []
         guard let keyBytes else {
             pendingSelection = nil; selectedKey = nil; selectedKeyBytes = nil; selectedFolder = nil
             applySelection()
@@ -267,6 +277,12 @@ public final class KeyListDataSource: NSObject, ObservableObject {
         return await loadedKey(key)
     }
 
+    /// The bytes of `selectedKeys`; nil when the index changed since they were selected (the keys moved).
+    public func selectedKeyNames() async -> [Data]? {
+        guard !selectedKeys.isEmpty else { return [] }
+        return await index.keys(at: selectedKeys, generation: selectedKeysGeneration)
+    }
+
     // MARK: - Local filter
 
     /// The quick local filter (FR-KB05): substring over the loaded keys, ASCII case ignored, never sent to the server.
@@ -274,6 +290,8 @@ public final class KeyListDataSource: NSObject, ObservableObject {
     public func setLocalFilter(_ text: String) async {
         guard text != localQuery else { return }
         localQuery = text
+        // Rows change meaning when the filter does; a multi-selection would name keys no longer shown together.
+        selectedKeys = []
         let wasOn = localMatches != nil
         localMatches = LocalKeyQuery(text).isEmpty ? nil : []
         localSearched = 0
@@ -375,7 +393,7 @@ public final class KeyListDataSource: NSObject, ObservableObject {
 
     /// Selects a key and reveals it in the active view.
     public func select(key: Int) async {
-        selectedKey = key; selectedFolder = nil; selectedKeyBytes = nil; pendingSelection = nil
+        selectedKey = key; selectedFolder = nil; selectedKeyBytes = nil; pendingSelection = nil; selectedKeys = []
         let bytes = await bytes(of: .key(key))
         // A click during the await owns the selection now; don't pin this key's bytes to it.
         guard selectedKey == key else { return }
@@ -400,6 +418,7 @@ public final class KeyListDataSource: NSObject, ObservableObject {
 
     /// Shows the model's selection in the active view (nothing selected when it isn't visible).
     private func applySelection() {
+        guard selectedKeys.isEmpty else { applyKeySelection(); return }
         var row = -1
         switch shownMode {
         case .flat:
@@ -412,6 +431,38 @@ public final class KeyListDataSource: NSObject, ObservableObject {
         withSelectionApplied {
             if row >= 0 { activeView.selectRowIndexes([row], byExtendingSelection: false) } else { activeView.deselectAll(nil) }
         }
+    }
+
+    /// Shows `selectedKeys` in the active view, keeping only the keys it can show: what is deleted is what is seen.
+    private func applyKeySelection() {
+        var rows = IndexSet(), shown: [Int] = []
+        switch shownMode {
+        case .flat:
+            for key in selectedKeys {
+                guard let row = flatRow(ofKey: key), row < tableView.numberOfRows else { continue }
+                rows.insert(row); shown.append(key)
+            }
+        case .tree:
+            // One walk of the created items finds them all; only items under expanded folders have rows.
+            let wanted = Set(selectedKeys)
+            var found: [Int: KeyListItem] = [:]
+            func search(_ item: KeyListItem) {
+                for created in item.createdItems {
+                    if case .key(let key) = created.child, wanted.contains(key) { found[key] = created }
+                    if created.children != nil, outlineView.isItemExpanded(created) { search(created) }
+                }
+            }
+            search(root)
+            for key in selectedKeys {
+                guard let item = found[key] else { continue }
+                let row = outlineView.row(forItem: item)
+                if row >= 0 { rows.insert(row); shown.append(key) }
+            }
+        }
+        // Fewer than two left: nothing stays selected rather than a key the user didn't pick alone.
+        if shown.count != selectedKeys.count { selectedKeys = shown.count > 1 ? shown : [] }
+        if selectedKeys.isEmpty { rows = [] }
+        withSelectionApplied { activeView.selectRowIndexes(rows, byExtendingSelection: false) }
     }
 
     /// The created item for `child` among the visible rows' parents.
@@ -435,6 +486,17 @@ public final class KeyListDataSource: NSObject, ObservableObject {
     private func selectionChanged(in view: NSTableView) {
         guard !applyingSelection, view === activeView else { return }
         pendingSelection = nil
+        if view.selectedRowIndexes.count > 1 {
+            // Several rows: the keys among them; the editor closes (no single selected key).
+            var keys: [Int] = []
+            for row in view.selectedRowIndexes { if case .key(let key)? = child(atRow: row) { keys.append(key) } }
+            // A folder and one key isn't a multi-key selection: nothing is open and ⌫ does nothing.
+            selectedKeys = keys.count > 1 ? keys : []
+            selectedKeysGeneration = indexGeneration
+            selectedKey = nil; selectedFolder = nil; selectedKeyBytes = nil
+            return
+        }
+        selectedKeys = []
         let child = self.child(atRow: view.selectedRow)
         switch child {
         case .key(let key)?: selectedKey = key; selectedFolder = nil
@@ -615,8 +677,30 @@ public final class KeyListDataSource: NSObject, ObservableObject {
 
     // MARK: - Context menu
 
-    /// The context menu of a row: copy the name in either form; folders also expand or collapse.
+    /// ⌫ (backspace, 0x7F) and ⌦ (forward delete, a function-key code point).
+    private static let deleteCharacters: [Character] = [Character(UnicodeScalar(UInt8(NSDeleteCharacter))), Character(UnicodeScalar(NSDeleteFunctionKey)!)]
+
+    /// ⌫ or ⌦ without modifiers on a multi-key selection asks to delete it (FR-KB11); other keys go to the view.
+    func handlesDelete(_ event: NSEvent) -> Bool {
+        guard event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty, let typed = event.charactersIgnoringModifiers?.first,
+            Self.deleteCharacters.contains(typed), selectedKeys.count > 1, let onDelete
+        else { return false }
+        onDelete()
+        return true
+    }
+
+    /// The context menu of a row: copy the name in either form; folders also expand or collapse. A row of a multi-key
+    /// selection offers the selection's actions instead: copy the names, delete them (FR-KB11).
     func menuItems(forRow row: Int) -> [NSMenuItem] {
+        if selectedKeys.count > 1, activeView.selectedRowIndexes.contains(row) {
+            let count = KeyIndexFooter.grouped(selectedKeys.count)
+            var items = [menuItem("Copy \(count) Key Names", represented: selectedKeys, action: #selector(copySelectedNames(_:)))]
+            if onDelete != nil {
+                items.append(.separator())
+                items.append(menuItem("Delete \(count) Keys…", represented: selectedKeys, action: #selector(deleteSelection(_:))))
+            }
+            return items
+        }
         guard let child = child(atRow: row) else { return [] }
         var items: [NSMenuItem] = []
         if case .folder = child, let item = outlineView.item(atRow: row) as? KeyListItem {
@@ -643,6 +727,17 @@ public final class KeyListDataSource: NSObject, ObservableObject {
     }
 
     @objc private func copyName(_ sender: NSMenuItem) { copy(sender, as: KeyDisplay.name) }
+
+    /// One name per line, in row order.
+    @objc private func copySelectedNames(_ sender: NSMenuItem) {
+        Task {
+            guard let names = await selectedKeyNames(), !names.isEmpty else { return }
+            pasteboard.clearContents()
+            pasteboard.setString(names.map(KeyDisplay.name).joined(separator: "\n"), forType: .string)
+        }
+    }
+
+    @objc private func deleteSelection(_ sender: NSMenuItem) { onDelete?() }
 
     @objc private func copyArgument(_ sender: NSMenuItem) { copy(sender, as: KeyDisplay.redisCliArgument) }
 

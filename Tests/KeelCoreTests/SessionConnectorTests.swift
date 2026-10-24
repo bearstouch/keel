@@ -57,7 +57,7 @@ final class SessionConnectorTests: XCTestCase {
         XCTAssertEqual(connected.identity.version, ServerVersion("7.4.1"))
         XCTAssertEqual(connected.identity.role, "master")
         XCTAssertEqual(connected.databaseCount, 32)
-        XCTAssertEqual(connected.safety, SafetyProfile(name: "cache", readOnly: true))
+        XCTAssertEqual(connected.safety, SafetyProfile(name: "cache", readOnly: true, server: "127.0.0.1:6379"))
         XCTAssertEqual(connected.separator, NamespaceSeparator(Data("/".utf8)))
         // One connection: the handshake with the saved password and the tab's database, then identification.
         XCTAssertEqual(server.opened.count, 1)

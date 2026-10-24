@@ -168,6 +168,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
   turning read-only on locks open tabs at once. The first write in a writable production tab shows a dismissible
   "Writing to PRODUCTION" line, once per tab, and a server that refuses writes (`NOPERM`, read-only replica) shows
   "Server-enforced read-only" in the toolbar (KEEL-037).
+- Multi-key selection in the key list; ⌫ or **Delete N Keys…** asks for a typed confirmation (type the number of
+  keys; production names the server) and deletes with `UNLINK` in batches of 500; **Copy N Key Names** (KEEL-038).
+- Shared typed-confirmation sheet for destructive operations, and O(N) size warnings for the console (KEEL-038).
 
 ### Removed
 

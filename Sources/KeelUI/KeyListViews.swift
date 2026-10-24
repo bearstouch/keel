@@ -7,6 +7,8 @@ public final class KeyListOutlineView: NSOutlineView {
     weak var owner: KeyListDataSource?
 
     @objc public func toggleKeyListMode(_ sender: Any?) { if let owner { Task { await owner.toggleMode() } } }
+
+    public override func keyDown(with event: NSEvent) { if owner?.handlesDelete(event) != true { super.keyDown(with: event) } }
 }
 
 /// The flat view.
@@ -14,6 +16,8 @@ public final class KeyListTableView: NSTableView {
     weak var owner: KeyListDataSource?
 
     @objc public func toggleKeyListMode(_ sender: Any?) { if let owner { Task { await owner.toggleMode() } } }
+
+    public override func keyDown(with event: NSEvent) { if owner?.handlesDelete(event) != true { super.keyDown(with: event) } }
 }
 
 public enum KeyListCommands {
