@@ -29,21 +29,22 @@ final class TunnelMatrixTests: XCTestCase {
     func testBrowseThroughSSH() async throws {
         let manager = TunnelManager(launcher: FixtureLauncher(config: fixture + "/client_config"))
         // Test Connection through the tunnel: the Redis host is the bastion's loopback, which only ssh can reach.
-        let tunnel = TunnelSettings.inline(destination: IntegrationMatrix.host, user: user, port: Int(sshPort), identityFile: fixture + "/client_key")
+        let identityFile = fixture + "/client_key"
+        let tunnel = TunnelSettings.inline(destination: IntegrationMatrix.host, user: user, port: Int(sshPort), identityFile: identityFile)
         let settings = ConnectionSettings(name: "bastion", host: "127.0.0.1", port: redisPort, tunnel: tunnel)
         let tested = try await ConnectionTester(tunnels: manager).test(settings, password: nil, profileID: nil).get()
         XCTAssertEqual(tested.identity.kind, .redis)
 
         // Browse and edit over a lease, as a connected profile does.
         let configuration = SSHTunnelConfiguration(
-            destination: IntegrationMatrix.host, user: user, port: Int(sshPort), identityFile: fixture + "/client_key", redisHost: "127.0.0.1", redisPort: redisPort)
+            destination: IntegrationMatrix.host, user: user, port: Int(sshPort), identityFile: identityFile, redisHost: "127.0.0.1", redisPort: redisPort)
         let lease = try await manager.acquire(profileID: UUID(), configuration: configuration, connectTimeout: .seconds(10))
         let session = MatrixConnections.session(.unixSocket(path: lease.socketPath))
         let service = DataCommandService(session: session), context = DataContext(profile: MatrixConnections.profile)
         let prefix = MatrixConnections.prefix("ssh")
-        let names = (0..<12).map { Data("\(prefix)k:\($0)".utf8) }
+        let names = (0..<12).map { bytes("\(prefix)k:\($0)") }
         for name in names {
-            let outcome = try await NewKey.create(name, .string(Data("v".utf8)), service: service, context: context)
+            let outcome = try await NewKey.create(name, .string(bytes("v")), service: service, context: context)
             XCTAssertEqual(outcome, .created)
         }
         let index = KeyIndex(service: service, context: context, configuration: KeyIndexConfiguration(pageSize: 5, filter: KeyFilter(pattern: prefix + "*")))
@@ -52,9 +53,7 @@ final class TunnelMatrixTests: XCTestCase {
         let count = await index.count
         let listed = await index.keys(in: 0..<count)
         XCTAssertEqual(Set(listed), Set(names))
-        let job = try BulkDeleteJob(pattern: Data((prefix + "*").utf8), throttle: nil, service: service, profile: MatrixConnections.profile, database: 0)
-        let report = await job.run(confirmation: BulkDeleteJob.confirmation(for: Data((prefix + "*").utf8), database: 0))
-        await job.close()
+        let report = try await MatrixConnections.deleteAll(under: prefix, service)
         XCTAssertEqual(report.deleted, names.count)
         await session.closeAll()
         await manager.release(lease)

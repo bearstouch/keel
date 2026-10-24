@@ -38,6 +38,8 @@ OUT = os.path.join(ROOT, ".build", "integration", "evidence.json")
 LABEL = "com.bearstouch.keel.integration=1"
 # The server the KEEL-005…007 tests (pipelining, ACL handshake, TLS-to-plain) use when the matrix runs them.
 LEGACY_SERVER = "redis-7.4"
+# Redis/Valkey arguments for an ephemeral container: nothing on disk, since snapshots would only cost time.
+NO_PERSISTENCE = ["--save", "", "--appendonly", "no"]
 TLS_FILES = ["server.pem", "server.key", "self-signed.pem", "self-signed.key", "keel-ca.pem", "client.pem", "client.key"]
 
 
@@ -49,7 +51,10 @@ class Matrix:
     """Everything this run started: containers, the sshd image tag and the temporary folder."""
 
     def __init__(self):
-        self.containers, self.workdir = [], tempfile.mkdtemp(prefix="keel-integration-")
+        # Under the checkout, not $TMPDIR: Colima shares only the home folder with its VM, so a bind mount from
+        # /var/folders would arrive empty (Docker Desktop shares /Users too).
+        os.makedirs(os.path.dirname(OUT), exist_ok=True)
+        self.containers, self.workdir = [], tempfile.mkdtemp(prefix="run-", dir=os.path.dirname(OUT))
         os.chmod(self.workdir, 0o700)
 
     def run(self, name, image, arguments, container_port, mounts=()):
@@ -61,14 +66,16 @@ class Matrix:
         self.containers.append(container)
         mapping = docker("port", container, f"{container_port}/tcp").stdout
         # `docker port` may list an IPv6 line too; the IPv4 loopback one is what was asked for.
-        host, port = next(line.rsplit(":", 1) for line in mapping.splitlines() if line.startswith("127.0.0.1:"))
+        _, port = next(line.rsplit(":", 1) for line in mapping.splitlines() if line.startswith("127.0.0.1:"))
         return int(port)
 
     def logs(self, container):
         return docker("logs", "--tail", "40", container, check=False).stdout
 
     def stop(self):
-        for container in self.containers:
+        # Also by name: a container whose `docker run` was interrupted before its id came back.
+        named = docker("ps", "-aq", "--filter", f"label={LABEL}", "--filter", f"name=keel-it-.*-{os.getpid()}$", check=False).stdout.split()
+        for container in dict.fromkeys(self.containers + named):
             docker("rm", "-f", container, check=False)
         self.containers = []
         shutil.rmtree(self.workdir, ignore_errors=True)
@@ -105,12 +112,12 @@ def start_servers(matrix, manifest, names):
     for server in manifest["servers"]:
         if names and server["name"] not in names:
             continue
-        # Nothing on disk: an ephemeral container either way, but snapshots would only cost time.
-        arguments = ["--proactor_threads=2", "--dbfilename="] if server["kind"] == "dragonfly" else ["--save", "", "--appendonly", "no"]
+        # Dragonfly takes its own flags: no snapshot file, and two threads.
+        arguments = ["--proactor_threads=2", "--dbfilename="] if server["kind"] == "dragonfly" else NO_PERSISTENCE
         port = matrix.run(server["name"], server["image"], arguments, 6379)
         servers.append({"name": server["name"], "kind": server["kind"], "version": server["version"], "port": port})
     refused = manifest["refused"]
-    refused_port = matrix.run(refused["name"], refused["image"], ["--save", "", "--appendonly", "no"], 6379)
+    refused_port = matrix.run(refused["name"], refused["image"], NO_PERSISTENCE, 6379)
     for server in servers + [{"name": refused["name"], "port": refused_port}]:
         wait_until(lambda: ping(server["port"]), server["name"])
     return servers, refused_port
@@ -128,7 +135,7 @@ def start_tls(matrix, manifest):
 
     def tls_server(name, cert, key, client_auth):
         arguments = ["--port", "0", "--tls-port", "6380", "--tls-cert-file", f"/tls/{cert}", "--tls-key-file", f"/tls/{key}",
-                     "--tls-ca-cert-file", "/tls/keel-ca.pem", "--tls-auth-clients", client_auth, "--save", "", "--appendonly", "no"]
+                     "--tls-ca-cert-file", "/tls/keel-ca.pem", "--tls-auth-clients", client_auth, *NO_PERSISTENCE]
         return matrix.run(name, manifest["tls"]["image"], arguments, 6380, mounts=[(folder, "/tls")])
 
     ports = {
@@ -170,11 +177,11 @@ def start_sshd(matrix, manifest):
         known.write(f"[127.0.0.1]:{port} {' '.join(host_key)}\n")
     common = "  User keel\n  IdentitiesOnly yes\n"
     with open(os.path.join(folder, "client_config"), "w") as config:
-        config.write(f"Host *\n  UserKnownHostsFile {folder}/known_hosts\n  GlobalKnownHostsFile /dev/null\n  BatchMode yes\n{common}")
+        config.write(f"Host *\n  UserKnownHostsFile \"{folder}/known_hosts\"\n  GlobalKnownHostsFile /dev/null\n  BatchMode yes\n{common}")
     # KEEL-010: the host key is unknown here, so ssh asks through Keel's askpass.
     open(os.path.join(folder, "prompt_known_hosts"), "w").close()
     with open(os.path.join(folder, "prompt_config"), "w") as config:
-        config.write(f"Host *\n  UserKnownHostsFile {folder}/prompt_known_hosts\n  GlobalKnownHostsFile /dev/null\n{common}")
+        config.write(f"Host *\n  UserKnownHostsFile \"{folder}/prompt_known_hosts\"\n  GlobalKnownHostsFile /dev/null\n{common}")
     # sshd accepts connections before the entrypoint's Redis may be listening: wait for it through the container.
     container = matrix.containers[-1]
     wait_until(lambda: docker("exec", container, "redis-cli", "-p", "6379", "PING", check=False).stdout.strip() == "PONG", "Redis behind sshd")
@@ -230,6 +237,7 @@ def main():
             "KEEL_INTEGRATION_SERVERS": json.dumps(servers),
             "KEEL_INTEGRATION_REFUSED_PORT": str(refused_port),
         })
+        # Prefer redis-7.4 for the older single-server tests; any engine will do when --servers leaves it out.
         legacy = next((server for server in servers if server["name"] == LEGACY_SERVER), servers[0] if servers else None)
         if legacy:
             environment["KEEL_INTEGRATION_REDIS_PORT"] = str(legacy["port"])
@@ -245,6 +253,7 @@ def main():
     except KeyboardInterrupt:
         print("interrupted; removing containers", file=sys.stderr)
     except (RuntimeError, subprocess.CalledProcessError) as error:
+        # A failed `docker` call carries its stderr; dump the containers' logs too, since readiness timeouts say little.
         detail = error.stderr if isinstance(error, subprocess.CalledProcessError) else ""
         print(f"matrix setup failed: {error}\n{detail}", file=sys.stderr)
         for container in matrix.containers:

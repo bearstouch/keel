@@ -28,7 +28,8 @@ final class TLSMatrixTests: XCTestCase {
         let identity = try clientIdentity(), profileID = UUID()
         // The saved identity belongs to the profile being edited; any other profile has none.
         let tester = ConnectionTester(clientIdentity: { $0 == profileID ? identity : nil })
-        let tls = TLSSettings(serverName: "redis.keel.test", caFile: fixtures.appendingPathComponent("keel-ca.pem").path)
+        let caFile = fixtures.appendingPathComponent("keel-ca.pem")
+        let tls = TLSSettings(serverName: "redis.keel.test", caFile: caFile.path)
         func settings(_ port: UInt16, _ tls: TLSSettings?) -> ConnectionSettings { ConnectionSettings(name: "tls", host: IntegrationMatrix.host, port: port, tls: tls) }
 
         // Custom CA: untrusted without it, verified with it.
@@ -45,24 +46,18 @@ final class TLSMatrixTests: XCTestCase {
         XCTAssertEqual(authenticated.tlsVerified, true)
 
         // The data path over mutual TLS: create, browse and read back a key.
-        let anchors = try TLSConfiguration.certificates(fromPEM: Data(contentsOf: fixtures.appendingPathComponent("keel-ca.pem")))
+        let anchors = try TLSConfiguration.certificates(fromPEM: Data(contentsOf: caFile))
         let configuration = TLSConfiguration(serverName: "redis.keel.test", anchorCertificates: anchors, clientIdentity: identity)
-        let session = ServerSession { (_: ConnectionRole, database: Int) async throws(ConnectionFailure) -> RedisConnection in
-            let endpoint = MatrixConnections.tcp(clientAuthPort), options = HandshakeOptions(database: database)
-            let connection = RedisConnection(endpoint: endpoint, tls: configuration)
-            do throws(RedisError) { try await connection.connect() } catch { throw ConnectionFailure(connecting: error, endpoint: endpoint, timeout: .seconds(10), tls: configuration) }
-            do throws(HandshakeError) { _ = try await connection.handshake(options) } catch { throw ConnectionFailure(handshake: error, endpoint: endpoint, options: options, tls: configuration) }
-            return connection
-        }
+        let session = MatrixConnections.session(MatrixConnections.tcp(clientAuthPort), tls: configuration)
         let service = DataCommandService(session: session), context = DataContext(profile: MatrixConnections.profile)
-        let prefix = MatrixConnections.prefix("tls"), key = Data("\(prefix)k".utf8)
-        let created = try await NewKey.create(key, .string(Data("over-tls".utf8)), service: service, context: context)
+        let prefix = MatrixConnections.prefix("tls"), key = bytes("\(prefix)k")
+        let created = try await NewKey.create(key, .string(bytes("over-tls")), service: service, context: context)
         XCTAssertEqual(created, .created)
         let index = KeyIndex(service: service, context: context, configuration: KeyIndexConfiguration(filter: KeyFilter(pattern: prefix + "*")))
         let status = await index.autoPage()
         XCTAssertEqual(status.loadedCount, 1)
         let value = try await StringEditor.load(key: key, service: service, context: context)
-        XCTAssertEqual(value.rows.map(\.value), [Data("over-tls".utf8)])
+        XCTAssertEqual(value.rows.map(\.value), [bytes("over-tls")])
         _ = try await service.execute(.operation(.delete(keys: [key])), origin: .editor, context: context)
         await session.closeAll()
     }

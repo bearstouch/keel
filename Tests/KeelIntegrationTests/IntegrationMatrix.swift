@@ -82,15 +82,16 @@ struct IntegrationMatrix: Equatable {
 enum MatrixConnections {
     static let profile = SafetyProfile(name: "keel-matrix", readOnly: false, server: "matrix")
 
-    /// A session whose every connection runs the app's handshake (RESP3 `HELLO`, `CLIENT SETNAME`, `SELECT`).
-    static func session(_ endpoint: RedisEndpoint, username: String? = nil, password: String? = nil) -> ServerSession {
+    /// A session whose every connection runs the app's handshake (RESP3 `HELLO`, `CLIENT SETNAME`, `SELECT`), over TLS
+    /// when `tls` is given.
+    static func session(_ endpoint: RedisEndpoint, username: String? = nil, password: String? = nil, tls: TLSConfiguration? = nil) -> ServerSession {
         ServerSession { (_: ConnectionRole, database: Int) async throws(ConnectionFailure) -> RedisConnection in
             let options = HandshakeOptions(username: username, password: password, database: database)
-            let connection = RedisConnection(endpoint: endpoint)
-            do throws(RedisError) { try await connection.connect() } catch { throw ConnectionFailure(connecting: error, endpoint: endpoint, timeout: .seconds(10)) }
+            let connection = RedisConnection(endpoint: endpoint, tls: tls)
+            do throws(RedisError) { try await connection.connect() } catch { throw ConnectionFailure(connecting: error, endpoint: endpoint, timeout: .seconds(10), tls: tls) }
             do throws(HandshakeError) { _ = try await connection.handshake(options) } catch {
                 await connection.close()
-                throw ConnectionFailure(handshake: error, endpoint: endpoint, options: options)
+                throw ConnectionFailure(handshake: error, endpoint: endpoint, options: options, tls: tls)
             }
             return connection
         }
@@ -100,7 +101,22 @@ enum MatrixConnections {
 
     /// Keys of one test run, so tests sharing a server never see each other's keys.
     static func prefix(_ test: String) -> String { "keel:matrix:\(test):\(UUID().uuidString.prefix(8)):" }
+
+    /// The app's bulk delete (typed confirmation included) over every key under `prefix` in database 0.
+    static func deleteAll(under prefix: String, _ service: DataCommandService) async throws -> BulkDeleteJob.Report {
+        let pattern = bytes(prefix + "*")
+        let job = try BulkDeleteJob(pattern: pattern, throttle: nil, service: service, profile: profile, database: 0)
+        let report = await job.run(confirmation: BulkDeleteJob.confirmation(for: pattern, database: 0))
+        await job.close()
+        return report
+    }
 }
 
+/// UTF-8 bytes of a key, value or field written in a test.
+func bytes(_ text: String) -> Data { Data(text.utf8) }
+
+/// The UTF-8 text of a reply's bytes, for readable assertions.
+func utf8Text(_ data: Data) -> String { String(decoding: data, as: UTF8.self) }
+
 /// Command words as byte strings, for raw commands.
-func words(_ text: String...) -> [Data] { text.map { Data($0.utf8) } }
+func words(_ text: String...) -> [Data] { text.map(bytes) }
