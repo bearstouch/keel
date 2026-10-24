@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="Keel app icon">
+  <!--
+    Keel app icon, concept A "Layered keel" (specs/08-design.md#app-icon, DS-07 – DS-10). The geometry is copied from
+    specs/design/icon/Icon.dc.html: a 1024 grid with the 824 squircle at 100,100, corner radius 186.
+    This file is the single source of every icon size and appearance. scripts/generate-app-icon.sh rewrites the
+    palette block (Default, Dark, Tinted, Light) and the form block (full mark above 48 px, small form at 48 px and
+    below, mark only for the Icon Composer layer); everything outside the two blocks is shared. As committed it renders
+    the Default appearance in the full form.
+  -->
+  <style>
+    /* palette:begin */
+    .bg-top { stop-color: #EA4A3E } .bg-bottom { stop-color: #B3271E }
+    .shine-top { stop-color: #FFFFFF; stop-opacity: 0.22 } .shine-bottom { stop-color: #FFFFFF; stop-opacity: 0 }
+    .edge { stroke: #000000; stroke-opacity: 0.08 }
+    .mark-top { stop-color: #FFFFFF } .mark-bottom { stop-color: #FCE7E4 }
+    .shadow { fill: #5E120D; opacity: 0.28 }
+    /* palette:end */
+    /* form:begin */
+    #small { display: none }
+    /* form:end */
+  </style>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" class="bg-top"/>
+      <stop offset="1" class="bg-bottom"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" class="shine-top"/>
+      <stop offset="0.55" class="shine-bottom"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" class="mark-top"/>
+      <stop offset="1" class="mark-bottom"/>
+    </linearGradient>
+  </defs>
+
+  <g id="plate">
+    <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#bg)"/>
+    <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#shine)"/>
+    <rect x="100.5" y="100.5" width="823" height="823" rx="185.5" fill="none" class="edge" stroke-width="2"/>
+  </g>
+
+  <!-- Full form: three bars narrowing downward, the fin and the bulb, over a shadow 14 units down. -->
+  <g id="full">
+    <g id="shadow" class="shadow" transform="translate(0 14)">
+      <rect x="262" y="288" width="500" height="74" rx="37"/>
+      <rect x="312" y="390" width="400" height="74" rx="37"/>
+      <rect x="372" y="492" width="280" height="74" rx="37"/>
+      <path d="M484 566 H540 L528 712 H496 Z"/>
+      <ellipse cx="512" cy="722" rx="96" ry="30"/>
+    </g>
+    <g fill="url(#mark)">
+      <rect x="262" y="288" width="500" height="74" rx="37"/>
+      <rect x="312" y="390" width="400" height="74" rx="37"/>
+      <rect x="372" y="492" width="280" height="74" rx="37"/>
+      <path d="M484 566 H540 L528 712 H496 Z"/>
+      <ellipse cx="512" cy="722" rx="96" ry="30"/>
+    </g>
+  </g>
+
+  <!-- Small form (DS-08): two thicker bars, the fin and the bulb, no shadow. -->
+  <g id="small" fill="url(#mark)">
+    <rect x="232" y="270" width="560" height="120" rx="60"/>
+    <rect x="342" y="430" width="340" height="120" rx="60"/>
+    <path d="M477 550 H547 L533 700 H491 Z"/>
+    <ellipse cx="512" cy="712" rx="120" ry="42"/>
+  </g>
+</svg>

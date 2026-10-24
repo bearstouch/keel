@@ -230,6 +230,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
   (the folder too when nothing else is in it), every item of the `Keel Connection`, `Keel TLS` and `Keel SSH Host`
   Keychain services and the keyboard-shortcut preferences. SSH keys and configuration, known-hosts files and anything
   else are never touched (KEEL-050).
+- The Layered keel app icon, rendered from one SVG by `scripts/generate-app-icon.sh`: the `.icns` at 16–1024 px with
+  the two-bar small form at 48 px and below, an Icon Composer bundle with Default, Dark and Tinted appearances for
+  macOS 26, and Light, Dark and Tinted exports for the DMG and website (KEEL-051).
 
 ### Removed
 

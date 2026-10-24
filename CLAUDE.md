@@ -39,6 +39,7 @@ swift run Keel --state-directory /abs/path     # separate dev state directory
 python3 -I scripts/integration-matrix.py [--servers redis-7.4,valkey-9.x] [--filter ServerMatrixTests]   # container matrix (Docker); evidence in .build/integration/
 python3 -I scripts/generate-command-catalog.py --redis DIR VER --valkey DIR VER --check DIR VER   # bundled command catalog from src/commands sources
 python3 -I scripts/generate-design-tokens.py [--check]   # design-token fixture (Tests/Fixtures/Design) from specs/08-design.md
+scripts/generate-app-icon.sh [--check | --compile DIR]   # app icon assets (release/icon) from keel-icon.svg; needs rsvg-convert, --compile only actool
 python3 -I scripts/capture-console-goldens.py --redis-server PATH --redis-cli PATH   # console goldens (Tests/Fixtures/Console)
 python3 scripts/bench-browser.py [--quick] [--redis-server PATH] [--skip-launch] [--update-baseline]   # 1M/10M-key benchmarks; evidence in .build/bench/, fails on a missed NFR target or a >20% regression vs release/bench-baseline.json
 scripts/package-release.sh                     # (later, KEEL-052) Universal 2 DMG; ad-hoc unless KEEL_SIGN_IDENTITY / KEEL_NOTARY_PROFILE

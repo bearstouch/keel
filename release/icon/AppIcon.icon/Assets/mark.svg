@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1024" height="1024" viewBox="0 0 1024 1024">
+<defs>
+<linearGradient id="linear-pattern-0" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="1" gradientTransform="matrix(500, 0, 0, 74, 262, 288)">
+<stop offset="0" stop-color="rgb(100%, 100%, 100%)" stop-opacity="1"/>
+<stop offset="1" stop-color="rgb(98.823529%, 90.588235%, 89.411765%)" stop-opacity="1"/>
+</linearGradient>
+<linearGradient id="linear-pattern-1" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="1" gradientTransform="matrix(400, 0, 0, 74, 312, 390)">
+<stop offset="0" stop-color="rgb(100%, 100%, 100%)" stop-opacity="1"/>
+<stop offset="1" stop-color="rgb(98.823529%, 90.588235%, 89.411765%)" stop-opacity="1"/>
+</linearGradient>
+<linearGradient id="linear-pattern-2" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="1" gradientTransform="matrix(280, 0, 0, 74, 372, 492)">
+<stop offset="0" stop-color="rgb(100%, 100%, 100%)" stop-opacity="1"/>
+<stop offset="1" stop-color="rgb(98.823529%, 90.588235%, 89.411765%)" stop-opacity="1"/>
+</linearGradient>
+<linearGradient id="linear-pattern-3" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="1" gradientTransform="matrix(56, 0, 0, 146, 484, 566)">
+<stop offset="0" stop-color="rgb(100%, 100%, 100%)" stop-opacity="1"/>
+<stop offset="1" stop-color="rgb(98.823529%, 90.588235%, 89.411765%)" stop-opacity="1"/>
+</linearGradient>
+<linearGradient id="linear-pattern-4" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="1" gradientTransform="matrix(192, 0, 0, 60, 416, 692)">
+<stop offset="0" stop-color="rgb(100%, 100%, 100%)" stop-opacity="1"/>
+<stop offset="1" stop-color="rgb(98.823529%, 90.588235%, 89.411765%)" stop-opacity="1"/>
+</linearGradient>
+</defs>
+<path fill-rule="nonzero" fill="url(#linear-pattern-0)" d="M 299 288 L 725 288 C 745.433594 288 762 304.566406 762 325 C 762 345.433594 745.433594 362 725 362 L 299 362 C 278.566406 362 262 345.433594 262 325 C 262 304.566406 278.566406 288 299 288 Z M 299 288 "/>
+<path fill-rule="nonzero" fill="url(#linear-pattern-1)" d="M 349 390 L 675 390 C 695.433594 390 712 406.566406 712 427 C 712 447.433594 695.433594 464 675 464 L 349 464 C 328.566406 464 312 447.433594 312 427 C 312 406.566406 328.566406 390 349 390 Z M 349 390 "/>
+<path fill-rule="nonzero" fill="url(#linear-pattern-2)" d="M 409 492 L 615 492 C 635.433594 492 652 508.566406 652 529 C 652 549.433594 635.433594 566 615 566 L 409 566 C 388.566406 566 372 549.433594 372 529 C 372 508.566406 388.566406 492 409 492 Z M 409 492 "/>
+<path fill-rule="nonzero" fill="url(#linear-pattern-3)" d="M 484 566 L 540 566 L 528 712 L 496 712 Z M 484 566 "/>
+<path fill-rule="nonzero" fill="url(#linear-pattern-4)" d="M 608 722 C 608 738.570312 565.019531 752 512 752 C 458.980469 752 416 738.570312 416 722 C 416 705.429688 458.980469 692 512 692 C 565.019531 692 608 705.429688 608 722 Z M 608 722 "/>
+</svg>

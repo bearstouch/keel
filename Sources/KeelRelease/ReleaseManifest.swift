@@ -11,6 +11,8 @@ public struct ReleaseManifest: Codable, Equatable, Sendable {
     public let minimumMacOS: String
     public let architectures: [String]
     public let packageFormat: String
+    /// `CFBundleIconName` / `CFBundleIconFile`: `Assets.car` (compiled from `release/icon/AppIcon.icon`) and `AppIcon.icns`.
+    public let iconName: String
     public let artifacts: [String]
     public let dependencies: [Dependency]
 
@@ -20,8 +22,10 @@ public struct ReleaseManifest: Codable, Equatable, Sendable {
         public var minimumMacOS: String
         public var architectures: Set<String>
         public var files: Set<String>
-        public init(bundleIdentifier: String, minimumMacOS: String, architectures: Set<String>, files: Set<String>) {
-            self.bundleIdentifier = bundleIdentifier; self.minimumMacOS = minimumMacOS; self.architectures = architectures; self.files = files
+        /// Info.plist `CFBundleIconName`; nil when the key is missing.
+        public var iconName: String?
+        public init(bundleIdentifier: String, minimumMacOS: String, architectures: Set<String>, files: Set<String>, iconName: String?) {
+            self.bundleIdentifier = bundleIdentifier; self.minimumMacOS = minimumMacOS; self.architectures = architectures; self.files = files; self.iconName = iconName
         }
     }
 
@@ -39,6 +43,7 @@ public struct ReleaseManifest: Codable, Equatable, Sendable {
         if minimumMacOS != packageMinimumMacOS { problems.append("Package.swift targets macOS \(packageMinimumMacOS) but the manifest says \(minimumMacOS).") }
         if product.minimumMacOS != minimumMacOS { problems.append("Info.plist LSMinimumSystemVersion is \(product.minimumMacOS), expected \(minimumMacOS).") }
         if product.bundleIdentifier != bundleIdentifier { problems.append("Bundle identifier is \(product.bundleIdentifier), expected \(bundleIdentifier).") }
+        if product.iconName != iconName { problems.append("Info.plist CFBundleIconName is \(product.iconName ?? "missing"), expected \(iconName).") }
         for architecture in architectures where !product.architectures.contains(architecture) { problems.append("The executable lacks the \(architecture) slice.") }
         for artifact in artifacts where !product.files.contains(artifact) { problems.append("Missing artifact \(artifact).") }
         for dependency in dependencies where dependency.license.isEmpty || dependency.licenseFile.isEmpty {
