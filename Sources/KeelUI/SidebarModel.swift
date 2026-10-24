@@ -68,6 +68,8 @@ public final class SidebarModel: ObservableObject {
                 guard let self else { return }
                 // `reload()` may already show a newer document than this buffered one; never step back.
                 if document.revision >= self.document.revision { self.document = document }
+                // NFR-PF01: the first document is the first sidebar render with the saved profiles in it.
+                LaunchMetrics.firstSidebarRender()
             }
         }
     }

@@ -28,9 +28,12 @@ final class KeyIndexMemoryTests: XCTestCase {
         let treePerKey = Double(treeStorage) / Double(count)
         let heapPerKey = Double(heapGrowth) / Double(count)
         print("KeyIndex memory: \(overheadPerKey) B/key index buffers beyond key bytes, \(treePerKey) B/key tree, \(heapPerKey) B/key heap in total")
-        XCTAssertLessThanOrEqual(overheadPerKey, 120, "index buffers: \(overheadPerKey) B/key")
+        BenchmarkRecorder.record("xctest.index_overhead_per_key", bytes: overheadPerKey)
         // The heap holds the key bytes, the index and the tree: projected to 1M keys it stays under 200 MB.
-        XCTAssertLessThan(Double(storage + treeStorage) / Double(count) * 1_000_000, 200 * 1_048_576)
+        let projectedOneMillion = Double(storage + treeStorage) / Double(count) * 1_000_000
+        BenchmarkRecorder.record("xctest.index_and_tree_1m_projected", bytes: projectedOneMillion)
+        XCTAssertLessThanOrEqual(overheadPerKey, 120, "index buffers: \(overheadPerKey) B/key")
+        XCTAssertLessThan(projectedOneMillion, 200 * 1_048_576)
         XCTAssertLessThan(heapPerKey * 1_000_000, 200 * 1_048_576, "heap: \(heapPerKey) B/key")
     }
 

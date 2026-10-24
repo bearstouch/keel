@@ -209,6 +209,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
   private in debug builds and not at all in release builds; Help → Export Diagnostics saves a JSON file with the app
   and macOS versions, architecture, profile count, server types and recent error codes, never hosts, key names, values
   or secrets; a source scan test keeps `print`, `NSLog` and raw `os_log` out of the app (KEEL-046).
+- Performance benchmarks: `scripts/bench-browser.py` seeds 1M and 10M keys and large values in a throwaway server
+  and measures launch with 200 profiles, SCAN ingestion, tree build and expand, local filter, editor header, first
+  value page and index memory; evidence goes to `.build/bench/evidence.json`, and a missed NFR target or a regression
+  of more than 20% against `release/bench-baseline.json` fails the run. XCTest performance tests cover 1M-key
+  ingestion, tree rebuild, huge-value first pages and a 10,000-element console reply (KEEL-047).
 
 ### Removed
 

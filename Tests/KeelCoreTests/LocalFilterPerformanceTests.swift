@@ -3,7 +3,7 @@ import XCTest
 
 @testable import KeelCore
 
-/// AC3: a local filter over 1M loaded keys shows its first results in under 150 ms. The search runs in chunks of
+/// AC3 / NFR-PF05: a local filter over 1M loaded keys shows its first results in under 150 ms and completes in under 1 s. The search runs in chunks of
 /// `KeyIndex.localSearchChunk` keys and the list shows each chunk's matches as they come, so the budget is the time
 /// to the first chunk that has any. It holds in optimized builds (`swift test -c release -Xswiftc -enable-testing`);
 /// debug builds, as CI runs them, only guard against gross regressions with a looser bound.
@@ -58,5 +58,15 @@ final class LocalFilterPerformanceTests: XCTestCase {
         // Every query above with a match finds one in its first chunk.
         let (invoice, _) = await firstResults("invoice")
         XCTAssertLessThan(invoice, .milliseconds(150 * Self.slack))
+        BenchmarkRecorder.record("xctest.filter_first_results_1m", max(oneChunk, invoice))
+
+        // NFR-PF05's second half: the whole search completes in under 1 s. A query with no match reads every key.
+        let whole = clock.now
+        var searched = LocalKeyMatches(indices: [], searchedThrough: 0)
+        while searched.searchedThrough < loaded { searched = await index.localMatches(LocalKeyQuery("nothing-matches"), from: searched.searchedThrough) }
+        let complete = clock.now - whole
+        print("Local filter 1M keys: complete search in \(complete)")
+        BenchmarkRecorder.record("xctest.filter_complete_1m", complete)
+        XCTAssertLessThan(complete, .seconds(1 * Self.slack))
     }
 }

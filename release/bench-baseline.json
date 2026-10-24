@@ -1,0 +1,60 @@
+{
+  "machines": {
+    "arm64": {
+      "commit": "9f80c14f85e498cfafd6ecc96188df418786a527",
+      "machine": {
+        "arch": "arm64",
+        "cpu": "Apple M1 Pro",
+        "macos": "26.6.2",
+        "memory_bytes": 17179869184,
+        "model": "MacBookPro18,3"
+      },
+      "metrics": {
+        "launch.first_after_build": 0.3636970520019531,
+        "launch.first_sidebar_render_200_profiles": 0.25790297985076904,
+        "live.10m.filter_complete": 0.123640709,
+        "live.10m.filter_first_results": 0.002973792,
+        "live.10m.heap_growth_bytes": 879813104,
+        "live.10m.index_and_tree_bytes": 872431388,
+        "live.10m.index_overhead_per_key": 42.1104896,
+        "live.10m.row_header": 0.000859083,
+        "live.10m.scan_ingestion": 23.347230791,
+        "live.10m.tree_expand": 1.120659125,
+        "live.10m.tree_rebuild": 3.65164825,
+        "live.1m.filter_complete": 0.01231325,
+        "live.1m.filter_first_results": 0.002245792,
+        "live.1m.heap_growth_bytes": 84823360,
+        "live.1m.index_and_tree_bytes": 83902240,
+        "live.1m.index_overhead_per_key": 33.736512,
+        "live.1m.row_header": 0.000371041,
+        "live.1m.scan_ingestion": 1.7801265,
+        "live.1m.tree_expand": 0.089827334,
+        "live.1m.tree_rebuild": 0.247448625,
+        "live.value_open_hash_1m": 0.000606334,
+        "live.value_open_list_10m": 0.000398083,
+        "live.value_open_set_1m": 0.000405875,
+        "live.value_open_stream_1m": 0.001063833,
+        "live.value_open_string_64mib": 0.000739125,
+        "live.value_open_zset_1m": 0.000477292,
+        "xctest.console_render_10k": 0.007237083,
+        "xctest.filter_complete_1m": 0.006953,
+        "xctest.filter_first_results_1m": 0.001625583,
+        "xctest.index_and_tree_1m_projected": 175798040,
+        "xctest.index_overhead_per_key": 43.56288,
+        "xctest.namespace_tree_build_1m": 0.228641708,
+        "xctest.namespace_tree_expand_1m": 0.038358209,
+        "xctest.scan_ingestion_1m": 3.23125175,
+        "xctest.tree_expand_1m": 0.0403285,
+        "xctest.tree_rebuild_1m": 0.226393041,
+        "xctest.value_open_hash_1m": 0.000384333,
+        "xctest.value_open_list_10m": 0.000211792,
+        "xctest.value_open_set_1m": 0.000341875,
+        "xctest.value_open_stream": 0.001027625,
+        "xctest.value_open_string_64mib": 0.00018975,
+        "xctest.value_open_zset_1m": 0.000432291
+      },
+      "recorded": "2026-10-24T17:21:51+00:00"
+    }
+  },
+  "schema": 1
+}
