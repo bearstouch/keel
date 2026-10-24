@@ -216,7 +216,7 @@ All state lives in `~/Library/Application Support/<identity>/` (`com.bearstouch.
 | --- | --- | --- |
 | `connections.json` | Profiles, folders, ordering, labels; flags for which secrets exist (never values) | `connections.backup.json`; unreadable → preserved as `connections.corrupt.<UUID>.json` |
 | `hosts.json` | Keel's own saved SSH hosts (format version 1, same shape as the vendored host library) | Backup and corrupt-file preservation |
-| `windows.json` | Native windows in order, tabs (ID, profile ID, db, mode), the selected tab, frames. The selected key stays in memory: key names from browsing are never persisted. A restore keeps at most 64 windows of 128 tabs, drops tabs of deleted profiles and repeated window and tab IDs; while `connections.json` can't be used (recovery, newer version) the file isn't saved, so its tabs aren't lost | Backup |
+| `windows.json` | Native windows in order, tabs (ID, profile ID, db, mode), the selected tab, frames, and the welcome screen's recent profile IDs (FR-AP08, at most 8; optional, so older files load). The selected key stays in memory: key names from browsing are never persisted. A restore keeps at most 64 windows of 128 tabs, drops tabs of deleted profiles and repeated window and tab IDs; while `connections.json` can't be used (recovery, newer version) the file isn't saved, so its tabs aren't lost | Backup |
 | `settings.json` | Settings window (FR-AP09): theme, restore at launch, browser defaults, default viewer, console protocol, advanced connection defaults | Backup |
 | `known-ca.json` | Per profile (UUID key): CA file path and SHA-256; `recordsLost` after a recovery | `0600`, no backup; corrupt-file preservation, then unknown profiles are asked about |
 

@@ -2,7 +2,7 @@ import KeelCore
 import SwiftUI
 
 /// The window's content: the connections sidebar beside the toolbar, tab bar and selected tab (board `Main`); with no
-/// tab, a quiet empty state (FR-AP08's welcome screen replaces it in KEEL-050).
+/// tab, the welcome screen (FR-AP08). Without a sidebar (previews, tests) a quiet empty state stands in for it.
 public struct RootView: View {
     /// ssh's prompts for tunnels (FR-CN07); nil in previews and tests.
     let prompts: SSHPromptCenter?
@@ -26,9 +26,9 @@ public struct RootView: View {
         HStack(spacing: 0) {
             if let sidebar {
                 SidebarSlot(sidebar: sidebar)
-                Detail(sidebar: sidebar, tabs: sidebar.tabs, connections: connections)
+                Detail(sidebar: sidebar, tabs: sidebar.tabs, connections: connections, transfer: transfer)
             } else {
-                EmptyState(hasProfiles: false, connections: connections)
+                EmptyState(connections: connections)
             }
         }
         .background(Tokens.bg)
@@ -53,37 +53,39 @@ private struct SidebarSlot: View {
     var body: some View { if !sidebar.isHidden { SidebarView(model: sidebar) } }
 }
 
-/// The window's tabs, or the empty state.
+/// The window's tabs, or the welcome screen.
 private struct Detail: View {
     @ObservedObject var sidebar: SidebarModel
     @ObservedObject var tabs: ConnectionTabs
-    let connections: ConnectionSheetPresenter?
+    @StateObject private var welcome: WelcomeModel
+
+    init(sidebar: SidebarModel, tabs: ConnectionTabs, connections: ConnectionSheetPresenter?, transfer: ProfileTransferModel?) {
+        self.sidebar = sidebar; self.tabs = tabs
+        // One per window for its lifetime; SwiftUI evaluates this only when the view is first created.
+        _welcome = StateObject(wrappedValue: WelcomeModel(sidebar: sidebar, connections: connections, transfer: transfer))
+    }
 
     var body: some View {
         // ⌘T in an empty window shows the tab bar too: its + anchors the connection picker.
         if !tabs.tabs.isEmpty || tabs.showsConnectionPicker {
             WindowContent(sidebar: sidebar, tabs: tabs)
         } else {
-            EmptyState(hasProfiles: !sidebar.document.profiles.isEmpty, connections: connections)
+            WelcomeView(model: welcome)
         }
     }
 }
 
+/// The stand-in for the welcome screen when there is no sidebar model (previews and tests).
 private struct EmptyState: View {
-    let hasProfiles: Bool
     let connections: ConnectionSheetPresenter?
 
     var body: some View {
         VStack(spacing: 8) {
             Text("Keel").font(Tokens.interface(34, weight: .semibold))
-            if hasProfiles {
-                Text("Double-click a connection to open it").foregroundStyle(Tokens.muted)
-            } else {
-                Text("No connections yet").foregroundStyle(Tokens.muted)
-                    .accessibilityLabel(RootView.accessibilityLabel)
-                if let connections {
-                    Button("New Connection…") { connections.newConnection() }.padding(.top, 8)
-                }
+            Text("No connections yet").foregroundStyle(Tokens.muted)
+                .accessibilityLabel(RootView.accessibilityLabel)
+            if let connections {
+                Button("New Connection…") { connections.newConnection() }.padding(.top, 8)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
