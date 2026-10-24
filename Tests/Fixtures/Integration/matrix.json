@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "comment": "KEEL-048 integration matrix (NFR-QA03, INT-01). Images are pinned by multi-arch index digest; scripts/integration-matrix.py starts each with its port published on 127.0.0.1 only. Bump a pin by replacing tag and digest together.",
+  "servers": [
+    { "name": "redis-6.0", "kind": "redis", "version": "6.0.20", "image": "redis:6.0.20@sha256:b99ffd0554dc8d300230b9d1b9f2a129a6abf595bf8589883beb980ed1feae3d" },
+    { "name": "redis-6.2", "kind": "redis", "version": "6.2.24", "image": "redis:6.2.24@sha256:8b98584f6c5a4a056d3a5441b837555f08341b8480ae6f75c6a00a235f985e57" },
+    { "name": "redis-7.4", "kind": "redis", "version": "7.4.11", "image": "redis:7.4.11@sha256:44960b3100c48159a66d28c18b0588c193492e25f7551d60e51dd464fc3eca5b" },
+    { "name": "redis-8.x", "kind": "redis", "version": "8.10.2", "image": "redis:8.10.2@sha256:97ec88159e6d7cfb5ddef9015386087d58a912de80112f06ebdfa78fa5989901" },
+    { "name": "valkey-7.2", "kind": "valkey", "version": "7.2.14", "image": "valkey/valkey:7.2.14@sha256:ef0f9fb533b1f06fb7aba6478d758ca1c077d49e2bcb2b4365a4ea7f50b6d42e" },
+    { "name": "valkey-8.x", "kind": "valkey", "version": "8.1.10", "image": "valkey/valkey:8.1.10@sha256:640c5e62cea04b6d6f2084232651d0cc70362d31f4f805e7be94dbed6855e8f2" },
+    { "name": "valkey-9.x", "kind": "valkey", "version": "9.1.2", "image": "valkey/valkey:9.1.2@sha256:418652cfb58ef879d4978c33553735d7147016032d5aefaa14c828e611eb9dfd" },
+    { "name": "dragonfly-1.x", "kind": "dragonfly", "version": "1.40.2", "image": "ghcr.io/dragonflydb/dragonfly:v1.40.2@sha256:18afa43e911f1dff18c7d1eb452361876d9702bb1cdff5c5d75c69617a4065c9" }
+  ],
+  "refused": { "name": "redis-5.0", "kind": "redis", "version": "5.0.14", "image": "redis:5.0.14@sha256:fc5ecd863862f89f04334b7cbb57e93c9790478ea8188a49f6e57b0967d38c75" },
+  "tls": { "image": "redis:7.4.11@sha256:44960b3100c48159a66d28c18b0588c193492e25f7551d60e51dd464fc3eca5b" },
+  "sshd": { "base": "alpine:3.22.2@sha256:4b7ce07002c69e8f3d704a9c5d6fd3053be500b7f1c69fc0d80990c2ad8dd412", "dockerfile": "Tests/Fixtures/SSH/Dockerfile" }
+}

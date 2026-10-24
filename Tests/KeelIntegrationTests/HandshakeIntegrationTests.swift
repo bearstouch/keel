@@ -5,7 +5,7 @@ import XCTest
 
 /// KEEL-006 checks. Needs `KEEL_INTEGRATION=1` and a disposable server on 127.0.0.1 at
 /// `KEEL_INTEGRATION_REDIS_PORT` (default 6379) whose default user needs no password; the test creates its own
-/// ACL users there. The KEEL-048 container matrix replaces this with the ACL fixture.
+/// ACL users there. `scripts/integration-matrix.py` points it at the matrix's Redis 7.4 container.
 final class HandshakeIntegrationTests: XCTestCase {
     private var port: UInt16 = 6_379
 
