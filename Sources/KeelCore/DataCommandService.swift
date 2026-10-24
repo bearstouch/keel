@@ -42,6 +42,11 @@ public enum DataOperation: Sendable, Equatable {
     case sortedSetScan(key: Data, cursor: Data, match: Data?, count: Int)
     /// `ZSCORE key member`: a score change's guard read, and its read-back after a save.
     case sortedSetScore(key: Data, member: Data)
+    /// `XRANGE key from to COUNT n`, or `XREVRANGE` with `reverse` (`from` is then the higher bound): a page of a stream
+    /// (FR-ED06). Bounds are Redis's spelling (`-`, `+`, `1700000000000-5`, `(1700000000000-5`).
+    case streamRange(key: Data, from: Data, to: Data, count: Int, reverse: Bool)
+    /// `XINFO STREAM key`: the stream summary in Details.
+    case streamInfo(key: Data)
     // Writes
     case stringSet(key: Data, value: Data, keepTTL: Bool)
     case hashSetField(key: Data, field: Data, value: Data)
@@ -112,6 +117,8 @@ public enum DataOperation: Sendable, Equatable {
         case .sortedSetScan(let key, let cursor, let match, let count):
             return [d("ZSCAN"), key, cursor] + (match.map { [d("MATCH"), $0] } ?? []) + [d("COUNT"), d(String(count))]
         case .sortedSetScore(let key, let member): return [d("ZSCORE"), key, member]
+        case .streamRange(let key, let from, let to, let count, let reverse): return [d(reverse ? "XREVRANGE" : "XRANGE"), key, from, to, d("COUNT"), d(String(count))]
+        case .streamInfo(let key): return [d("XINFO"), d("STREAM"), key]
         case .stringSet(let key, let value, let keepTTL): return [d("SET"), key, value] + (keepTTL ? [d("KEEPTTL")] : [])
         case .hashSetField(let key, let field, let value): return [d("HSET"), key, field, value]
         case .hashDeleteFields(let key, let fields): return [d("HDEL"), key] + fields

@@ -140,6 +140,7 @@ public struct EditorBinding: Sendable {
         case .list: return ListEditor.binding
         case .set: return SetEditor.binding
         case .zset: return SortedSetEditor.binding
+        case .stream: return StreamEditor.binding
         default: return nil
         }
     }
@@ -254,9 +255,11 @@ public struct KeyDetails: Sendable, Equatable {
     public var encoding: Value<String>
     public var ttl: Value<TTL>
     public var memory: Value<Int64>
+    /// `XINFO STREAM` for a stream (FR-ED06); `.notLoaded` for every other type.
+    public var stream: Value<StreamSummary>
 
-    public init(encoding: Value<String> = .notLoaded, ttl: Value<TTL> = .notLoaded, memory: Value<Int64> = .notLoaded) {
-        self.encoding = encoding; self.ttl = ttl; self.memory = memory
+    public init(encoding: Value<String> = .notLoaded, ttl: Value<TTL> = .notLoaded, memory: Value<Int64> = .notLoaded, stream: Value<StreamSummary> = .notLoaded) {
+        self.encoding = encoding; self.ttl = ttl; self.memory = memory; self.stream = stream
     }
 
     public static let unavailableText = "unavailable"
@@ -285,11 +288,24 @@ public struct KeyDetails: Sendable, Equatable {
         }
     }
 
+    /// "1,204 entries · first 1-0 · last 1700000000000-3 · 2 groups"; nil when not a stream or not loaded yet.
+    public var streamText: String? {
+        switch stream {
+        case .value(let summary):
+            let first = summary.firstID.map(KeyDisplay.name) ?? "—", last = summary.lastID.map(KeyDisplay.name) ?? "—"
+            return "\(LengthCommand.xlen.describe(summary.length)) · first \(first) · last \(last) · \(KeyIndexFooter.grouped(Int(clamping: summary.groups))) group\(summary.groups == 1 ? "" : "s")"
+        case .unavailable: return Self.unavailableText
+        case .notLoaded: return nil
+        }
+    }
+
     /// Encoding and exact TTL; `memory` adds `MEMORY USAGE`, which the user asks for (it can be slow on big values).
-    public static func load(key: Data, memory: Bool, service: DataCommandService, context: DataContext) async -> KeyDetails {
+    /// `stream` adds the `XINFO STREAM` summary.
+    public static func load(key: Data, memory: Bool, stream: Bool = false, service: DataCommandService, context: DataContext) async -> KeyDetails {
         async let encoding = reply(.objectEncoding(key: key), service, context)
         async let ttl = reply(.pttl(key: key), service, context)
         async let size = memory ? reply(.memoryUsage(key: key), service, context) : nil
+        async let info = stream ? reply(.streamInfo(key: key), service, context) : nil
         var details = KeyDetails()
         switch await encoding {
         case .bulkString(let name)?, .simpleString(let name)?: details.encoding = .value(String(decoding: name, as: UTF8.self))
@@ -304,6 +320,7 @@ public struct KeyDetails: Sendable, Equatable {
         if memory {
             if case .integer(let bytes)? = await size { details.memory = .value(bytes) } else { details.memory = .unavailable }
         }
+        if stream { details.stream = (await info).flatMap(StreamSummary.init).map { .value($0) } ?? .unavailable }
         return details
     }
 }

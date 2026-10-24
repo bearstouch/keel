@@ -363,9 +363,9 @@ public final class EditorSession: ObservableObject {
 
     // MARK: - Details
 
-    /// ⋯ → Details: encoding and exact TTL; `memory` measures the size too (on request).
+    /// ⋯ → Details: encoding and exact TTL, and a stream's `XINFO STREAM` summary; `memory` measures the size too (on request).
     public func loadDetails(memory: Bool = false) async {
-        details = await KeyDetails.load(key: key, memory: memory, service: service, context: context)
+        details = await KeyDetails.load(key: key, memory: memory, stream: type == .stream, service: service, context: context)
     }
 
     // MARK: - Messages

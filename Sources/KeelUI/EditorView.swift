@@ -118,6 +118,8 @@ struct EditorShell: View {
                 SetEditorView(session: session)
             } else if session.type == .zset, session.binding != nil, session.loaded != nil {
                 SortedSetEditorView(session: session)
+            } else if session.type == .stream, session.binding != nil, session.loaded != nil {
+                StreamEditorView(session: session)
             } else if session.binding == nil {
                 Notice(type: session.type)
             }
@@ -214,6 +216,7 @@ private struct DetailsPopover: View {
         Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 8) {
             row("Encoding", details.encodingText)
             row("TTL", details.ttlText)
+            if let stream = details.streamText { row("Stream", stream) }
             GridRow {
                 Text("Memory").foregroundStyle(Tokens.muted)
                 if let memory = details.memoryText {

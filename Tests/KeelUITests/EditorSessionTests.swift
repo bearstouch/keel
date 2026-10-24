@@ -19,6 +19,8 @@ final class TransactionalKeyspace: @unchecked Sendable {
     private var sets: [String: [String]] = [:]
     /// Sorted set keys in Redis's order (score, then member), answered the way Redis 6 spells scores (`%.17g`).
     private var zsets: [String: [(member: String, score: Double)]] = [:]
+    /// Stream keys: entries in ID order. `XADD *` assigns `1700000000000-0`, or the next sequence after the last entry.
+    private var streams: [String: [(id: (UInt64, UInt64), fields: [(String, String)])]] = [:]
     private var versions: [String: Int] = [:]
     private var sent: [[String]] = []
     /// The next `EXEC` runs its writes, then the connection closes before its reply: the outcome is unknown.
@@ -33,6 +35,60 @@ final class TransactionalKeyspace: @unchecked Sendable {
     init(zsets: [String: [(String, Double)]]) {
         values = [:]
         self.zsets = zsets.mapValues { members in Self.ordered(members.map { (member: $0.0, score: $0.1) }) }
+    }
+
+    init(streams: [String: [(String, [(String, String)])]]) {
+        values = [:]
+        self.streams = streams.mapValues { entries in entries.map { (id: Self.streamID($0.0)!, fields: $0.1) }.sorted { $0.id < $1.id } }
+    }
+
+    func streamIDs(_ key: String) -> [String]? { lock.withLock { streams[key].map { $0.map { "\($0.id.0)-\($0.id.1)" } } } }
+
+    private static func streamID(_ text: String) -> (UInt64, UInt64)? {
+        let parts = text.split(separator: "-", omittingEmptySubsequences: false)
+        guard parts.count == 2, let ms = UInt64(parts[0]), let seq = UInt64(parts[1]) else { return nil }
+        return (ms, seq)
+    }
+
+    /// Redis's stream commands (`XLEN`, `XRANGE` / `XREVRANGE … COUNT` with `-`, `+` and `(` bounds, `XADD`). Called with
+    /// `lock` held.
+    private func runStream(_ arguments: [String]) -> String {
+        let key = arguments[1]
+        var entries = streams[key] ?? []
+        defer { if !entries.isEmpty || streams[key] != nil { streams[key] = entries } }
+        func bulk(_ text: String) -> String { "$\(text.utf8.count)\r\n\(text)\r\n" }
+        func bound(_ text: String) -> ((UInt64, UInt64), Bool)? {
+            if text == "-" { return ((0, 0), false) }
+            if text == "+" { return ((.max, .max), false) }
+            if text.hasPrefix("(") { return Self.streamID(String(text.dropFirst())).map { ($0, true) } }
+            return Self.streamID(text).map { ($0, false) }
+        }
+        switch arguments[0] {
+        case "XLEN": return ":\(entries.count)\r\n"
+        case "XRANGE", "XREVRANGE":
+            let reverse = arguments[0] == "XREVRANGE"
+            guard let (low, lowOpen) = bound(arguments[reverse ? 3 : 2]), let (high, highOpen) = bound(arguments[reverse ? 2 : 3]) else { return "-ERR Invalid stream ID\r\n" }
+            let count = Int(arguments[arguments.firstIndex(of: "COUNT")! + 1])!
+            let inRange = entries.filter { ($0.id > low || (!lowOpen && $0.id == low)) && ($0.id < high || (!highOpen && $0.id == high)) }
+            let page = (reverse ? Array(inRange.reversed()) : inRange).prefix(count)
+            return "*\(page.count)\r\n"
+                + page.map { "*2\r\n" + bulk("\($0.id.0)-\($0.id.1)") + "*\($0.fields.count * 2)\r\n" + $0.fields.map { bulk($0.0) + bulk($0.1) }.joined() }.joined()
+        case "XADD":
+            let top = entries.last?.id ?? (0, 0), clock: UInt64 = 1_700_000_000_000
+            let id: (UInt64, UInt64)
+            if arguments[2] == "*" {
+                id = clock > top.0 ? (clock, 0) : (top.0, top.1 + 1)
+            } else {
+                guard let explicit = Self.streamID(arguments[2]), explicit > top else {
+                    return "-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n"
+                }
+                id = explicit
+            }
+            let rest = Array(arguments.dropFirst(3))
+            entries.append((id: id, fields: stride(from: 0, to: rest.count, by: 2).map { (rest[$0], rest[$0 + 1]) }))
+            return bulk("\(id.0)-\(id.1)")
+        default: return "-ERR unexpected\r\n"
+        }
     }
 
     func scores(_ key: String) -> [String: Double]? { lock.withLock { zsets[key].map { Dictionary($0.map { ($0.member, $0.score) }, uniquingKeysWith: { a, _ in a }) } } }
@@ -291,7 +347,7 @@ final class TransactionalKeyspace: @unchecked Sendable {
                 case "PTTL":
                     let key = arguments[1]
                     return keyspace.values[key] == nil && keyspace.hashes[key] == nil && keyspace.lists[key] == nil && keyspace.sets[key] == nil
-                        && keyspace.zsets[key] == nil ? ":-2\r\n" : ":-1\r\n"
+                        && keyspace.zsets[key] == nil && keyspace.streams[key] == nil ? ":-2\r\n" : ":-1\r\n"
                 case "LLEN", "LRANGE": return keyspace.runList(arguments)
                 case "LSET", "LREM", "LPUSH", "RPUSH", "LPOP", "RPOP", "LINSERT":
                     keyspace.versions[arguments[1], default: 0] += 1
@@ -304,6 +360,10 @@ final class TransactionalKeyspace: @unchecked Sendable {
                 case "ZADD", "ZINCRBY", "ZREM":
                     keyspace.versions[arguments[1], default: 0] += 1
                     return keyspace.runZSet(arguments)
+                case "XLEN", "XRANGE", "XREVRANGE": return keyspace.runStream(arguments)
+                case "XADD":
+                    keyspace.versions[arguments[1], default: 0] += 1
+                    return keyspace.runStream(arguments)
                 case "HLEN": return ":\(keyspace.hashes[arguments[1]]?.count ?? 0)\r\n"
                 case "HGETALL":
                     let fields = keyspace.hashes[arguments[1]] ?? []
