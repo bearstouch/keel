@@ -33,6 +33,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private var confirmedClose: Set<UUID> = []
     /// Keeps each window's title (and so its Window menu item) on its selected tab, "[PROD]" included (FR-SF02).
     private var titleUpdates: [UUID: AnyCancellable] = [:]
+    /// The shortcuts the menus show (FR-AP02); Settings → Keyboard changes them.
+    private let bindings = ShortcutBindings()
+    /// The menu item of each rebindable command, re-keyed when a binding changes.
+    private var shortcutItems: [KeelShortcut: NSMenuItem] = [:]
+    private var bindingChanges: AnyCancellable?
+    /// Each window's command palette and sidebar, for ⌘K and ⌃⌘S.
+    private var palettes: [UUID: CommandPaletteModel] = [:]
+    private var sidebars: [UUID: SidebarModel] = [:]
+    private var settingsWindow: NSWindow?
 
     init(arguments: LaunchArguments, stateDirectory: URL) {
         self.arguments = arguments; self.stateDirectory = stateDirectory
@@ -67,6 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             confirmCAChange: { change in await MainActor.run { Self.confirm(change) } })
         let app = AppModel(profiles: profiles, connector: connector, persistence: Persistence(directory: stateDirectory))
         app.presentWindow = { [weak self] in self?.show($0, frame: nil) }
+        app.focusWindow = { [weak self] in self?.nativeWindows[$0]?.makeKeyAndOrderFront(nil) }
         self.app = app
         Task {
             // Tabs restore against the profiles, so they load first. A connections.json that needs recovery keeps the
@@ -99,7 +109,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private func show(_ tabs: ConnectionTabs, frame: SavedFrame?) {
         guard nativeWindows[tabs.id] == nil, let profiles = app?.profiles else { return }
         let sidebar = SidebarModel(store: profiles, tabs: tabs, sheets: connections)
-        let window = MainWindow.make(prompts: prompts, connections: connections, sidebar: sidebar, transfer: transfer)
+        let palette = CommandPaletteModel { [weak self, weak tabs, weak sidebar] in
+            guard let self, let tabs, let sidebar else { return [] }
+            return PaletteSources.entries(window: tabs, sidebar: sidebar, commands: self.paletteCommands(), settings: self.paletteSettings())
+        }
+        palettes[tabs.id] = palette; sidebars[tabs.id] = sidebar
+        let window = MainWindow.make(prompts: prompts, connections: connections, sidebar: sidebar, transfer: transfer, palette: palette)
         window.identifier = NSUserInterfaceItemIdentifier(tabs.id.uuidString)
         window.delegate = self
         let screens = NSScreen.screens.map(\.visibleFrame)
@@ -121,6 +136,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     private func windowID(_ window: NSWindow?) -> UUID? { window?.identifier.flatMap { UUID(uuidString: $0.rawValue) } }
+
+    /// The key window's ID when it is one of Keel's main windows (not Settings).
+    private var keyWindowID: UUID? { windowID(NSApp.keyWindow).flatMap { nativeWindows[$0] != nil ? $0 : nil } }
 
     /// The key window's tabs, for the menu commands.
     private var keyTabs: ConnectionTabs? { windowID(NSApp.keyWindow).flatMap { app?.window($0) } }
@@ -159,7 +177,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     func windowWillClose(_ notification: Notification) {
         guard let id = windowID(notification.object as? NSWindow) else { return }
-        nativeWindows[id] = nil; confirmedClose.remove(id); titleUpdates[id] = nil
+        nativeWindows[id] = nil; confirmedClose.remove(id); titleUpdates[id] = nil; palettes[id] = nil; sidebars[id] = nil
         // The app-wide sheets move to a window that is still open.
         if app?.sheetWindowID == id { app?.sheetWindowID = nativeWindows.keys.first }
         // Quitting keeps the window in windows.json, and so does closing the last one (the app quits then, and the
@@ -188,6 +206,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         app?.requestClose(selected)
     }
     @objc private func closeWindow(_ sender: Any?) { NSApp.keyWindow?.performClose(sender) }
+    /// ⌘K: the key window's palette opens, or closes when open (FR-AP03).
+    @objc private func toggleCommandPalette(_ sender: Any?) { keyWindowID.flatMap { palettes[$0] }?.toggle() }
+    /// ⌃⌘S: the key window's sidebar hides or comes back.
+    @objc private func toggleSidebar(_ sender: Any?) { keyWindowID.flatMap { sidebars[$0] }?.isHidden.toggle() }
+    /// ⌘⌫: the key window's browser deletes its multi-key selection or the open key, each after its confirmation.
+    @objc private func deleteKeys(_ sender: Any?) { NotificationCenter.default.post(name: KeyListCommands.deleteNotification, object: NSApp.keyWindow) }
+    /// Settings… (⌘,): one window, brought back when already open.
+    @objc private func showSettings(_ sender: Any?) {
+        if settingsWindow == nil { settingsWindow = SettingsWindow.make(model: KeyboardSettingsModel(bindings: bindings)) }
+        settingsWindow?.makeKeyAndOrderFront(nil)
+    }
     @objc private func setMode(_ sender: NSMenuItem) {
         guard TabMode.allCases.indices.contains(sender.tag) else { return }
         keyTabs?.setMode(TabMode.allCases[sender.tag])
@@ -245,26 +274,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         // Console mode only; Stop while a command or stream runs.
         case #selector(clearConsole(_:)): return tab.flatMap { $0.mode == .console ? app?.session($0.id)?.console : nil } != nil
         case #selector(stopConsoleCommand(_:)): return tab.flatMap { $0.mode == .console ? app?.session($0.id)?.console?.state : nil }.map { $0 != .idle } ?? false
+        case #selector(toggleCommandPalette(_:)): return keyWindowID != nil
+        case #selector(toggleSidebar(_:)):
+            let sidebar = keyWindowID.flatMap { sidebars[$0] }
+            item.title = sidebar?.isHidden == true ? "Show Sidebar" : "Hide Sidebar"
+            return sidebar != nil
+        // Browser mode only. Never while text is being edited: there ⌘⌫ deletes to the start of the line.
+        case #selector(deleteKeys(_:)):
+            guard !(NSApp.keyWindow?.firstResponder is NSText) else { return false }
+            return tab.flatMap { $0.mode == .browser ? app?.session($0.id)?.browser?.canDeleteSelection : nil } ?? false
         default: return true
         }
     }
 
+    /// The menu bar (MAC-04). Rebindable commands take their chords from `bindings` and follow every change; the fixed
+    /// ones (Settings, Hide, Quit, Revert, the text commands, Minimize) keep theirs (FR-AP02).
     private func buildMenus() {
         let menu = NSMenu()
         let appItem = NSMenuItem(); menu.addItem(appItem)
         let appMenu = NSMenu(title: "Keel")
+        add("Settings…", #selector(showSettings(_:)), ",", to: appMenu)
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "Hide Keel", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        appMenu.addItem(withTitle: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h").keyEquivalentModifierMask = [.command, .option]
+        appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Quit Keel", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
         let fileItem = NSMenuItem(); menu.addItem(fileItem)
         let fileMenu = NSMenu(title: "File")
-        // FR-AP02 defaults: ⌘N / ⌘T, ⌘W / ⇧⌘W.
-        add("New Window", #selector(newWindow(_:)), "n", to: fileMenu)
-        add("New Tab", #selector(newTab(_:)), "t", to: fileMenu)
+        add(.newWindow, #selector(newWindow(_:)), to: fileMenu)
+        add(.newTab, #selector(newTab(_:)), to: fileMenu)
         add("New Connection…", #selector(newConnection(_:)), "", to: fileMenu)
         fileMenu.addItem(.separator())
-        add("Close Tab", #selector(closeTab(_:)), "w", to: fileMenu)
-        add("Close Window", #selector(closeWindow(_:)), "w", [.command, .shift], to: fileMenu)
-        add("Save Changes", #selector(saveEdits(_:)), "s", to: fileMenu)
+        add(.closeTab, #selector(closeTab(_:)), to: fileMenu)
+        add(.closeWindow, #selector(closeWindow(_:)), to: fileMenu)
+        add(.saveChanges, #selector(saveEdits(_:)), to: fileMenu)
+        // Fixed: ⌘Z stands where Undo would be (KeelShortcut.fixed).
         add("Revert Changes", #selector(revertEdits(_:)), "z", to: fileMenu)
         fileMenu.addItem(.separator())
         add("Import Connections…", #selector(importConnections(_:)), "", to: fileMenu)
@@ -281,44 +326,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         editItem.submenu = editMenu
         let viewItem = NSMenuItem(); menu.addItem(viewItem)
         let viewMenu = NSMenu(title: "View")
-        for (offset, mode) in TabMode.allCases.enumerated() { add(mode.title, #selector(setMode(_:)), mode.keyEquivalent, to: viewMenu).tag = offset }
+        add(.commandPalette, #selector(toggleCommandPalette(_:)), to: viewMenu)
+        viewMenu.addItem(.separator())
+        for (offset, mode) in TabMode.allCases.enumerated() { add(mode.shortcut, #selector(setMode(_:)), to: viewMenu).tag = offset }
         viewMenu.addItem(.separator())
         // Sent to the first responder: the key list answers it while focused (FR-KB03); the menu item is dimmed otherwise.
-        let toggle = viewMenu.addItem(withTitle: "Toggle Tree / Flat", action: KeyListCommands.toggleMode, keyEquivalent: "t")
-        toggle.keyEquivalentModifierMask = [.command, .shift]
-        add("Filter Keys", #selector(focusKeyFilter(_:)), "f", to: viewMenu)
-        add("Refresh", #selector(refreshKeys(_:)), "r", to: viewMenu)
+        add(.toggleTreeFlat, KeyListCommands.toggleMode, toFirstResponder: true, to: viewMenu)
+        add(.filterKeys, #selector(focusKeyFilter(_:)), to: viewMenu)
+        add(.refresh, #selector(refreshKeys(_:)), to: viewMenu)
         let databaseItem = viewMenu.addItem(withTitle: "Database", action: nil, keyEquivalent: "")
         let databaseMenu = NSMenu(title: "Database")
-        for database in 0...9 { add("db\(database)", #selector(selectDatabase(_:)), String(database), [.command, .option], to: databaseMenu).tag = database }
+        for database in 0...9 {
+            guard let action = KeelShortcut.database(database) else { continue }
+            add(action, #selector(selectDatabase(_:)), to: databaseMenu).tag = database
+            shortcutItems[action]?.title = "db\(database)"
+        }
         databaseItem.submenu = databaseMenu
         viewMenu.addItem(.separator())
-        // ⌘K is the command palette, so Clear Console is ⌥⌘K (FR-CO08).
-        add("Clear Console", #selector(clearConsole(_:)), "k", [.command, .option], to: viewMenu)
-        add("Stop", #selector(stopConsoleCommand(_:)), ".", to: viewMenu)
+        add(.clearConsole, #selector(clearConsole(_:)), to: viewMenu)
+        add(.stopCommand, #selector(stopConsoleCommand(_:)), to: viewMenu)
+        viewMenu.addItem(.separator())
+        add(.toggleSidebar, #selector(toggleSidebar(_:)), to: viewMenu)
         viewItem.submenu = viewMenu
         let keyItem = NSMenuItem(); menu.addItem(keyItem)
         let keyMenu = NSMenu(title: "Key")
-        add("New Key…", #selector(newKey(_:)), "n", [.command, .shift], to: keyMenu)
+        add(.newKey, #selector(newKey(_:)), to: keyMenu)
         keyMenu.addItem(.separator())
-        add("Rename Key…", #selector(renameKey(_:)), "e", to: keyMenu)
-        add("Set TTL…", #selector(setKeyTTL(_:)), "e", [.command, .option], to: keyMenu)
+        add(.renameKey, #selector(renameKey(_:)), to: keyMenu)
+        add(.setTTL, #selector(setKeyTTL(_:)), to: keyMenu)
+        keyMenu.addItem(.separator())
+        add(.deleteKeys, #selector(deleteKeys(_:)), to: keyMenu)
         keyItem.submenu = keyMenu
         let connectionItem = NSMenuItem(); menu.addItem(connectionItem)
         let connectionMenu = NSMenu(title: "Connection")
-        // FR-CN15: ⇧⌘R / ⇧⌘D.
-        add("Reconnect", #selector(reconnect(_:)), "r", [.command, .shift], to: connectionMenu)
-        add("Disconnect", #selector(disconnect(_:)), "d", [.command, .shift], to: connectionMenu)
+        add(.reconnect, #selector(reconnect(_:)), to: connectionMenu)
+        add(.disconnect, #selector(disconnect(_:)), to: connectionMenu)
         connectionItem.submenu = connectionMenu
         let windowItem = NSMenuItem(); menu.addItem(windowItem)
         let windowMenu = NSMenu(title: "Window")
         windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         windowMenu.addItem(.separator())
-        add("Show Next Tab", #selector(nextTab(_:)), "]", [.command, .shift], to: windowMenu)
-        add("Show Previous Tab", #selector(previousTab(_:)), "[", [.command, .shift], to: windowMenu)
+        add(.nextTab, #selector(nextTab(_:)), to: windowMenu)
+        add(.previousTab, #selector(previousTab(_:)), to: windowMenu)
         windowItem.submenu = windowMenu
         NSApp.mainMenu = menu
         NSApp.windowsMenu = windowMenu
+        // `$map` publishes before the change lands, with the new value.
+        bindingChanges = bindings.$map.dropFirst().sink { [weak self] in self?.applyShortcuts($0) }
     }
 
     @discardableResult
@@ -326,6 +380,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         let item = menu.addItem(withTitle: title, action: action, keyEquivalent: key)
         item.keyEquivalentModifierMask = modifiers; item.target = self
         return item
+    }
+
+    /// A rebindable command's item, keyed from its current binding; `toFirstResponder` leaves its target to the responder chain.
+    @discardableResult
+    private func add(_ shortcut: KeelShortcut, _ action: Selector, toFirstResponder: Bool = false, to menu: NSMenu) -> NSMenuItem {
+        let item = menu.addItem(withTitle: shortcut.title, action: action, keyEquivalent: "")
+        item.target = toFirstResponder ? nil : self
+        shortcutItems[shortcut] = item
+        key(item, bindings[shortcut])
+        return item
+    }
+
+    private func applyShortcuts(_ map: KeelShortcutMap) { for (shortcut, item) in shortcutItems { key(item, map[shortcut]) } }
+
+    /// An unbound command keeps its item, without a key equivalent.
+    private func key(_ item: NSMenuItem, _ chord: KeyChord?) {
+        let equivalent = chord?.menuKeyEquivalent
+        item.keyEquivalent = equivalent?.key ?? ""
+        item.keyEquivalentModifierMask = equivalent?.modifiers ?? []
+    }
+
+    // MARK: - Command palette
+
+    /// The palette's commands: every enabled menu command of the key window, with its menu and current shortcut. The
+    /// Database submenu is the palette's database rows instead; the palette's own item and the text commands are left out.
+    private func paletteCommands() -> [PaletteEntry] {
+        var result: [PaletteEntry] = []
+        let chords = Dictionary(uniqueKeysWithValues: shortcutItems.map { (ObjectIdentifier($0.value), $0.key) })
+        for top in NSApp.mainMenu?.items ?? [] {
+            guard let submenu = top.submenu, submenu.title != "Edit" else { continue }
+            for item in submenu.items {
+                guard let action = item.action, item.target === self, action != #selector(toggleCommandPalette(_:)), validateMenuItem(item) else { continue }
+                let shortcut = chords[ObjectIdentifier(item)].flatMap { bindings[$0]?.description } ?? (item.keyEquivalent.isEmpty ? nil : fixedChord(item))
+                let entry = PaletteItem(id: "command:\(submenu.title):\(item.title)", kind: .action, title: item.title, subtitle: submenu.title, shortcut: shortcut)
+                result.append(PaletteEntry(entry) { [weak item] in if let item { NSApp.sendAction(action, to: item.target, from: item) } })
+            }
+        }
+        return result
+    }
+
+    private func fixedChord(_ item: NSMenuItem) -> String? { KeelShortcut.fixed.first { $0.title == item.title }?.chord.description }
+
+    /// The palette's settings rows: each Settings pane.
+    private func paletteSettings() -> [PaletteEntry] {
+        SettingsWindow.Pane.allCases.map { pane in
+            PaletteEntry(PaletteItem(id: "settings:\(pane.rawValue)", kind: .settings, title: "\(pane.title) Shortcuts", subtitle: "Settings")) { [weak self] in
+                self?.showSettings(nil)
+            }
+        }
     }
 }
 

@@ -43,6 +43,10 @@ public final class TabSession: ObservableObject, Identifiable {
     var onDatabase: ((Int) -> Void)?
     /// What the production strip and window title show changed (read-only locked, server read-only).
     var onChromeChange: (() -> Void)?
+    /// A key the browser opened, with its database (the palette's recent keys).
+    var onKeyOpened: ((Data, Int) -> Void)?
+    /// A recent key picked in the palette before the browser existed; revealed once the first page is loaded.
+    private var pendingReveal: Data?
 
     init(id: UUID, profileID: UUID, connector: any SessionConnecting, histories: ConsoleHistoryBook = ConsoleHistoryBook()) {
         self.id = id; self.profileID = profileID; self.connector = connector; self.histories = histories
@@ -63,13 +67,14 @@ public final class TabSession: ObservableObject, Identifiable {
         }
         switch result {
         case .failure(let error):
-            failure = error; set(.failed)
+            failure = error; pendingReveal = nil; set(.failed)
         case .success(let server):
             await server.service.observeWrites { [weak self] event in Task { @MainActor in self?.written(event, attempt: mine) } }
             guard mine == attempt else { await server.close(); return }
             connected = server; self.server = server.identity
             isProduction = server.safety.production; writesBlocked = server.safety.readOnly; serverReadOnly = false
             let browser = Self.browser(for: server, database: database)
+            browser.onKeyOpened = { [weak self] key, database in self?.onKeyOpened?(key, database) }
             self.browser = browser
             // The tab saves the database the switcher moves to (FR-AP01 restores it).
             databaseChanges = browser.$database.dropFirst().sink { [weak self] in self?.onDatabase?($0) }
@@ -80,7 +85,17 @@ public final class TabSession: ObservableObject, Identifiable {
                 .sink { [weak self] in self?.hasUnsavedEdits = $0 }
             set(.connected)
             await browser.start()
+            // Only this attempt reveals: a reconnect or disconnect during the first load superseded it.
+            if mine == attempt, let key = pendingReveal { pendingReveal = nil; await browser.reveal(key) }
         }
+    }
+
+    /// Opens `key` in the browser (a recent key from the palette); the tab is already on `database`, or moves there.
+    /// While still connecting, the key waits for the browser.
+    public func reveal(_ key: Data, database: Int) async {
+        guard let browser, status == .connected else { pendingReveal = key; return }
+        if browser.database != database { await browser.selectDatabase(database) }
+        await browser.reveal(key)
     }
 
     /// Disconnect (⇧⌘D): closes every connection of the tab and its tunnel lease. The browser goes with it.
@@ -88,7 +103,7 @@ public final class TabSession: ObservableObject, Identifiable {
         attempt += 1
         let server = connected, console = console
         info?.shutdown()
-        connected = nil; browser = nil; self.console = nil; info = nil; self.server = nil; databaseChanges = nil; editChanges = nil; hasUnsavedEdits = false; failure = nil
+        connected = nil; browser = nil; pendingReveal = nil; self.console = nil; info = nil; self.server = nil; databaseChanges = nil; editChanges = nil; hasUnsavedEdits = false; failure = nil
         writesBlocked = nil; serverReadOnly = false
         set(.disconnected)
         await server?.service.observeWrites(nil)

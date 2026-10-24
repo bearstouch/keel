@@ -40,7 +40,7 @@ public struct KeyChord: Codable, Hashable, Sendable, CustomStringConvertible {
     }
 }
 
-/// A rebindable command. Keel's own table (FR-AP02, "Default shortcuts") arrives with KEEL-043; the binding rules
+/// A rebindable command. Keel's own table (FR-AP02, "Default shortcuts") is `KeelShortcut`; the binding rules
 /// below do not depend on it. Raw values are what saved settings store, so they never change once shipped.
 public protocol ShortcutAction: RawRepresentable, CaseIterable, Hashable, Sendable where RawValue == String {
     /// Menu title, used in conflict messages.

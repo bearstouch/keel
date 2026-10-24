@@ -190,6 +190,12 @@ and versions follow [Semantic Versioning](https://semver.org/).
   included, with "unavailable" for a section the server didn't send or an ACL that refuses `INFO`, plus a searchable
   Raw view. The toolbar shows the server version and a refresh button (⌘R) whose menu sets auto-refresh (off, 2, 5,
   10, 30 s), which sends `INFO` only while Info mode is on screen (KEEL-042).
+- Command palette (⌘K or the toolbar's search icon): fuzzy search over the enabled menu commands, connections, open
+  tabs, the selected tab's databases, the last 20 keys opened this run (memory only) and Settings; ↑ / ↓ and Return.
+  Settings → Keyboard (⌘,) rebinds every configurable shortcut: taken chords are rejected naming the command that has
+  them, every chord needs ⌘, and Settings, Hide, Quit, Revert, the text commands and Minimize stay fixed. The menus
+  are built from the bindings and follow every change. New View → Hide Sidebar (⌃⌘S) and Key → Delete Selected Keys…
+  (⌘⌫) (KEEL-043).
 
 ### Removed
 

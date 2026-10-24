@@ -32,6 +32,10 @@ public final class AppModel: ObservableObject {
     private var watchingProfiles: Task<Void, Never>?
     /// Console history per profile, shared by its tabs for the app's lifetime (FR-CO04).
     private let histories = ConsoleHistoryBook()
+    /// Keys opened in any tab this run, for the command palette (FR-AP03). Memory only: never in `windows.json`.
+    public private(set) var recentKeys = RecentKeys()
+    /// Brings a window to the front (the palette picked one of its tabs). Set by the app delegate.
+    public var focusWindow: ((UUID) -> Void)?
 
     public init(profiles: ProfileStore, connector: any SessionConnecting, persistence: Persistence<WindowsDocument>?) {
         self.profiles = profiles; self.connector = connector; self.persistence = persistence
@@ -139,6 +143,23 @@ public final class AppModel: ObservableObject {
     /// A deleted profile's tabs close in every window (FR-CN01).
     public func closeAll(profileID: UUID) {
         for window in windows { for tab in window.tabs where tab.profileID == profileID { window.close(tab.id) } }
+        recentKeys.forget(profileID: profileID)
+    }
+
+    /// The palette picked an open tab: its window comes to the front with the tab selected.
+    public func focus(tabID: UUID) {
+        guard let window = window(containing: tabID) else { return }
+        window.selectedID = tabID
+        focusWindow?(window.id)
+    }
+
+    /// The palette picked a recent key: `window` focuses (or opens) a tab of its profile on its database, in Browser
+    /// mode, and the browser opens the key once connected.
+    public func open(_ recent: RecentKeys.Entry, in window: ConnectionTabs) {
+        let tab = window.open(profileID: recent.profileID, database: recent.database)
+        window.setMode(.browser)
+        guard let session = sessions[tab.id] else { return }
+        Task { await session.reveal(recent.key, database: recent.database) }
     }
 
     /// "Move to New Window": the tab leaves for a window of its own.
@@ -229,6 +250,8 @@ public final class AppModel: ObservableObject {
         }
         session.onChromeChange = { [weak self] in self?.statusChanged() }
         session.onDatabase = { [weak self] database in self?.window(containing: id)?.setDatabase(database, for: id) }
+        let profileID = tab.profileID
+        session.onKeyOpened = { [weak self] key, database in self?.recentKeys.record(RecentKeys.Entry(profileID: profileID, database: database, key: key)) }
         sessions[tab.id] = session
         return session
     }
