@@ -159,6 +159,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
   existing key), Set TTL… (⌥⌘E: 1 min / 1 h / 1 day / 7 days, a custom duration or a date, Persist; the expiry shows as
   a clock time from `PEXPIRETIME` or `PTTL`), Delete… (`UNLINK` after a confirmation; the key leaves the list), Copy
   Value and Export Value… (a string's raw bytes, a collection as binary-safe JSON; whole values only) (KEEL-035).
+- New Key… (⇧⌘N in Browser): a key of any core type with its first value(s) and an optional TTL, prefilled with the
+  selected namespace; create-only (`SET NX`, or `EXISTS` under `WATCH` with `MULTI/EXEC`), so an existing key shows
+  "Key already exists" and is never touched; the new key is selected; unavailable on read-only profiles (KEEL-036).
 
 ### Removed
 

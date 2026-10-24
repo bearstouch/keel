@@ -206,6 +206,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     /// ⌘E / ⌥⌘E: the key window's open editor shows Rename… or Set TTL… (FR-ED13).
     @objc private func renameKey(_ sender: Any?) { NotificationCenter.default.post(name: EditorCommands.renameNotification, object: NSApp.keyWindow) }
     @objc private func setKeyTTL(_ sender: Any?) { NotificationCenter.default.post(name: EditorCommands.setTTLNotification, object: NSApp.keyWindow) }
+    /// ⇧⌘N: the key window's browser shows the new-key sheet (FR-ED14).
+    @objc private func newKey(_ sender: Any?) { NotificationCenter.default.post(name: KeyListCommands.newKeyNotification, object: NSApp.keyWindow) }
     /// ⌥⌘0…⌥⌘9: the key window's browser switches to the item's database (FR-KB08).
     @objc private func selectDatabase(_ sender: NSMenuItem) {
         NotificationCenter.default.post(name: KeyListCommands.selectDatabaseNotification, object: NSApp.keyWindow, userInfo: [KeyListCommands.databaseKey: sender.tag])
@@ -225,6 +227,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         case #selector(saveEdits(_:)), #selector(revertEdits(_:)):
             return tab.flatMap { app?.session($0.id)?.browser?.editor?.showsSaveBar } ?? false
         case #selector(renameKey(_:)): return tab.flatMap { app?.session($0.id)?.browser?.editor?.canRename } ?? false
+        // Browser mode only, on a writable profile (FR-ED14).
+        case #selector(newKey(_:)): return tab.flatMap { $0.mode == .browser ? app?.session($0.id)?.browser?.canCreateKey : nil } ?? false
         case #selector(setKeyTTL(_:)): return tab.flatMap { app?.session($0.id)?.browser?.editor?.canRunKeyAction } ?? false
         default: return true
         }
@@ -276,6 +280,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         viewItem.submenu = viewMenu
         let keyItem = NSMenuItem(); menu.addItem(keyItem)
         let keyMenu = NSMenu(title: "Key")
+        add("New Key…", #selector(newKey(_:)), "n", [.command, .shift], to: keyMenu)
+        keyMenu.addItem(.separator())
         add("Rename Key…", #selector(renameKey(_:)), "e", to: keyMenu)
         add("Set TTL…", #selector(setKeyTTL(_:)), "e", [.command, .option], to: keyMenu)
         keyItem.submenu = keyMenu

@@ -16,6 +16,10 @@ public final class BrowserModel: ObservableObject {
     @Published public private(set) var missingKey: Data?
     /// The selected key, open in the editor shell (KEEL-027) once its presence check named its type.
     @Published public private(set) var editor: EditorSession?
+    /// ⇧⌘N asked for the new-key sheet (FR-ED14).
+    @Published public var showsNewKey = false
+    /// The profile's read-only flag, read at `start()`; true until then, so New Key is never offered before it is known.
+    @Published public private(set) var isReadOnly = true
 
     public let list: KeyListDataSource
     public let filter: KeyFilterModel?
@@ -64,6 +68,14 @@ public final class BrowserModel: ObservableObject {
                 }
             })
         observers.append(
+            center.addObserver(forName: KeyListCommands.newKeyNotification, object: nil, queue: .main) { [weak self] note in
+                let window = note.object as? NSWindow
+                MainActor.assumeIsolated {
+                    guard let self, self.isShown(in: window), self.canCreateKey else { return }
+                    self.showsNewKey = true
+                }
+            })
+        observers.append(
             center.addObserver(forName: KeyListCommands.selectDatabaseNotification, object: nil, queue: .main) { [weak self] note in
                 let window = note.object as? NSWindow, database = note.userInfo?[KeyListCommands.databaseKey] as? Int
                 MainActor.assumeIsolated {
@@ -100,7 +112,10 @@ public final class BrowserModel: ObservableObject {
     private func isShown(in window: NSWindow?) -> Bool { window != nil && list.scrollView.window === window }
 
     /// The first scan of a new tab, with the counts.
-    public func start() async { await scan() }
+    public func start() async {
+        isReadOnly = await list.index.context.profile.readOnly
+        await scan()
+    }
 
     // MARK: - Refresh (⌘R)
 
@@ -214,6 +229,41 @@ public final class BrowserModel: ObservableObject {
         if removesKey { list.setTotalKeys(list.totalKeys.map { max($0 - 1, 0) }) }
         await list.reload()
         if let added { await list.select(keyBytes: added) }
+    }
+
+    // MARK: - New key (FR-ED14)
+
+    /// Writable profiles only. Selecting the new key reopens the editor, which would drop a draft, so unsaved changes are
+    /// saved or reverted first (as for Rename).
+    public var canCreateKey: Bool { !isReadOnly && editor?.hasUnsavedChanges != true }
+
+    /// The name field's starting text: the selected folder, or the selected key's folder in the tree, plus the separator.
+    public func newKeyPrefill() async -> Data {
+        let index = list.index
+        var folder = list.selectedFolder
+        if folder == nil, list.mode == .tree, let key = list.selectedKey { folder = await index.namespaceAncestors(ofKey: key).last }
+        var namespace: Data?
+        if let folder { namespace = await index.namespacePath(of: folder) }
+        return NewKey.prefill(namespace: namespace, separator: await index.separator)
+    }
+
+    /// Creates the key and selects it (opening its editor). Returns why it failed ("Key already exists" when the name is
+    /// taken; nothing was written then); nil when created. A key the filter wouldn't list is created but not selected.
+    public func createKey(_ key: Data, _ value: NewKey.Value, ttlMilliseconds: Int64?) async -> String? {
+        guard canCreateKey else { return isReadOnly ? "This connection is read-only." : "Save or revert your changes first." }
+        let index = list.index
+        let outcome: NewKey.Outcome
+        do throws(DataCommandError) {
+            outcome = try await NewKey.create(key, value, ttlMilliseconds: ttlMilliseconds, service: await index.service, context: await index.context)
+        } catch {
+            return EditorSession.keyActionMessage(error)
+        }
+        guard outcome == .created else { return NewKey.existsMessage }
+        let listed = await index.add(key: key, type: value.type)
+        list.setTotalKeys(list.totalKeys.map { $0 + 1 })
+        await list.reload()
+        if listed { await list.select(keyBytes: key) }
+        return nil
     }
 
     /// "Remove from List": drops the missing key from the loaded keys; nothing is sent to the server.
