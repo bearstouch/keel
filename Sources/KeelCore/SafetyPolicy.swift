@@ -104,8 +104,12 @@ public struct SafetyProfile: Sendable, Equatable {
     public var readOnly: Bool
     /// The profile's label is treated as production (FR-SF02): some actions that are plain elsewhere ask first (a list pop).
     public var production: Bool
+    /// Where the profile connects (`cache.internal:6379`); typed confirmations on production name it (FR-SF03).
+    public var server: String?
 
-    public init(name: String, readOnly: Bool, production: Bool = false) { self.name = name; self.readOnly = readOnly; self.production = production }
+    public init(name: String, readOnly: Bool, production: Bool = false, server: String? = nil) {
+        self.name = name; self.readOnly = readOnly; self.production = production; self.server = server
+    }
 }
 
 /// Classifies every command before it is sent and decides whether it may go (02 Architecture → Safety policy,

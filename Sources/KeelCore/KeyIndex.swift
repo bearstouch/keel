@@ -274,6 +274,13 @@ public actor KeyIndex {
         range.clamped(to: 0..<ends.count).map(key(at:))
     }
 
+    /// The keys at `indices` while the index is still at `generation`; nil after a restart or removal moved them, so a
+    /// selection made before never names other keys. Indices past the loaded range are skipped.
+    public func keys(at indices: [Int], generation expected: Int) -> [Data]? {
+        guard expected == generation else { return nil }
+        return indices.filter { $0 >= 0 && $0 < ends.count }.map(key(at:))
+    }
+
     public func metadata(at index: Int) -> KeyMetadata { metadata[index].unpacked(size: sizes[index]) }
 
     public func updateMetadata(at index: Int, _ update: @Sendable (inout KeyMetadata) -> Void) {
@@ -619,22 +626,34 @@ public actor KeyIndex {
     /// the scan's cursor. Later keys move down one index, so the generation changes and the list re-reads its rows.
     /// O(loaded keys) — the arena, the dedup table and the tree are rebuilt — which is fine for one user action.
     @discardableResult
-    public func remove(key: Data) -> Bool {
-        guard let removed = index(of: key) else { return false }
-        let bytes = range(at: removed)
-        arena.removeSubrange(bytes)
-        ends.remove(at: removed)
-        for later in removed..<ends.count { ends[later] -= bytes.count }
-        metadata.remove(at: removed)
+    public func remove(key: Data) -> Bool { remove(keys: [key]) == 1 }
+
+    /// Drops every loaded key among `keys` in one rebuild (a multi-key delete, FR-SF04); keys not loaded are skipped.
+    /// Returns how many were removed; the generation changes only when that is more than zero.
+    @discardableResult
+    public func remove(keys: some Sequence<Data>) -> Int {
+        let removed = Set(keys.compactMap { index(of: $0) })
+        guard !removed.isEmpty else { return 0 }
+        var keptArena = ContiguousArray<UInt8>(), keptEnds = ContiguousArray<Int>(), keptMetadata = ContiguousArray<PackedKeyMetadata>()
+        keptArena.reserveCapacity(arena.count); keptEnds.reserveCapacity(ends.count - removed.count); keptMetadata.reserveCapacity(ends.count - removed.count)
+        // Old index → new index, for the sizes measured so far.
+        var newIndex = [Int](repeating: -1, count: ends.count)
+        for index in 0..<ends.count where !removed.contains(index) {
+            newIndex[index] = keptEnds.count
+            keptArena.append(contentsOf: arena[range(at: index)])
+            keptEnds.append(keptArena.count)
+            keptMetadata.append(metadata[index])
+        }
+        arena = keptArena; ends = keptEnds; metadata = keptMetadata
         var moved: [Int: Int64] = [:]
-        for (index, size) in sizes where index != removed { moved[index > removed ? index - 1 : index] = size }
+        for (index, size) in sizes where index < newIndex.count && newIndex[index] >= 0 { moved[newIndex[index]] = size }
         sizes = moved
         rehash(capacity: slots.count)
         treeBuild += 1
         tree = NamespaceTree(separator: tree.separator, build: treeBuild)
         withKeyBytes { tree.extend(with: $0) }
         generation += 1
-        return true
+        return removed.count
     }
 
     /// A key the user just made (a rename's new name, FR-ED10) joins the loaded keys at the end, so it can be selected

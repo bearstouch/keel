@@ -95,6 +95,13 @@ public struct ConnectionSettings: Codable, Equatable, Sendable {
         public var tunnel: TunnelSettings?
     }
 
+    /// The server as typed confirmations name it (FR-SF03): `host:port`, IPv6 in brackets, "via SSH" through a tunnel
+    /// (the host is then resolved on the SSH server's side).
+    public var serverAddress: String {
+        let address = host.contains(":") ? "[\(host)]:\(port)" : "\(host):\(port)"
+        return tunnel == nil ? address : "\(address) via SSH"
+    }
+
     public var connectionKey: ConnectionKey { ConnectionKey(host: host, port: port, username: username, serverName: tls?.serverName, tunnel: tunnel) }
 
     /// True when `self` protects the connection less than `previous`: TLS turned off, or **Skip verification** turned

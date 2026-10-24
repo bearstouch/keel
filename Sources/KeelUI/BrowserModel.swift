@@ -20,6 +20,8 @@ public final class BrowserModel: ObservableObject {
     @Published public var showsNewKey = false
     /// The profile's read-only flag, read at `start()`; true until then, so New Key is never offered before it is known.
     @Published public private(set) var isReadOnly = true
+    /// The typed confirmation for deleting the multi-key selection (FR-SF03, FR-SF04); the pane shows it as a sheet.
+    @Published public var deleteConfirmation: TypedConfirmationModel?
 
     public let list: KeyListDataSource
     public let filter: KeyFilterModel?
@@ -114,6 +116,8 @@ public final class BrowserModel: ObservableObject {
     /// The first scan of a new tab, with the counts.
     public func start() async {
         isReadOnly = await list.index.context.profile.readOnly
+        // Read-only profiles don't offer the delete (FR-KB11): no ⌫, no Delete N Keys… in the menu.
+        list.onDelete = isReadOnly ? nil : { [weak self] in Task { await self?.requestDeleteSelection() } }
         await scan()
     }
 
@@ -231,6 +235,55 @@ public final class BrowserModel: ObservableObject {
         if let added { await list.select(keyBytes: added) }
     }
 
+    // MARK: - Multi-key delete (FR-KB11, FR-SF04)
+
+    /// ⌫ or Delete N Keys… on a selection of several keys: the typed confirmation listing them. Read-only profiles
+    /// never ask (the policy would refuse every batch).
+    public func requestDeleteSelection() async {
+        // Counted twice: the rows before the await, the names after it (rows past the loaded range are skipped).
+        let rows = list.selectedKeys
+        guard !isReadOnly, rows.count > 1, let keys = await list.selectedKeyNames(), keys.count > 1 else { return }
+        let index = list.index
+        let context = await index.context
+        // The user changed the selection while the names were read: only what is shown selected is offered.
+        guard list.selectedKeys == rows, deleteConfirmation == nil else { return }
+        let request = MultiKeyDelete.request(for: keys, profile: context.profile, database: context.database)
+        deleteConfirmation = TypedConfirmationModel(request, names: keys.prefix(TypedConfirmationModel.listLimit).map(KeyDisplay.name), total: keys.count) {
+            [weak self] in
+            await self?.deleteKeys(keys, context: context) ?? nil
+        }
+    }
+
+    /// Deletes `keys` in batches with the typed confirmation's yes for exactly these keys, then drops the deleted ones
+    /// from the list without a rescan. Returns why it stopped early (the deleted part stays deleted), nil when done.
+    func deleteKeys(_ keys: [Data], context: DataContext) async -> String? {
+        let index = list.index
+        var confirmed = context
+        confirmed.confirmation = MultiKeyDelete.confirmation(for: keys, database: context.database)
+        let report = await MultiKeyDelete.run(keys, service: await index.service, context: confirmed)
+        // The list follows only while it still shows the database the keys were deleted from.
+        if !report.removed.isEmpty, await index.context.database == context.database {
+            await list.select(keyBytes: nil)
+            await index.remove(keys: report.removed)
+            list.setTotalKeys(list.totalKeys.map { max($0 - report.deleted, 0) })
+            await list.reload()
+        }
+        return report.failure.map { Self.deleteMessage(report, $0) }
+    }
+
+    /// What stopped a multi-key delete, with how far it got.
+    static func deleteMessage(_ report: MultiKeyDelete.Report, _ failure: MultiKeyDelete.Failure) -> String {
+        let done = report.removed.isEmpty ? "No keys were deleted" : "Deleted \(KeyIndexFooter.grouped(report.removed.count)) of \(KeyIndexFooter.grouped(report.requested)) keys"
+        switch failure {
+        case .cancelled: return "\(done); the delete was stopped."
+        case .server(let message): return "\(done). The server refused the next batch: \(message)"
+        case .command(.command(.outcomeUnknown)), .command(.command(.timeout)):
+            let batch = report.removed.isEmpty ? "The connection was lost during the first batch" : "\(done). The connection was lost during the next batch"
+            return "\(batch), so whether its keys were deleted is unknown; refresh to see what is left."
+        case .command(let error): return "\(done). \(EditorSession.keyActionMessage(error))"
+        }
+    }
+
     // MARK: - New key (FR-ED14)
 
     /// Writable profiles only. Selecting the new key reopens the editor, which would drop a draft, so unsaved changes are
@@ -315,6 +368,9 @@ public struct BrowserPane: View {
         VStack(spacing: 0) {
             KeyListPane(dataSource: model.list, filter: model.filter, perform: perform)
             if model.missingKey != nil { MissingKeyNotice(model: model) }
+        }
+        .sheet(item: $model.deleteConfirmation) { confirmation in
+            TypedConfirmationSheet(model: confirmation) { model.deleteConfirmation = nil }
         }
     }
 }
