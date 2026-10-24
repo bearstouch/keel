@@ -113,9 +113,22 @@ public struct ExpiryQuery: Sendable, Equatable {
     }
 }
 
+/// When a key expires, as the Set TTL sheet shows it (FR-ED11).
 public enum KeyExpiry: Sendable, Equatable {
     case missing, persistent
     case at(Date)
+    /// The expiry couldn't be read (refused, the connection failed, an unexpected reply).
+    case unavailable
+
+    /// The clock time ("Oct 24, 2026 at 3:42:10 PM"), "—" without an expiry. `style` is injectable for tests.
+    public func text(style: Date.FormatStyle = Date.FormatStyle(date: .abbreviated, time: .standard)) -> String {
+        switch self {
+        case .persistent: return "—"
+        case .at(let date): return date.formatted(style)
+        case .missing: return "The key no longer exists."
+        case .unavailable: return KeyDetails.unavailableText
+        }
+    }
 }
 
 /// Runs and caches the FR-CN12 probes for one server session. Each capability is probed at most once per session,

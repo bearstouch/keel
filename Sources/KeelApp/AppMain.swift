@@ -203,6 +203,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     /// ⌘S / ⌘Z: the key window's open editor saves or reverts its unsaved changes (03 → Value editors).
     @objc private func saveEdits(_ sender: Any?) { NotificationCenter.default.post(name: EditorCommands.saveNotification, object: NSApp.keyWindow) }
     @objc private func revertEdits(_ sender: Any?) { NotificationCenter.default.post(name: EditorCommands.revertNotification, object: NSApp.keyWindow) }
+    /// ⌘E / ⌥⌘E: the key window's open editor shows Rename… or Set TTL… (FR-ED13).
+    @objc private func renameKey(_ sender: Any?) { NotificationCenter.default.post(name: EditorCommands.renameNotification, object: NSApp.keyWindow) }
+    @objc private func setKeyTTL(_ sender: Any?) { NotificationCenter.default.post(name: EditorCommands.setTTLNotification, object: NSApp.keyWindow) }
     /// ⌥⌘0…⌥⌘9: the key window's browser switches to the item's database (FR-KB08).
     @objc private func selectDatabase(_ sender: NSMenuItem) {
         NotificationCenter.default.post(name: KeyListCommands.selectDatabaseNotification, object: NSApp.keyWindow, userInfo: [KeyListCommands.databaseKey: sender.tag])
@@ -221,6 +224,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         // Only while the selected tab's editor shows the save bar, so ⌘Z means nothing else then.
         case #selector(saveEdits(_:)), #selector(revertEdits(_:)):
             return tab.flatMap { app?.session($0.id)?.browser?.editor?.showsSaveBar } ?? false
+        case #selector(renameKey(_:)): return tab.flatMap { app?.session($0.id)?.browser?.editor?.canRename } ?? false
+        case #selector(setKeyTTL(_:)): return tab.flatMap { app?.session($0.id)?.browser?.editor?.canRunKeyAction } ?? false
         default: return true
         }
     }
@@ -269,6 +274,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         for database in 0...9 { add("db\(database)", #selector(selectDatabase(_:)), String(database), [.command, .option], to: databaseMenu).tag = database }
         databaseItem.submenu = databaseMenu
         viewItem.submenu = viewMenu
+        let keyItem = NSMenuItem(); menu.addItem(keyItem)
+        let keyMenu = NSMenu(title: "Key")
+        add("Rename Key…", #selector(renameKey(_:)), "e", to: keyMenu)
+        add("Set TTL…", #selector(setKeyTTL(_:)), "e", [.command, .option], to: keyMenu)
+        keyItem.submenu = keyMenu
         let connectionItem = NSMenuItem(); menu.addItem(connectionItem)
         let connectionMenu = NSMenu(title: "Connection")
         // FR-CN15: ⇧⌘R / ⇧⌘D.

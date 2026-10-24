@@ -71,7 +71,11 @@ public final class BrowserModel: ObservableObject {
                     Task { await self.selectDatabase(database) }
                 }
             })
-        for (name, action) in [(EditorCommands.saveNotification, EditorCommand.save), (EditorCommands.revertNotification, .revert)] {
+        let commands: [(Notification.Name, EditorCommand)] = [
+            (EditorCommands.saveNotification, .save), (EditorCommands.revertNotification, .revert), (EditorCommands.renameNotification, .rename),
+            (EditorCommands.setTTLNotification, .setTTL)
+        ]
+        for (name, action) in commands {
             observers.append(
                 center.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
                     let window = note.object as? NSWindow
@@ -80,13 +84,15 @@ public final class BrowserModel: ObservableObject {
                         switch action {
                         case .save: Task { await editor.save() }
                         case .revert: editor.revert()
+                        case .rename: if editor.canRename { editor.requestedKeyAction = .rename }
+                        case .setTTL: if editor.canRunKeyAction { editor.requestedKeyAction = .setTTL }
                         }
                     }
                 })
         }
     }
 
-    private enum EditorCommand { case save, revert }
+    private enum EditorCommand { case save, revert, rename, setTTL }
 
     isolated deinit { observers.forEach(NotificationCenter.default.removeObserver) }
 
@@ -177,8 +183,37 @@ public final class BrowserModel: ObservableObject {
             viewerChoices: viewerChoices, separator: await index.separator)
         // A newer selection while the context was read owns the editor now.
         guard request == presenceRequest else { return }
+        editor.onKeyChange = { [weak self, weak editor] change in
+            guard let self, let editor else { return }
+            Task { await self.keyChanged(change, in: editor) }
+        }
         self.editor = editor
         await editor.load()
+    }
+
+    // MARK: - Key actions (FR-ED10, FR-ED12)
+
+    /// Follows the editor's rename or delete in the loaded keys without a rescan: a deleted key leaves the list and the
+    /// editor shows the empty state; a renamed one is selected under its new name (reopening the editor there), unless
+    /// the filter wouldn't list that name.
+    func keyChanged(_ change: EditorSession.KeyChange, in session: EditorSession) async {
+        guard editor === session else { return }
+        let index = list.index
+        editor = nil
+        await list.select(keyBytes: nil)
+        await index.remove(key: session.key)
+        // The database holds one key fewer after a delete, or after a rename that replaced an existing key.
+        let removesKey: Bool
+        var added: Data?
+        switch change {
+        case .deleted: removesKey = true
+        case .renamed(let newKey, let replaced):
+            removesKey = replaced
+            if await index.add(key: newKey, type: session.type) { added = newKey }
+        }
+        if removesKey { list.setTotalKeys(list.totalKeys.map { max($0 - 1, 0) }) }
+        await list.reload()
+        if let added { await list.select(keyBytes: added) }
     }
 
     /// "Remove from List": drops the missing key from the loaded keys; nothing is sent to the server.

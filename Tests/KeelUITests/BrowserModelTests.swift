@@ -19,7 +19,7 @@ final class BrowserKeyspace: @unchecked Sendable {
     /// Commands sent, with the database of their connection.
     var commands: [(database: Int, arguments: [String])] { lock.withLock { sent.map { ($0.0, $0.1) } } }
 
-    @MainActor func list(database: Int = 0) -> KeyListDataSource {
+    @MainActor func list(database: Int = 0, readOnly: Bool = true) -> KeyListDataSource {
         let session = ServerSession { (_: ConnectionRole, database: Int) async throws(ConnectionFailure) -> RedisConnection in
             let connection = RedisConnection(transport: FakeTransport { self.answer(database, $0) })
             do throws(RedisError) { try await connection.connect() } catch {
@@ -27,7 +27,7 @@ final class BrowserKeyspace: @unchecked Sendable {
             }
             return connection
         }
-        let context = DataContext(profile: SafetyProfile(name: "payments-prod", readOnly: true), database: database)
+        let context = DataContext(profile: SafetyProfile(name: "payments-prod", readOnly: readOnly), database: database)
         return KeyListDataSource(index: KeyIndex(service: DataCommandService(session: session), context: context))
     }
 
@@ -42,6 +42,15 @@ final class BrowserKeyspace: @unchecked Sendable {
                 return "*2\r\n$1\r\n0\r\n*\(listed.count)\r\n" + listed.map { "$\($0.utf8.count)\r\n\($0)\r\n" }.joined()
             case "TYPE": return keys.contains(arguments[1]) ? "+string\r\n" : "+none\r\n"
             case "DBSIZE": return ":\(keys.count)\r\n"
+            case "PTTL": return keys.contains(arguments[1]) ? ":-1\r\n" : ":-2\r\n"
+            case "RENAMENX", "RENAME":
+                guard keys.contains(arguments[1]) else { return "-ERR no such key\r\n" }
+                if arguments[0] == "RENAMENX", keys.contains(arguments[2]) { return ":0\r\n" }
+                databases[database]?.remove(arguments[1]); databases[database]?.insert(arguments[2])
+                return arguments[0] == "RENAME" ? "+OK\r\n" : ":1\r\n"
+            case "UNLINK":
+                let removed = arguments.dropFirst().filter { databases[database]?.remove($0) != nil }.count
+                return ":\(removed)\r\n"
             case "INFO":
                 let lines = databases.keys.sorted().compactMap { db in databases[db].flatMap { $0.isEmpty ? nil : "db\(db):keys=\($0.count),expires=0,avg_ttl=0" } }
                 let text = (["# Keyspace"] + lines).joined(separator: "\r\n") + "\r\n"

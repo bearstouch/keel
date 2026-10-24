@@ -33,6 +33,9 @@ public enum KeyListCommands {
 public enum EditorCommands {
     public static let saveNotification = Notification.Name("com.bearstouch.keel.saveEdits")
     public static let revertNotification = Notification.Name("com.bearstouch.keel.revertEdits")
+    /// Key → Rename Key… (⌘E) and Set TTL… (⌥⌘E): the open editor's sheet (FR-ED13).
+    public static let renameNotification = Notification.Name("com.bearstouch.keel.renameKey")
+    public static let setTTLNotification = Notification.Name("com.bearstouch.keel.setKeyTTL")
 }
 
 /// One 32 px row (08 Design → Key list): name in mono, then the muted count or TTL, then the type badge. Frames are set

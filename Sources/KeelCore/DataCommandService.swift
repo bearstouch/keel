@@ -47,6 +47,8 @@ public enum DataOperation: Sendable, Equatable {
     case streamRange(key: Data, from: Data, to: Data, count: Int, reverse: Bool)
     /// `XINFO STREAM key`: the stream summary in Details.
     case streamInfo(key: Data)
+    /// `PEXPIRETIME key` (7.0+, probed): the absolute expiry as Unix milliseconds (FR-ED11).
+    case expireTime(key: Data)
     // Writes
     case stringSet(key: Data, value: Data, keepTTL: Bool)
     case hashSetField(key: Data, field: Data, value: Data)
@@ -69,6 +71,8 @@ public enum DataOperation: Sendable, Equatable {
     case streamDelete(key: Data, ids: [Data])
     case rename(key: Data, newKey: Data, overwrite: Bool)
     case expire(key: Data, milliseconds: Int64)
+    /// `PEXPIREAT key unix-ms`: an absolute expiry (FR-ED11).
+    case expireAt(key: Data, unixMilliseconds: Int64)
     case persist(key: Data)
     /// `UNLINK`; more than one key is destructive and needs a confirmation (FR-SF03, FR-SF04).
     case delete(keys: [Data])
@@ -119,6 +123,7 @@ public enum DataOperation: Sendable, Equatable {
         case .sortedSetScore(let key, let member): return [d("ZSCORE"), key, member]
         case .streamRange(let key, let from, let to, let count, let reverse): return [d(reverse ? "XREVRANGE" : "XRANGE"), key, from, to, d("COUNT"), d(String(count))]
         case .streamInfo(let key): return [d("XINFO"), d("STREAM"), key]
+        case .expireTime(let key): return [d("PEXPIRETIME"), key]
         case .stringSet(let key, let value, let keepTTL): return [d("SET"), key, value] + (keepTTL ? [d("KEEPTTL")] : [])
         case .hashSetField(let key, let field, let value): return [d("HSET"), key, field, value]
         case .hashDeleteFields(let key, let fields): return [d("HDEL"), key] + fields
@@ -137,6 +142,7 @@ public enum DataOperation: Sendable, Equatable {
         case .streamDelete(let key, let ids): return [d("XDEL"), key] + ids
         case .rename(let key, let newKey, let overwrite): return [d(overwrite ? "RENAME" : "RENAMENX"), key, newKey]
         case .expire(let key, let milliseconds): return [d("PEXPIRE"), key, d(String(milliseconds))]
+        case .expireAt(let key, let unixMilliseconds): return [d("PEXPIREAT"), key, d(String(unixMilliseconds))]
         case .persist(let key): return [d("PERSIST"), key]
         case .delete(let keys): return [d("UNLINK")] + keys
         case .flushDatabase(let async): return [d("FLUSHDB")] + (async ? [d("ASYNC")] : [])
