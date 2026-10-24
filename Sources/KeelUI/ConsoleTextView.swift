@@ -3,24 +3,23 @@ import KeelCore
 
 /// The console palette (08 Design → Console): Trellis's terminal colors, dark in both themes (DS-05).
 enum ConsoleTheme {
-    static let background = rgb(0x151719)
-    static let output = rgb(0xDEE0E5)
-    static let command = rgb(0xFFFFFF)
-    static let prompt = rgb(0x7C899C)
-    static let null = rgb(0x8C95A3)
-    static let error = rgb(0xFFA4A4)
-    static let cursor = rgb(0xFF8A7E)
-    static let hint = rgb(0x6B7689)
-    static let list = rgb(0x2A2A2C)
-    static let listBorder = rgb(0x3A3A3C)
-    static let listSelected = rgb(0x3D2826)
+    static let background = color(.background)
+    static let output = color(.output)
+    static let command = color(.command)
+    static let prompt = color(.prompt)
+    static let notice = color(.notice)
+    static let null = color(.null)
+    static let error = color(.error)
+    static let cursor = color(.cursor)
+    static let hint = color(.hint)
+    static let list = color(.list)
+    static let listBorder = color(.listBorder)
+    static let listSelected = color(.listSelected)
     static var font: NSFont { Tokens.NS.mono(14) }
     /// 14 px at 1.7.
     static let lineHeight: CGFloat = 23.8
 
-    private static func rgb(_ value: UInt32) -> NSColor {
-        NSColor(srgbRed: CGFloat(value >> 16 & 0xFF) / 255, green: CGFloat(value >> 8 & 0xFF) / 255, blue: CGFloat(value & 0xFF) / 255, alpha: 1)
-    }
+    private static func color(_ token: KeelTheme.Console) -> NSColor { Swatch(KeelTheme.console[token] ?? 0).nsColor }
 }
 
 extension NSAttributedString.Key {
@@ -131,7 +130,7 @@ final class ConsoleTextView: NSTextView {
         case .output: color = ConsoleTheme.output; spacingBefore = 0
         case .null: color = ConsoleTheme.null; spacingBefore = 0
         case .error: color = ConsoleTheme.error; spacingBefore = 0
-        case .notice: color = ConsoleTheme.prompt; spacingBefore = 0
+        case .notice: color = ConsoleTheme.notice; spacingBefore = 0
         }
         text.append(NSAttributedString(string: line.text + "\n", attributes: attributes(color: color, spacingBefore: spacingBefore)))
         if let reply = line.reply { text.addAttribute(.consoleReply, value: reply, range: NSRange(location: 0, length: text.length)) }

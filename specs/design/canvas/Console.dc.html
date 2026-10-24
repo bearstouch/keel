@@ -56,7 +56,7 @@ body{margin:0}
       <sc-for list="{{lines}}" as="l" hint-placeholder-count="12">
         <div style="white-space: pre; color: {{l.color}}; margin-top: {{l.gap}};"><span style="color: #7C899C;">{{l.prompt}}</span>{{l.text}}</div>
       </sc-for>
-      <div style="white-space: pre; display: flex; align-items: center; margin-top: 12px;"><span style="color: #7C899C;">› </span><span style="color: #FFFFFF;">{{inputText}}</span><span aria-hidden="true" style="display: inline-block; width: 8px; height: 19px; background: #FF8A7E; margin-left: 1px;"></span><span style="color: #6B7689;">{{inputHint}}</span></div>
+      <div style="white-space: pre; display: flex; align-items: center; margin-top: 12px;"><span style="color: #7C899C;">› </span><span style="color: #FFFFFF;">{{inputText}}</span><span aria-hidden="true" style="display: inline-block; width: 8px; height: 19px; background: #FF8A7E; margin-left: 1px;"></span><span style="color: #768297;">{{inputHint}}</span></div>
 
       <sc-if value="{{showPop}}" hint-placeholder-val="{{ false }}">
         <div role="listbox" aria-label="Completions" style="position: absolute; left: 50px; top: {{popTop}}; width: 220px; padding: 4px; border: 1px solid #3A3A3C; border-radius: 8px; background: #2A2A2C; box-shadow: 0 12px 32px rgba(0,0,0,0.45); font-size: 13px;">

@@ -116,3 +116,13 @@ Keel's own, built on the vendored askpass (KEEL-010): `Sources/KeelSSH/PromptRel
 `HostLibrary+Tunnel.swift`, and `Sources/KeelUI/SSHPromptSheet.swift`. Ported tests updated for the new wire format:
 `AskpassTests.testNonceFraming`, `testHelperFallsBackToTerminalForEverythingElse` (trust prompts now reach the broker
 first) and the broker cases (`password:` label, revocation wording).
+
+## Bundled fonts (KEEL-044)
+
+Not code: font files in `Sources/KeelUI/Resources/Fonts/`, shipped with their SIL Open Font License 1.1 texts
+(`Inter-OFL.txt`, `JetBrainsMono-OFL.txt`) and registered for the Keel process only (MAC-19).
+
+| Files | Source | SHA-256 |
+| --- | --- | --- |
+| `Inter-Regular.ttf`, `Inter-Medium.ttf`, `Inter-SemiBold.ttf`, `Inter-OFL.txt` (`LICENSE.txt`) | Inter 4.1 release (`Inter-4.1.zip`, `extras/ttf/`), github.com/rsms/inter | `40d692fc…0c82`, `97ad806f…a872`, `78a843fa…cde3` |
+| `JetBrainsMono-{Regular,Bold,Italic,BoldItalic}.ttf`, `JetBrainsMono-OFL.txt` | Trellis `Sources/TrellisCore/Resources/Fonts/` at `f76ba9823f6213698acee86349c597e95e46f25e` | `a0bf60ef…138f`, `5590990c…9dcb`, `9d0a1f7a…ded4`, `4039d5ce…aa3b` |

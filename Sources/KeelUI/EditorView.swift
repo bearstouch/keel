@@ -88,7 +88,7 @@ struct EditorShell: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            Text(KeyDisplay.name(session.key)).font(Tokens.mono(20).weight(.semibold)).foregroundStyle(Tokens.fg)
+            Text(KeyDisplay.name(session.key)).font(Tokens.mono(20, weight: .semibold)).foregroundStyle(Tokens.fg)
                 .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
             TypeBadge(type: session.type)
             Spacer(minLength: 0)

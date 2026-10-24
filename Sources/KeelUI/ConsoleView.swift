@@ -52,7 +52,7 @@ private struct ConsoleActivity: View {
     var body: some View {
         if console.state != .idle {
             HStack(spacing: 8) {
-                if console.state == .running { ProgressView().controlSize(.mini).tint(.white) }
+                if console.state == .running { ProgressView().controlSize(.mini).tint(Color(nsColor: ConsoleTheme.command)) }
                 Text(console.state == .streaming ? "Streaming" : "Waiting for reply…").font(Tokens.interface(12)).foregroundStyle(Color(nsColor: ConsoleTheme.prompt))
                 Button {
                     Task { await console.stop() }

@@ -15,17 +15,21 @@ Keel's visual contract. The reference is the **Keel — Native calm** design can
 
 ## Color
 
+Every row names the code token (`KeelTheme`) beside its value; a row with two names and one value gives both names that value. `scripts/generate-design-tokens.py` reads these tables into `Tests/Fixtures/Design/tokens.json`, and `ThemeTokensTests` fails when the code and this page disagree.
+
 ### Light (first-launch default)
 
 | Token | Value | Use |
 | --- | --- | --- |
-| `bg` | `#FFFFFF` | Content, editor, active tab |
+| `bg` / `sheet` | `#FFFFFF` | Content, editor, active tab / sheets, Settings, command palette |
 | `sidebar` | `#FBEEEC` | Sidebar (soft Redis-red tint) |
 | `sidebarSelection` | `#F4D2CD` | Selected connection |
 | `sidebarHair` | `#F1DAD7` | Sidebar edge |
 | `tabBar` / `codeBg` | `#F6F8FB` | Tab bar, value viewer |
 | `field` / `soft` | `#F1F4F8` | Inputs, filter, db picker, secondary buttons |
 | `segBg` | `#E7ECF2` | Viewer switch track |
+| `segOn` | `#FFFFFF` | Selected segment |
+| `segShadow` | `rgba(24,33,47,0.12)` | Selected segment's lift |
 | `card` | `#F4F7FA` | Info tiles |
 | `track` | `#DDE4EC` | Info memory bar track |
 | `hair` / `hairSoft` | `#E3E8EE` / `#EEF2F6` | Separators / table rows |
@@ -33,9 +37,9 @@ Keel's visual contract. The reference is the **Keel — Native calm** design can
 | `accent` / `onAccent` | `#C7302A` / `#FFFFFF` | Redis red (darkened from `#DC382D` for text contrast) |
 | `selection` | `#FCEAE8` | Selected key, field, label chip |
 | `changedRow` | `#FDF3F2` | Row with an unsaved edit |
-| `saveBar` | `#18212F` on `#FFFFFF` text | Floating unsaved-changes bar |
+| `saveBar` / `onSaveBar` | `#18212F` / `#FFFFFF` | Floating unsaved-changes bar / its text |
 | `success` / `warning` / `danger` | `#216B3B` / `#805400` / `#B22D32` | Status words, destructive actions |
-| `prodStrip` | `#7A1A14`, text `#FFFFFF` | Production strip |
+| `prodStrip` / `onProdStrip` | `#7A1A14` / `#FFFFFF` | Production strip / its text |
 | `scrim` | `rgba(24,33,47,0.22)` | Behind sheets |
 
 ### Dark (Trellis native graphite + Redis red)
@@ -46,34 +50,48 @@ Keel's visual contract. The reference is the **Keel — Native calm** design can
 | `sidebar` / `tabBar` | `#29292B` | Sidebar, tab bar |
 | `sidebarSelection` / `selection` | `#3D2826` | Selected connection, key, field |
 | `sidebarHair` | `#333335` | Sidebar edge |
-| `sheet` | `#2A2A2C` | Sheets, Settings |
+| `sheet` | `#2A2A2C` | Sheets, Settings, command palette |
 | `card` / `codeBg` | `#262628` | Info tiles, value viewer |
 | `field` / `segBg` | `#38383A` | Inputs in sheets, viewer switch track |
 | `soft` | `#2C2C2E` | Filter, db picker |
 | `segOn` / `track` | `#48484A` | Selected segment, Info memory bar track |
+| `segShadow` | `rgba(0,0,0,0)` | None: the segment isn't lifted in dark |
 | `hair` / `hairSoft` | `#38383A` / `#2C2C2E` | Separators / table rows |
 | `fg` / `muted` | `#E5E5E7` / `#A1A1A6` | Text / secondary text |
 | `accent` / `onAccent` | `#FF6F61` / `#2A0B08` | Redis red for dark backgrounds |
 | `changedRow` | `#2E2423` | Row with an unsaved edit |
-| `saveBar` | `#E5E5E7`, text `#1E1E1E` | Floating unsaved-changes bar |
+| `saveBar` / `onSaveBar` | `#E5E5E7` / `#1E1E1E` | Floating unsaved-changes bar / its text |
 | `success` / `warning` / `danger` | `#8DDAA4` / `#F2CC7A` / `#FFA4A4` | Status words, destructive actions |
-| `prodStrip` | `#4A1F1C`, text `#FFD6D1` | Production strip |
+| `prodStrip` / `onProdStrip` | `#4A1F1C` / `#FFD6D1` | Production strip / its text |
 | `scrim` | `rgba(5,7,10,0.55)` | Behind sheets |
+
+### Increase Contrast
+
+With **Increase Contrast** on (System Settings → Accessibility → Display), these tokens replace their values in the theme shown; every other token keeps its value. Secondary text gains contrast and hairlines reach 3:1 against the surface they divide.
+
+| Token | Light | Dark |
+| --- | --- | --- |
+| `muted` | `#364152` | `#C7C7CC` |
+| `hair` | `#7D8796` | `#7C7C80` |
+| `hairSoft` | `#8A94A3` | `#6E6E73` |
+| `sidebarHair` | `#A67A74` | `#7C7C80` |
 
 ### Console (both themes)
 
-| Token | Value |
-| --- | --- |
-| Background | `#151719` |
-| Output / command | `#DEE0E5` / `#FFFFFF` |
-| Prompt (`127.0.0.1:6379[3]>`; the canvas abbreviates it as `›`) | `#7C899C` |
-| Inline argument hint | `#6B7689` |
-| Keel notices ("Not sent.", "Stopped.") | `#7C899C` |
-| `(nil)` | `#8C95A3` |
-| `(error)` | `#FFA4A4` |
-| Cursor | `#FF8A7E` |
-| Completion list / selected | `#2A2A2C` / `#3D2826` |
-| ANSI | Trellis default: `#1B202A #EF8585 #8DDAA4 #F2CC7A #8BB8F0 #C6A0E8 #7FD5DD #CFD7E2` + brights |
+| Token | Value | Use |
+| --- | --- | --- |
+| `background` | `#151719` | Background |
+| `output` / `command` | `#DEE0E5` / `#FFFFFF` | Output / the typed command |
+| `prompt` | `#7C899C` | Prompt (`127.0.0.1:6379[3]>`; the canvas abbreviates it as `›`) |
+| `hint` | `#768297` | Inline argument hint (dimmer than the prompt, still 4.5:1) |
+| `notice` | `#7C899C` | Keel notices ("Not sent.", "Stopped.") |
+| `null` | `#8C95A3` | `(nil)` |
+| `error` | `#FFA4A4` | `(error)` |
+| `cursor` | `#FF8A7E` | Cursor |
+| `list` / `listSelected` | `#2A2A2C` / `#3D2826` | Completion list / selected name |
+| `listBorder` | `#3A3A3C` | Completion list and Stop button border |
+
+ANSI (not used by v1 output, kept for reference): Trellis default `#1B202A #EF8585 #8DDAA4 #F2CC7A #8BB8F0 #C6A0E8 #7FD5DD #CFD7E2` + brights.
 
 ### Type badges and labels
 
@@ -87,19 +105,49 @@ Keel's visual contract. The reference is the **Keel — Native calm** design can
 | STREAM | `#A02D6A` / `#F8E4EF` | `#F5A3CF` / `#36202E` |
 | OTHER | `muted` / `soft` | `muted` / `soft` |
 
-Badges distinguish types, not brand, so they keep their own hues. JSON syntax in the viewer uses keys `#185AA8`/`#8BB8F0`, strings `#216B3B`/`#8DDAA4`, literals `#805400`/`#F2CC7A`.
+Badges distinguish types, not brand, so they keep their own hues. JSON syntax in the viewer:
+
+| Syntax | Light | Dark |
+| --- | --- | --- |
+| `jsonKey` | `#185AA8` | `#8BB8F0` |
+| `jsonString` | `#216B3B` | `#8DDAA4` |
+| `jsonLiteral` (numbers, `true`, `false`, `null`) | `#805400` | `#F2CC7A` |
 
 | Label | Light | Dark |
 | --- | --- | --- |
-| Production | `#C8363C` | `#FF7B7B` |
-| Staging (orange) | `#B86200` | `#F2A65A` |
-| Yellow | `#8A6D00` | `#F2D36B` |
-| Local (green) | `#2E8B4F` | `#8DDAA4` |
-| Blue | `#2F6FBF` | `#8BB8F0` |
-| Purple | `#7B4FB0` | `#C6A0E8` |
-| Gray | `#7A8596` | `#8E8E93` |
+| Production (`red`) | `#C8363C` | `#FF7B7B` |
+| Staging (`orange`) | `#B86200` | `#F2A65A` |
+| Yellow (`yellow`) | `#8A6D00` | `#F2D36B` |
+| Local (`green`) | `#2E8B4F` | `#8DDAA4` |
+| Blue (`blue`) | `#2F6FBF` | `#8BB8F0` |
+| Purple (`purple`) | `#7B4FB0` | `#C6A0E8` |
+| Gray (`gray`) | `#7A8596` | `#8E8E93` |
 
 Every FR-CN02 color has a dot; **None** is an empty `muted` ring. The New Connection sheet shows all eight dots, selected one ringed in `accent`, and the selected label's name beside them.
+
+### Contrast pairs
+
+`ThemeContrastTests` checks every pair below in light, dark and both Increase Contrast variants (NFR-AX04, WCAG 2 ratio):
+
+| Pair | Minimum |
+| --- | --- |
+| `fg` on every surface: `bg`, `sheet`, `sidebar`, `sidebarSelection`, `tabBar`, `codeBg`, `field`, `soft`, `segBg`, `segOn`, `card`, `selection`, `changedRow` | 4.5:1 |
+| `muted` on every surface but `segOn` (a selected segment's text is `fg`) | 4.5:1 |
+| `accent`, `success`, `warning`, `danger` on `bg`, `sheet`, `sidebar`, `tabBar`, `codeBg`, `soft`, `card`, `selection`, `changedRow` | 4.5:1 |
+| `onAccent` on `accent`, `onSaveBar` on `saveBar`, `onProdStrip` on `prodStrip` | 4.5:1 |
+| Badge text on its fill; JSON syntax on `codeBg` | 4.5:1 |
+| Console `output`, `command`, `prompt`, `hint`, `notice`, `null`, `error` on `background`; `command` on `list` and `listSelected` | 4.5:1 |
+| `prodStrip` against `tabBar` (light; dark relies on the strip's text, FR-SF02) | 3:1 |
+| Console `cursor` on `background`; label dots on `sidebar` and `bg` | 3:1 |
+| With Increase Contrast: `hair`, `hairSoft` on `bg`, `sidebarHair` on `sidebar` | 3:1 |
+
+### Theme and motion
+
+| ID | Rule |
+| --- | --- |
+| DS-11 | **Theme** (FR-AP04): Light (first-launch default), Dark or System, chosen in View → Theme and saved in `settings.json`. A change applies at once to every window, sheet and the console chrome without reconnecting or reloading anything; System follows the macOS appearance live. |
+| DS-12 | **Increase Contrast** swaps in the table above at once, in any theme; macOS's own high-contrast controls come with it. |
+| DS-13 | **Reduce Motion**: Keel draws no decorative motion. Any animation goes through `Tokens.animation`, which gives none while Reduce Motion is on. Text that changes with time (a TTL counting down, Info's auto-refresh) is content, not motion, and keeps updating. |
 
 ## Typography
 
@@ -117,7 +165,7 @@ Every FR-CN02 color has a dot; **None** is an empty `muted` ring. The New Connec
 | Editor key title | JetBrains Mono | 20 / 600 |
 | Console | JetBrains Mono | 14, line height 1.7 |
 
-Both fonts are bundled ([MAC-19](07-macos-support.md#input-and-text)).
+Both fonts are bundled and registered for the Keel process only ([MAC-19](07-macos-support.md#input-and-text)): Inter Regular (400), Medium (500) and SemiBold (600; heavier weights use it too), and JetBrains Mono Regular, Bold (used for 600), Italic and Bold Italic. A face that fails to load falls back to the system font (or the system monospace font) with no loss of function. Every SwiftUI root sets Inter 13 as the default, so text without an explicit role is still Inter.
 
 ## Layout and shape
 

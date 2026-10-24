@@ -92,7 +92,7 @@ public enum SettingsWindow {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 600), styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "Keyboard"
         window.isReleasedWhenClosed = false
-        window.contentView = NSHostingView(rootView: KeyboardSettingsView(model: model, bindings: model.bindings))
+        window.contentView = NSHostingView(rootView: KeyboardSettingsView(model: model, bindings: model.bindings).font(Tokens.interface(13)))
         window.center()
         return window
     }

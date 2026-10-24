@@ -196,6 +196,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
   them, every chord needs ⌘, and Settings, Hide, Quit, Revert, the text commands and Minimize stay fixed. The menus
   are built from the bindings and follow every change. New View → Hide Sidebar (⌃⌘S) and Key → Delete Selected Keys…
   (⌘⌫) (KEEL-043).
+- Themes and bundled fonts: View → Theme switches Light (first-launch default), Dark or System at once, without
+  reconnecting, and is saved in `settings.json`. Every color comes from the 08 Design tokens (checked against a fixture
+  generated from the page), Increase Contrast strengthens secondary text and hairlines, and Inter and JetBrains Mono
+  ship in the app, registered for the Keel process only, with the system fonts as fallback. The console's argument
+  hint is now `#768297` so it meets 4.5:1 (KEEL-044).
 
 ### Removed
 

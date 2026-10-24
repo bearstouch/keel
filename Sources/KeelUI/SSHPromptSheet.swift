@@ -48,12 +48,12 @@ public struct SSHPromptSheet: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(Self.title(prompt.kind)).font(.headline)
-                Text("ssh to \(prompt.destination)").font(.subheadline).foregroundStyle(.secondary)
+                Text(Self.title(prompt.kind)).font(Tokens.interface(13, weight: .semibold))
+                Text("ssh to \(prompt.destination)").font(Tokens.interface(12)).foregroundStyle(Tokens.muted)
             }
             ScrollView {
                 Text(prompt.text)
-                    .font(.system(.body, design: .monospaced))
+                    .font(Tokens.mono())
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }

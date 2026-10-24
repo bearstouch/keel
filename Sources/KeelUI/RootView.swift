@@ -39,6 +39,8 @@ public struct RootView: View {
         .sshPrompts(prompts)
         // Outside the sheets, so they read it: only one window presents the app-wide sheets.
         .modifier(SheetGate(app: sidebar?.tabs.app, windowID: sidebar?.tabs.id))
+        // Outermost, so the sheets and popovers inherit it too: text without its own role is Inter 13 (08 → Typography).
+        .font(Tokens.interface(13))
     }
 
     public static let accessibilityLabel = "Keel, no connections yet"
@@ -73,11 +75,11 @@ private struct EmptyState: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            Text("Keel").font(.system(size: 34, weight: .bold))
+            Text("Keel").font(Tokens.interface(34, weight: .semibold))
             if hasProfiles {
-                Text("Double-click a connection to open it").foregroundStyle(.secondary)
+                Text("Double-click a connection to open it").foregroundStyle(Tokens.muted)
             } else {
-                Text("No connections yet").foregroundStyle(.secondary)
+                Text("No connections yet").foregroundStyle(Tokens.muted)
                     .accessibilityLabel(RootView.accessibilityLabel)
                 if let connections {
                     Button("New Connection…") { connections.newConnection() }.padding(.top, 8)

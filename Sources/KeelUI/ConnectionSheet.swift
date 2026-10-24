@@ -89,7 +89,7 @@ public struct ConnectionSheet: View {
     private var passwordField: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Password · saved in Keychain").font(Tokens.interface(12)).foregroundStyle(Tokens.muted)
-            SecureField("", text: $model.password, prompt: Text(model.hasSavedPassword && !model.removeSavedPassword ? "Saved — type to replace" : "").foregroundStyle(Tokens.muted.opacity(0.7)))
+            SecureField("", text: $model.password, prompt: Text(model.hasSavedPassword && !model.removeSavedPassword ? "Saved — type to replace" : "").foregroundStyle(Tokens.muted))
                 .modifier(FieldStyle(mono: false))
                 .accessibilityLabel("Password, saved in Keychain")
             if model.hasSavedPassword {
@@ -288,7 +288,7 @@ struct SheetTextField: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             if showsLabel { Text(label).font(Tokens.interface(12)).foregroundStyle(Tokens.muted).accessibilityHidden(true) }
-            TextField("", text: $text, prompt: Text(placeholder).foregroundStyle(Tokens.muted.opacity(0.7)))
+            TextField("", text: $text, prompt: Text(placeholder).foregroundStyle(Tokens.muted))
                 .modifier(FieldStyle(mono: mono))
                 .accessibilityLabel(label)
         }
