@@ -228,6 +228,21 @@ The icon is **concept A, Layered keel**: three rounded bars that narrow downward
 | DS-09 | Appearances: **Default** (red), **Dark** (graphite `#3A3A3C` → `#161617`, red mark), **Tinted** (graphite, light-gray mark for system tinting), **Light** (white → `#F3EDEC`, red mark; DMG background, website, documents). |
 | DS-10 | Sizes shipped in the asset catalog / `.icns`: 16, 32, 64, 128, 256, 512, 1024 px (with @2x), all exported from the same source. The wordmark is "Keel" in Inter Bold, tracking −0.045em, beside the icon at roughly 0.7× the icon height. |
 
+**Assets.** `release/icon/keel-icon.svg` is the single source; `scripts/generate-app-icon.sh` renders everything else
+from it (`--check` fails on stale assets) and is the only way they change:
+
+- `AppIcon.iconset` and `AppIcon.icns`: the Default appearance at 16–512 pt @1x/@2x, the small form at 48 px and below.
+- `AppIcon.icon`: an Icon Composer bundle (the full mark as one layer over the plate gradient, with Dark and Tinted
+  fills). `actool` compiles it into `Assets.car`, so macOS 26 switches Default / Dark / Tinted with the system icon
+  style. Packaging runs `scripts/generate-app-icon.sh --compile Keel.app/Contents/Resources`, which writes `Assets.car`
+  and copies the committed `AppIcon.icns`; Info.plist names both `AppIcon` (`CFBundleIconName`, `CFBundleIconFile`;
+  `iconName` in `release/manifest.json`).
+- `export/`: flattened SVGs of every appearance in both forms, and Dark, Tinted and Light PNGs at the DS-10 sizes (Light
+  for the DMG, website and documents).
+
+Icon Composer bundles have no per-size layers, so where macOS 26 draws the icon from `Assets.car` (Dock, Finder,
+Cmd-Tab) it scales the full mark down; the small form (DS-08) is in `AppIcon.icns`, the exports and the sidebar.
+
 Concepts B (hull and keel) and C (keel monogram) are kept on the icon canvas for reference only.
 
 ## Screens

@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1024" height="1024" viewBox="0 0 1024 1024">
+<defs>
+<filter id="filter-remove-color" x="0%" y="0%" width="100%" height="100%">
+<feColorMatrix color-interpolation-filters="sRGB" values="0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1 0" />
+</filter>
+<linearGradient id="linear-pattern-0" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="1" gradientTransform="matrix(824, 0, 0, 824, 100, 100)">
+<stop offset="0" stop-color="rgb(18.039216%, 18.039216%, 18.823529%)" stop-opacity="1"/>
+<stop offset="1" stop-color="rgb(10.196078%, 10.196078%, 10.588235%)" stop-opacity="1"/>
+</linearGradient>
+<linearGradient id="linear-pattern-1" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="1" gradientTransform="matrix(824, 0, 0, 824, 100, 100)">
+<stop offset="0" stop-color="rgb(100%, 100%, 100%)" stop-opacity="0.08"/>
+<stop offset="0.55" stop-color="rgb(100%, 100%, 100%)" stop-opacity="0"/>
+</linearGradient>
+<mask id="mask-0">
+<g filter="url(#filter-remove-color)">
+<rect x="-102.4" y="-102.4" width="1228.8" height="1228.8" fill="rgb(0%, 0%, 0%)" fill-opacity="0.4"/>
+</g>
+</mask>
+<clipPath id="clip-0">
+<rect x="0" y="0" width="1024" height="1024"/>
+</clipPath>
+<g id="source-13" clip-path="url(#clip-0)">
+<path fill-rule="nonzero" fill="rgb(0%, 0%, 0%)" fill-opacity="1" d="M 299 302 L 725 302 C 745.433594 302 762 318.566406 762 339 C 762 359.433594 745.433594 376 725 376 L 299 376 C 278.566406 376 262 359.433594 262 339 C 262 318.566406 278.566406 302 299 302 Z M 299 302 "/>
+<path fill-rule="nonzero" fill="rgb(0%, 0%, 0%)" fill-opacity="1" d="M 349 404 L 675 404 C 695.433594 404 712 420.566406 712 441 C 712 461.433594 695.433594 478 675 478 L 349 478 C 328.566406 478 312 461.433594 312 441 C 312 420.566406 328.566406 404 349 404 Z M 349 404 "/>
+<path fill-rule="nonzero" fill="rgb(0%, 0%, 0%)" fill-opacity="1" d="M 409 506 L 615 506 C 635.433594 506 652 522.566406 652 543 C 652 563.433594 635.433594 580 615 580 L 409 580 C 388.566406 580 372 563.433594 372 543 C 372 522.566406 388.566406 506 409 506 Z M 409 506 "/>
+<path fill-rule="nonzero" fill="rgb(0%, 0%, 0%)" fill-opacity="1" d="M 484 580 L 540 580 L 528 726 L 496 726 Z M 484 580 "/>
+<path fill-rule="nonzero" fill="rgb(0%, 0%, 0%)" fill-opacity="1" d="M 608 736 C 608 752.570312 565.019531 766 512 766 C 458.980469 766 416 752.570312 416 736 C 416 719.429688 458.980469 706 512 706 C 565.019531 706 608 719.429688 608 736 Z M 608 736 "/>
+</g>
+<linearGradient id="linear-pattern-2" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="1" gradientTransform="matrix(500, 0, 0, 74, 262, 288)">
+<stop offset="0" stop-color="rgb(94.901961%, 94.901961%, 95.686275%)" stop-opacity="1"/>
+<stop offset="1" stop-color="rgb(78.823529%, 78.823529%, 80.784314%)" stop-opacity="1"/>
+</linearGradient>
+<linearGradient id="linear-pattern-3" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="1" gradientTransform="matrix(400, 0, 0, 74, 312, 390)">
+<stop offset="0" stop-color="rgb(94.901961%, 94.901961%, 95.686275%)" stop-opacity="1"/>
+<stop offset="1" stop-color="rgb(78.823529%, 78.823529%, 80.784314%)" stop-opacity="1"/>
+</linearGradient>
+<linearGradient id="linear-pattern-4" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="1" gradientTransform="matrix(280, 0, 0, 74, 372, 492)">
+<stop offset="0" stop-color="rgb(94.901961%, 94.901961%, 95.686275%)" stop-opacity="1"/>
+<stop offset="1" stop-color="rgb(78.823529%, 78.823529%, 80.784314%)" stop-opacity="1"/>
+</linearGradient>
+<linearGradient id="linear-pattern-5" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="1" gradientTransform="matrix(56, 0, 0, 146, 484, 566)">
+<stop offset="0" stop-color="rgb(94.901961%, 94.901961%, 95.686275%)" stop-opacity="1"/>
+<stop offset="1" stop-color="rgb(78.823529%, 78.823529%, 80.784314%)" stop-opacity="1"/>
+</linearGradient>
+<linearGradient id="linear-pattern-6" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="1" gradientTransform="matrix(192, 0, 0, 60, 416, 692)">
+<stop offset="0" stop-color="rgb(94.901961%, 94.901961%, 95.686275%)" stop-opacity="1"/>
+<stop offset="1" stop-color="rgb(78.823529%, 78.823529%, 80.784314%)" stop-opacity="1"/>
+</linearGradient>
+</defs>
+<path fill-rule="nonzero" fill="url(#linear-pattern-0)" d="M 286 100 L 738 100 C 840.726562 100 924 183.273438 924 286 L 924 738 C 924 840.726562 840.726562 924 738 924 L 286 924 C 183.273438 924 100 840.726562 100 738 L 100 286 C 100 183.273438 183.273438 100 286 100 Z M 286 100 "/>
+<path fill-rule="nonzero" fill="url(#linear-pattern-1)" d="M 286 100 L 738 100 C 840.726562 100 924 183.273438 924 286 L 924 738 C 924 840.726562 840.726562 924 738 924 L 286 924 C 183.273438 924 100 840.726562 100 738 L 100 286 C 100 183.273438 183.273438 100 286 100 Z M 286 100 "/>
+<path fill="none" stroke-width="2" stroke-linecap="butt" stroke-linejoin="miter" stroke="rgb(100%, 100%, 100%)" stroke-opacity="0.08" stroke-miterlimit="4" d="M 286 100.5 L 738 100.5 C 840.449219 100.5 923.5 183.550781 923.5 286 L 923.5 738 C 923.5 840.449219 840.449219 923.5 738 923.5 L 286 923.5 C 183.550781 923.5 100.5 840.449219 100.5 738 L 100.5 286 C 100.5 183.550781 183.550781 100.5 286 100.5 Z M 286 100.5 "/>
+<g mask="url(#mask-0)">
+<use xlink:href="#source-13"/>
+</g>
+<path fill-rule="nonzero" fill="url(#linear-pattern-2)" d="M 299 288 L 725 288 C 745.433594 288 762 304.566406 762 325 C 762 345.433594 745.433594 362 725 362 L 299 362 C 278.566406 362 262 345.433594 262 325 C 262 304.566406 278.566406 288 299 288 Z M 299 288 "/>
+<path fill-rule="nonzero" fill="url(#linear-pattern-3)" d="M 349 390 L 675 390 C 695.433594 390 712 406.566406 712 427 C 712 447.433594 695.433594 464 675 464 L 349 464 C 328.566406 464 312 447.433594 312 427 C 312 406.566406 328.566406 390 349 390 Z M 349 390 "/>
+<path fill-rule="nonzero" fill="url(#linear-pattern-4)" d="M 409 492 L 615 492 C 635.433594 492 652 508.566406 652 529 C 652 549.433594 635.433594 566 615 566 L 409 566 C 388.566406 566 372 549.433594 372 529 C 372 508.566406 388.566406 492 409 492 Z M 409 492 "/>
+<path fill-rule="nonzero" fill="url(#linear-pattern-5)" d="M 484 566 L 540 566 L 528 712 L 496 712 Z M 484 566 "/>
+<path fill-rule="nonzero" fill="url(#linear-pattern-6)" d="M 608 722 C 608 738.570312 565.019531 752 512 752 C 458.980469 752 416 738.570312 416 722 C 416 705.429688 458.980469 692 512 692 C 565.019531 692 608 705.429688 608 722 Z M 608 722 "/>
+</svg>

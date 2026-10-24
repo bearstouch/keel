@@ -5,6 +5,7 @@
   "minimumMacOS": "14.0",
   "architectures": ["arm64", "x86_64"],
   "packageFormat": "dmg",
-  "artifacts": ["Keel.app/Contents/MacOS/Keel", "Keel.app/Contents/Helpers/keel-askpass"],
+  "iconName": "AppIcon",
+  "artifacts": ["Keel.app/Contents/MacOS/Keel", "Keel.app/Contents/Helpers/keel-askpass", "Keel.app/Contents/Resources/Assets.car", "Keel.app/Contents/Resources/AppIcon.icns"],
   "dependencies": []
 }

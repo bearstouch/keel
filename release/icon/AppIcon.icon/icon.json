@@ -1,0 +1,25 @@
+{
+  "fill-specializations" : [
+    { "value" : { "linear-gradient" : [ "srgb:0.91765,0.29020,0.24314,1.00000", "srgb:0.70196,0.15294,0.11765,1.00000" ] } },
+    { "appearance" : "dark", "value" : { "linear-gradient" : [ "srgb:0.22745,0.22745,0.23529,1.00000", "srgb:0.08627,0.08627,0.09020,1.00000" ] } },
+    { "appearance" : "tinted", "value" : { "linear-gradient" : [ "srgb:0.18039,0.18039,0.18824,1.00000", "srgb:0.10196,0.10196,0.10588,1.00000" ] } }
+  ],
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "image-name" : "mark.svg",
+          "name" : "mark",
+          "position" : { "scale" : 1.24272, "translation-in-points" : [ 0, 0 ] },
+          "fill-specializations" : [
+            { "appearance" : "dark", "value" : { "linear-gradient" : [ "srgb:1.00000,0.47843,0.42353,1.00000", "srgb:0.87843,0.22353,0.17255,1.00000" ] } },
+            { "appearance" : "tinted", "value" : { "linear-gradient" : [ "srgb:0.94902,0.94902,0.95686,1.00000", "srgb:0.78824,0.78824,0.80784,1.00000" ] } }
+          ]
+        }
+      ],
+      "shadow" : { "kind" : "neutral", "opacity" : 0.28 },
+      "translucency" : { "enabled" : false, "value" : 0.5 }
+    }
+  ],
+  "supported-platforms" : { "squares" : [ "macOS" ] }
+}
