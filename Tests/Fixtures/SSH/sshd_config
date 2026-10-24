@@ -1,0 +1,11 @@
+Port 22
+HostKey /etc/ssh/keel_host_key
+AuthorizedKeysFile /etc/ssh/keel_authorized_keys
+PidFile /run/sshd.pid
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+AllowTcpForwarding yes
+AllowStreamLocalForwarding no
+X11Forwarding no
+StrictModes no

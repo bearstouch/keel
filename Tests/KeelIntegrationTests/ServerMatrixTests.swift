@@ -1,0 +1,285 @@
+import Foundation
+import KeelCore
+import KeelRESP
+import XCTest
+
+/// KEEL-048 AC1 + AC2: every engine of the container matrix (Redis 6.0 – 8.x, Valkey 7.2 – 9.x, Dragonfly 1.x) through
+/// Keel's own code paths — Test Connection's handshake and detection, the SCAN browser, each core editor's load and
+/// guarded save, the console and the bulk delete — and the Redis 5 container refused. Run by
+/// `scripts/integration-matrix.py`; each server's failures are reported under its name and don't stop the others.
+final class ServerMatrixTests: XCTestCase {
+    private var matrix = IntegrationMatrix(servers: [])
+    private let context = DataContext(profile: MatrixConnections.profile)
+
+    override func setUpWithError() throws { matrix = try IntegrationMatrix.current() }
+
+    /// Runs `body` once per server; a thrown error fails that server only, named in the message.
+    private func forEachServer(_ body: (MatrixServer, DataCommandService) async throws -> Void) async {
+        for server in matrix.servers {
+            let service = DataCommandService(session: MatrixConnections.session(MatrixConnections.tcp(server.port)))
+            do { try await body(server, service) } catch { XCTFail("\(server.name): \(error)") }
+            await service.session.closeAll()
+        }
+    }
+
+    // MARK: - Connect, detect, browse
+
+    func testConnectDetectBrowsePerServer() async {
+        await forEachServer { server, service in
+            // Test Connection (FR-CN10): handshake, PING, INFO server, detection (INT-02).
+            let tested = await ConnectionTester().test(ConnectionSettings(name: server.name, host: IntegrationMatrix.host, port: server.port), password: nil, profileID: nil)
+            let identity = try tested.get().identity
+            XCTAssertEqual(identity.kind, server.kind, server.name)
+            XCTAssertEqual(identity.version, ServerVersion(server.version), "\(server.name) reports \(identity.displayName)")
+            XCTAssertEqual(identity.mode, .standalone, server.name)
+
+            // Browse (FR-KB01): SCAN-only paging with the pattern filter finds exactly the keys made here, in a tree.
+            let prefix = MatrixConnections.prefix("browse")
+            let names = (0..<25).map { "\(prefix)users:\($0)" } + ["\(prefix)orders:1", "\(prefix)plain"]
+            for name in names {
+                let outcome = try await NewKey.create(bytes(name), .string(bytes("v")), service: service, context: context)
+                XCTAssertEqual(outcome, .created, name)
+            }
+            let index = KeyIndex(service: service, context: context, configuration: KeyIndexConfiguration(pageSize: 10, filter: KeyFilter(pattern: prefix + "*")))
+            let status = await index.autoPage()
+            XCTAssertEqual(status.phase, .complete, "\(server.name): \(status)")
+            let count = await index.count
+            let listed = await index.keys(in: 0..<count).map(utf8Text)
+            XCTAssertEqual(Set(listed), Set(names), server.name)
+            XCTAssertEqual(listed.count, names.count, "\(server.name): SCAN duplicates are dropped")
+            // Opening a row reads its header: type, PTTL and length side by side.
+            let header = await KeyHeader.load(key: bytes(names[0]), type: .string, service: service, context: context)
+            XCTAssertEqual(header.length, 1, server.name)
+            XCTAssertEqual(header.ttlMilliseconds, nil, "\(server.name): no TTL")
+            try await cleanUp(prefix, service)
+        }
+    }
+
+    // MARK: - Editors
+
+    /// One editor's round trip as the editor shell runs it: create, load, edit the draft, save the binding's writes in
+    /// `MULTI/EXEC` under its `WATCH` guard, load again. Returns the rows the server has after the save.
+    private func save(_ type: KeyType, key: Data, _ service: DataCommandService, edit: ([EditorRow]) -> [EditorRow]) async throws -> [EditorRow] {
+        let binding = try XCTUnwrap(EditorBinding.editor(for: type))
+        let loaded = try await binding.load(key, service, context)
+        let draft = edit(loaded.rows)
+        let writes = binding.writes(key, loaded.rows, draft)
+        XCTAssertFalse(writes.isEmpty, "\(type): the edit changes something")
+        let result = try await service.executeTransaction(writes, unchanged: binding.saveGuard?(key, loaded.rows, draft) ?? loaded.watch, context: context)
+        guard case .array(let replies) = result.reply else { throw IntegrationMatrix.Problem.invalid("\(type): EXEC replied \(result.reply)") }
+        XCTAssertFalse(replies.contains { $0.isError }, "\(type): \(replies)")
+        return try await binding.load(key, service, context).rows
+    }
+
+    /// Rows as `id: value` text; the first row wins if an id repeats.
+    private func textByID(_ rows: [EditorRow]) -> [String: String] {
+        Dictionary(rows.map { (utf8Text($0.id), utf8Text($0.value)) }, uniquingKeysWith: { a, _ in a })
+    }
+
+    func testEditorsPerServer() async {
+        await forEachServer { server, service in
+            let prefix = MatrixConnections.prefix("editors")
+            func key(_ name: String) -> Data { bytes(prefix + name) }
+            func create(_ name: String, _ value: NewKey.Value) async throws {
+                let outcome = try await NewKey.create(key(name), value, service: service, context: context)
+                XCTAssertEqual(outcome, .created, "\(server.name): \(name)")
+            }
+            func pair(_ field: String, _ value: String) -> DataOperation.FieldValue { DataOperation.FieldValue(field: bytes(field), value: bytes(value)) }
+
+            // String (FR-ED01).
+            try await create("string", .string(bytes("before")))
+            let string = try await save(.string, key: key("string"), service) { rows in rows.map { EditorRow(id: $0.id, value: bytes("after")) } }
+            XCTAssertEqual(string.map(\.value), [bytes("after")], server.name)
+
+            // Hash (FR-ED02): change one field, delete one, add one.
+            try await create("hash", .hash([pair("a", "1"), pair("b", "2")]))
+            let hash = try await save(.hash, key: key("hash"), service) { rows in
+                HashEditor.delete(bytes("b"), from: rows.map { $0.id == bytes("a") ? EditorRow(id: $0.id, value: bytes("10")) : $0 })
+                    + [EditorRow(id: bytes("c"), value: bytes("3"))]
+            }
+            XCTAssertEqual(textByID(hash), ["a": "10", "c": "3"], server.name)
+
+            // List (FR-ED03): edit an item in place, then a push runs at once under the length guard.
+            try await create("list", .list(["x", "y", "z"].map(bytes)))
+            let list = try await save(.list, key: key("list"), service) { rows in rows.map { ListEditor.index(of: $0.id) == 1 ? EditorRow(id: $0.id, value: bytes("Y")) : $0 } }
+            XCTAssertEqual(list.map { utf8Text($0.value) }, ["x", "Y", "z"], server.name)
+            let push = ListEditor.push(bytes("w"), key: key("list"), atHead: false)
+            _ = try await service.executeTransaction(push.writes, unchanged: push.watch, context: context)
+            let pushed = try await ListEditor.load(key: key("list"), service: service, context: context).rows
+            XCTAssertEqual(pushed.map { utf8Text($0.value) }, ["x", "Y", "z", "w"], server.name)
+
+            // Set (FR-ED04): a removal is saved from the draft; "+ Add member" runs at once.
+            try await create("set", .set(["m1", "m2"].map(bytes)))
+            let set = try await save(.set, key: key("set"), service) { rows in rows.filter { $0.id != bytes("m1") } }
+            XCTAssertEqual(set.map { utf8Text($0.id) }, ["m2"], server.name)
+            let member = try await service.executeTransaction(SetEditor.add(bytes("m3"), key: key("set")), unchanged: nil, context: context)
+            XCTAssertEqual(SetEditor.addOutcome(member.reply), .added, "\(server.name): \(member.reply)")
+            let members = try await SetEditor.load(key: key("set"), service: service, context: context).rows
+            XCTAssertEqual(Set(members.map { utf8Text($0.id) }), ["m2", "m3"], server.name)
+
+            // Sorted set (FR-ED05): a score change reorders; the page read uses ZRANGE BYSCORE or its probed fallback (6.0).
+            try await create("zset", .sortedSet([.init(score: 1, member: bytes("low")), .init(score: 2, member: bytes("high"))]))
+            let zset = try await save(.zset, key: key("zset"), service) { rows in
+                rows.map { $0.id == bytes("low") ? SortedSetEditor.row($0.id, score: 5) : $0 }
+            }
+            XCTAssertEqual(zset.map { utf8Text($0.id) }, ["high", "low"], server.name)
+            XCTAssertEqual(zset.last.flatMap(SortedSetEditor.score), 5, server.name)
+
+            // Stream (FR-ED06): entries are appended with Add entry (XADD *), never edited; the editor lists newest first.
+            try await create("stream", .stream(id: StreamEditor.autoID, fields: [pair("event", "created")]))
+            let added = try await service.executeTransaction(
+                StreamEditor.add(id: StreamEditor.autoID, fields: [pair("event", "paid")], key: key("stream")), unchanged: nil, context: context)
+            XCTAssertNotNil(StreamEditor.addedID(added.reply), "\(server.name): \(added.reply)")
+            let stream = try await StreamEditor.load(key: key("stream"), service: service, context: context).rows
+            XCTAssertEqual(stream.compactMap(StreamEditor.fields).map { $0.map { utf8Text($0.value) } }, [["paid"], ["created"]], server.name)
+
+            // A guarded save loses to a change made after the load: CONFLICT, and nothing is written (FR-ED10).
+            let binding = try XCTUnwrap(EditorBinding.editor(for: .string))
+            let stale = try await binding.load(key("string"), service, context)
+            _ = try await service.execute(.operation(.stringSet(key: key("string"), value: bytes("elsewhere"), keepTTL: true)), origin: .editor, context: context)
+            let draft = [EditorRow(id: stale.rows[0].id, value: bytes("mine"))]
+            do {
+                _ = try await service.executeTransaction(binding.writes(key("string"), stale.rows, draft), unchanged: stale.watch, context: context)
+                XCTFail("\(server.name): a stale save must conflict")
+            } catch let error as DataCommandError { XCTAssertEqual(error, .conflict, server.name) }
+            let after = try await binding.load(key("string"), service, context).rows.map(\.value)
+            XCTAssertEqual(after, [bytes("elsewhere")], server.name)
+            try await cleanUp(prefix, service)
+        }
+    }
+
+    // MARK: - Console
+
+    func testConsolePerServer() async {
+        await forEachServer { server, service in
+            let prefix = MatrixConnections.prefix("console")
+            let console = ConsoleSession(service: service, profile: MatrixConnections.profile, database: 0, address: "\(IntegrationMatrix.host):\(server.port)")
+            func lines(_ outcome: ConsoleOutcome) -> [String] {
+                guard case .printed(let lines) = outcome else { return ["unexpected \(outcome)"] }
+                return lines.map(\.text)
+            }
+            /// Runs one console line and checks what it printed.
+            func expect(_ arguments: [Data], _ expected: [String], _ message: String = "", confirmation: CommandConfirmation? = nil) async {
+                let printed = lines(await console.run(arguments, confirmation: confirmation))
+                XCTAssertEqual(printed, expected, "\(server.name) \(message)")
+            }
+            await expect(words("PING"), ["PONG"])
+            await expect(words("SET", prefix + "a", "1"), ["OK"])
+            await expect(words("SET", prefix + "b", "2"), ["OK"])
+            await expect(words("GET", prefix + "a"), ["\"1\""])
+            // An unknown command is sent as typed (after Keel's notice) and the server's error printed.
+            let unknown = lines(await console.run(words("NOSUCHCOMMAND")))
+            XCTAssertEqual(unknown.last?.hasPrefix("(error) ERR unknown command"), true, "\(server.name): \(unknown)")
+
+            // SELECT is the console's own: its prompt follows, and the browser's database doesn't move.
+            await expect(words("SELECT", "1"), ["OK"])
+            let prompt = await console.prompt
+            XCTAssertEqual(prompt, "\(IntegrationMatrix.host):\(server.port)[1]> ", server.name)
+            await expect(words("GET", prefix + "a"), ["(nil)"], "\(server.name): db1 doesn't have db0's key")
+            _ = await console.run(words("SELECT", "0"))
+
+            // Multi-key DEL asks for the typed key count first and sends nothing until confirmed (FR-SF04).
+            let delete = words("DEL", prefix + "a", prefix + "b")
+            guard case .needsConfirmation(let request, _) = await console.run(delete) else { return XCTFail("\(server.name): multi-key DEL must ask first") }
+            XCTAssertEqual(request.typedText, "2", server.name)
+            await expect(words("EXISTS", prefix + "a", prefix + "b"), ["(integer) 2"], "\(server.name): nothing was deleted yet")
+            let confirmation = CommandConfirmation(scope: .keys(Set(delete.dropFirst())), database: 0)
+            await expect(delete, ["(integer) 2"], confirmation: confirmation)
+            await console.close()
+        }
+    }
+
+    // MARK: - Bulk delete
+
+    func testBulkDeletePerServer() async {
+        await forEachServer { server, service in
+            let prefix = MatrixConnections.prefix("bulk")
+            let doomed = (0..<120).map { bytes("\(prefix)tmp:\($0)") }, kept = bytes("\(prefix)keep")
+            for key in doomed + [kept] { _ = try await NewKey.create(key, .string(bytes("v")), service: service, context: context) }
+
+            let pattern = bytes("\(prefix)tmp:*")
+            let job = try BulkDeleteJob(pattern: pattern, throttle: nil, service: service, profile: MatrixConnections.profile, database: 0)
+            let sample = await job.sample()
+            XCTAssertFalse(sample.keys.isEmpty, "\(server.name): Preview matches finds keys")
+            let report = await job.run(confirmation: BulkDeleteJob.confirmation(for: pattern, database: 0))
+            await job.close()
+            XCTAssertTrue(report.isComplete, "\(server.name): \(report.summary)")
+            XCTAssertEqual(report.deleted, doomed.count, server.name)
+
+            // Only the matching keys went; the neighbour outside the pattern stays.
+            let remaining = try await service.execute(.raw(words("EXISTS") + doomed + [kept]), origin: .browser, context: context).reply
+            XCTAssertEqual(remaining, .integer(1), server.name)
+            try await cleanUp(prefix, service)
+        }
+    }
+
+    // MARK: - ACL
+
+    /// NFR-QA03's restricted ACL user: a user without `@write` connects, detects and browses; a write comes back as the
+    /// server's `NOPERM` and changes nothing.
+    func testRestrictedACLUserPerServer() async {
+        await forEachServer { server, service in
+            let user = "keel-matrix-reader", password = "keel-matrix-pw"
+            // The fixture user is made over a plain admin connection: setting up the server isn't one of Keel's paths.
+            // No `reset` rule: Dragonfly rejects it ("Unrecognized parameter RESET"), and each container starts fresh.
+            let created = try await admin(server.port, words("ACL", "SETUSER", user, "on", ">" + password, "~*", "+@all", "-@write"))
+            XCTAssertEqual(created, .simpleString(bytes("OK")), "\(server.name): ACL SETUSER")
+            let prefix = MatrixConnections.prefix("acl"), key = bytes("\(prefix)k")
+            _ = try await NewKey.create(key, .string(bytes("original")), service: service, context: context)
+
+            let settings = ConnectionSettings(name: server.name, host: IntegrationMatrix.host, port: server.port, username: user)
+            let tested = await ConnectionTester().test(settings, password: bytes(password), profileID: nil)
+            XCTAssertEqual(try tested.get().identity.kind, server.kind, server.name)
+
+            let reader = DataCommandService(session: MatrixConnections.session(MatrixConnections.tcp(server.port), username: user, password: password))
+            let index = KeyIndex(service: reader, context: context, configuration: KeyIndexConfiguration(filter: KeyFilter(pattern: prefix + "*")))
+            let status = await index.autoPage()
+            XCTAssertEqual(status.loadedCount, 1, "\(server.name): \(status)")
+            let write = try await reader.execute(.operation(.stringSet(key: key, value: bytes("changed"), keepTTL: true)), origin: .editor, context: context).reply
+            XCTAssertTrue(write.errorText?.hasPrefix("NOPERM") == true, "\(server.name): \(write)")
+            let value = try await service.execute(.operation(.get(key: key)), origin: .editor, context: context).reply
+            XCTAssertEqual(value, .bulkString(bytes("original")), server.name)
+            await reader.session.closeAll()
+            _ = try await admin(server.port, words("ACL", "DELUSER", user))
+            try await cleanUp(prefix, service)
+        }
+    }
+
+    // MARK: - Minimum version
+
+    /// AC2: Redis 5 is refused at detection with `UNSUPPORTED_SERVER`, naming the minimum.
+    func testRedis5Refused() async throws {
+        let port = try matrix.refusedPort ?? IntegrationMatrix.port("KEEL_INTEGRATION_REFUSED_PORT")
+        let result = await ConnectionTester().test(ConnectionSettings(name: "redis-5", host: IntegrationMatrix.host, port: port), password: nil, profileID: nil)
+        guard case .failure(let failure) = result else { return XCTFail("Redis 5 connected: \(result)") }
+        XCTAssertEqual(failure.category, .unsupportedServer)
+        XCTAssertEqual(failure.category.rawValue, "UNSUPPORTED_SERVER")
+        XCTAssertTrue(failure.message.contains("6.0") && failure.message.contains("5.0"), failure.message)
+    }
+
+    // MARK: - Helpers
+
+    private func admin(_ port: UInt16, _ arguments: [Data]) async throws -> RESPValue {
+        let connection = RedisConnection(endpoint: MatrixConnections.tcp(port))
+        try await connection.connect()
+        defer { Task { await connection.close() } }
+        return try await connection.send(arguments)
+    }
+
+    /// Removes this test's keys the way the app would: the bulk delete over the prefix.
+    private func cleanUp(_ prefix: String, _ service: DataCommandService) async throws {
+        let report = try await MatrixConnections.deleteAll(under: prefix, service)
+        if !report.isComplete { throw IntegrationMatrix.Problem.invalid("clean-up: \(report.summary)") }
+    }
+}
+
+extension RESPValue {
+    fileprivate var isError: Bool { errorText != nil }
+
+    fileprivate var errorText: String? {
+        switch self {
+        case .error(let text), .blobError(let text): return utf8Text(text)
+        default: return nil
+        }
+    }
+}

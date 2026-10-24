@@ -36,7 +36,7 @@ swift format lint --strict -r Sources Tests ThirdParty    # lint: must print not
 swift run Keel                                 # run the app (state: com.bearstouch.keel.dev)
 swift run Keel --fixture                       # fresh temporary state folder
 swift run Keel --state-directory /abs/path     # separate dev state directory
-KEEL_INTEGRATION=1 swift test --filter KeelIntegrationTests   # container matrix; real cases land with KEEL-048
+python3 -I scripts/integration-matrix.py [--servers redis-7.4,valkey-9.x] [--filter ServerMatrixTests]   # container matrix (Docker); evidence in .build/integration/
 python3 -I scripts/generate-command-catalog.py --redis DIR VER --valkey DIR VER --check DIR VER   # bundled command catalog from src/commands sources
 python3 -I scripts/generate-design-tokens.py [--check]   # design-token fixture (Tests/Fixtures/Design) from specs/08-design.md
 python3 -I scripts/capture-console-goldens.py --redis-server PATH --redis-cli PATH   # console goldens (Tests/Fixtures/Console)

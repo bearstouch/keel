@@ -214,6 +214,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
   value page and index memory; evidence goes to `.build/bench/evidence.json`, and a missed NFR target or a regression
   of more than 20% against `release/bench-baseline.json` fails the run. XCTest performance tests cover 1M-key
   ingestion, tree rebuild, huge-value first pages and a 10,000-element console reply (KEEL-047).
+- Integration matrix: `scripts/integration-matrix.py` runs `KeelIntegrationTests` against Redis 6.0, 6.2, 7.4, 8.x,
+  Valkey 7.2, 8.x, 9.x and Dragonfly 1.x containers pinned by digest, plus TLS (custom CA, client certificate), a
+  restricted ACL user and an sshd bastion; per server it covers connect and detection, browsing, each editor, the
+  console and the bulk delete, and checks that Redis 5 is refused with `UNSUPPORTED_SERVER`. Ports are published on
+  loopback only, and the new CI `integration` job requires it (KEEL-048).
 
 ### Removed
 

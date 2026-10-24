@@ -5,19 +5,22 @@ import KeelRESP
 import KeelSSH
 import XCTest
 
-/// KEEL-009 acceptance checks through a real `/usr/bin/ssh`. Needs `KEEL_INTEGRATION=1` and the fixture from
-/// `Tests/Fixtures/SSH/serve.sh` (folder in `KEEL_INTEGRATION_SSH_FIXTURE`): an unprivileged sshd on 22422 with Redis
-/// behind it on 26399. KEEL-048's sshd container replaces the script.
+/// KEEL-009 acceptance checks through a real `/usr/bin/ssh`. Needs `KEEL_INTEGRATION=1` and an sshd fixture (folder in
+/// `KEEL_INTEGRATION_SSH_FIXTURE`): KEEL-048's sshd container from `scripts/integration-matrix.py` (ports in
+/// `KEEL_INTEGRATION_SSH_PORT` / `KEEL_INTEGRATION_SSH_REDIS_PORT`), or by hand `Tests/Fixtures/SSH/serve.sh`, an
+/// unprivileged sshd on 22422 with Redis behind it on 26399 (the defaults).
 ///
 /// The fixture's host key is pinned in its own known_hosts, so the test launcher adds `-F <fixture>/client_config`
 /// in front of Keel's arguments; the user's `~/.ssh` is never read or written. Keel itself never adds options.
 final class TunnelIntegrationTests: XCTestCase {
-    private var fixture = ""
+    private var fixture = "", sshPort = 22_422, redisPort: UInt16 = 26_399
 
     override func setUpWithError() throws {
         let environment = ProcessInfo.processInfo.environment
         try XCTSkipUnless(IntegrationGate.isEnabled(environment), "set KEEL_INTEGRATION=1")
-        fixture = try XCTUnwrap(environment["KEEL_INTEGRATION_SSH_FIXTURE"], "start Tests/Fixtures/SSH/serve.sh and pass its folder")
+        fixture = try XCTUnwrap(environment["KEEL_INTEGRATION_SSH_FIXTURE"], "run scripts/integration-matrix.py, or start Tests/Fixtures/SSH/serve.sh and pass its folder")
+        sshPort = Int(environment["KEEL_INTEGRATION_SSH_PORT"] ?? "") ?? sshPort
+        redisPort = UInt16(environment["KEEL_INTEGRATION_SSH_REDIS_PORT"] ?? "") ?? redisPort
     }
 
     private final class FixtureLauncher: TunnelProcessLauncher, @unchecked Sendable {
@@ -34,7 +37,7 @@ final class TunnelIntegrationTests: XCTestCase {
     }
 
     private func configuration(identity: String = "client_key") -> SSHTunnelConfiguration {
-        SSHTunnelConfiguration(destination: "127.0.0.1", port: 22_422, identityFile: fixture + "/" + identity, redisHost: "127.0.0.1", redisPort: 26_399)
+        SSHTunnelConfiguration(destination: "127.0.0.1", port: sshPort, identityFile: fixture + "/" + identity, redisHost: "127.0.0.1", redisPort: redisPort)
     }
 
     private func gone(_ pid: Int32, within seconds: Double) async -> Bool {
