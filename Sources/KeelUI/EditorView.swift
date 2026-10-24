@@ -52,7 +52,12 @@ struct EditorShell: View {
                     ? "Nothing was saved. Reload shows the server's value and drops your changes; Overwrite saves your changes over it."
                     : "Nothing was saved. Edits by index could now land on other items, so they can't be forced; Reload shows the server's value and drops your changes.")
         }
-        // FR-ED12: a normal confirmation for one key.
+        // FR-ED12: a normal confirmation for one key, from ⋯ → Delete… or ⌘⌫.
+        .onChange(of: session.requestsDelete, initial: true) { _, requested in
+            guard requested else { return }
+            session.requestsDelete = false
+            if session.canRunKeyAction { confirmsDelete = true }
+        }
         .alert("Delete “\(KeyDisplay.name(session.key))”?", isPresented: $confirmsDelete) {
             Button("Delete", role: .destructive) { Task { keyActionFailure = await session.delete() } }
             Button("Cancel", role: .cancel) {}

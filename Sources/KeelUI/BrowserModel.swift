@@ -41,6 +41,8 @@ public final class BrowserModel: ObservableObject {
 
     /// The viewer choice per key pattern, for every key this tab opens (03 → Value editors).
     let viewerChoices = ValueViewerChoices()
+    /// Each key the editor opens, with its database: the palette's recent keys (FR-AP03, memory only).
+    var onKeyOpened: ((Data, Int) -> Void)?
 
     /// Bumped by every refresh and switch, so counts that land for an earlier one are dropped.
     private var countsRequest = 0
@@ -80,6 +82,14 @@ public final class BrowserModel: ObservableObject {
                 MainActor.assumeIsolated {
                     guard let self, self.isShown(in: window), self.canCreateKey else { return }
                     self.showsNewKey = true
+                }
+            })
+        observers.append(
+            center.addObserver(forName: KeyListCommands.deleteNotification, object: nil, queue: .main) { [weak self] note in
+                let window = note.object as? NSWindow
+                MainActor.assumeIsolated {
+                    guard let self, self.isShown(in: window) else { return }
+                    self.requestDelete()
                 }
             })
         observers.append(
@@ -213,7 +223,26 @@ public final class BrowserModel: ObservableObject {
             Task { await self.keyChanged(change, in: editor) }
         }
         self.editor = editor
+        onKeyOpened?(key, context.database)
         await editor.load()
+    }
+
+    /// The palette's recent key: selected in the list when loaded there, otherwise opened in the editor after the usual
+    /// presence check (a key gone since shows the missing-key notice).
+    public func reveal(_ key: Data) async {
+        await list.select(keyBytes: key)
+        // Loaded: the selection opens it. Not loaded (another page, filtered out): the list keeps it pending.
+        guard list.selectedKey == nil else { return }
+        presenceRequest += 1
+        let request = presenceRequest
+        let presence = await list.index.presence(of: key)
+        guard request == presenceRequest, list.selectedKey == nil else { return }
+        switch presence {
+        case .exists(let type): missingKey = nil; await open(key, type: type, request: request)
+        case .missing: missingKey = key; editor = nil
+        // A failed check changes nothing: the open editor, if any, stays.
+        case .failed: break
+        }
     }
 
     // MARK: - Key actions (FR-ED10, FR-ED12)
@@ -242,6 +271,18 @@ public final class BrowserModel: ObservableObject {
     }
 
     // MARK: - Multi-key delete (FR-KB11, FR-SF04)
+
+    /// Whether ⌘⌫ has something to delete: a multi-key selection on a writable profile, or the open key.
+    public var canDeleteSelection: Bool { !isReadOnly && (list.selectedKeys.count > 1 || editor?.canRunKeyAction == true) }
+
+    /// ⌘⌫: several selected keys get the typed confirmation, the open key the editor's normal one.
+    func requestDelete() {
+        if list.selectedKeys.count > 1 {
+            Task { await requestDeleteSelection() }
+        } else if let editor, editor.canRunKeyAction {
+            editor.requestsDelete = true
+        }
+    }
 
     /// ⌫ or Delete N Keys… on a selection of several keys: the typed confirmation listing them. Read-only profiles
     /// never ask (the policy would refuse every batch).

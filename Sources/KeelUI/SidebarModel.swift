@@ -34,6 +34,8 @@ public final class SidebarModel: ObservableObject {
 
     @Published public private(set) var document = ConnectionsDocument()
     @Published public var selectedProfileID: UUID?
+    /// View → Hide / Show Sidebar (⌃⌘S); per window and not saved.
+    @Published public var isHidden = false
     /// The last refused change, in one line; the view shows it until dismissed.
     @Published public var message: String?
 
@@ -288,7 +290,7 @@ public final class SidebarModel: ObservableObject {
         return ProductionChrome.windowTitle(name: profileName(tab.profileID), production: isProduction(tab.profileID))
     }
 
-    private func profile(_ id: UUID) -> ConnectionProfile? { document.profiles.first { $0.id == id } }
+    func profile(_ id: UUID) -> ConnectionProfile? { document.profiles.first { $0.id == id } }
     private func folder(_ id: UUID) -> ProfileFolder? { document.folders.first { $0.id == id } }
 
     /// Runs one store change, then shows the store's document. A refusal keeps the previous state and sets `message`.

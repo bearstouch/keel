@@ -12,21 +12,28 @@ public struct RootView: View {
     let sidebar: SidebarModel?
     /// Import / Export Connections (FR-CN14); nil in previews and tests.
     let transfer: ProfileTransferModel?
+    /// The window's command palette (FR-AP03); nil in previews and tests.
+    let palette: CommandPaletteModel?
 
-    public init(prompts: SSHPromptCenter? = nil, connections: ConnectionSheetPresenter? = nil, sidebar: SidebarModel? = nil, transfer: ProfileTransferModel? = nil) {
-        self.prompts = prompts; self.connections = connections; self.sidebar = sidebar; self.transfer = transfer
+    public init(
+        prompts: SSHPromptCenter? = nil, connections: ConnectionSheetPresenter? = nil, sidebar: SidebarModel? = nil, transfer: ProfileTransferModel? = nil,
+        palette: CommandPaletteModel? = nil
+    ) {
+        self.prompts = prompts; self.connections = connections; self.sidebar = sidebar; self.transfer = transfer; self.palette = palette
     }
 
     public var body: some View {
         HStack(spacing: 0) {
             if let sidebar {
-                SidebarView(model: sidebar)
+                SidebarSlot(sidebar: sidebar)
                 Detail(sidebar: sidebar, tabs: sidebar.tabs, connections: connections)
             } else {
                 EmptyState(hasProfiles: false, connections: connections)
             }
         }
         .background(Tokens.bg)
+        .overlay { if let palette { CommandPaletteOverlay(model: palette) } }
+        .environment(\.commandPalette, palette)
         .connectionSheet(connections)
         .profileTransfer(transfer)
         .sshPrompts(prompts)
@@ -35,6 +42,13 @@ public struct RootView: View {
     }
 
     public static let accessibilityLabel = "Keel, no connections yet"
+}
+
+/// The sidebar unless ⌃⌘S hid it.
+private struct SidebarSlot: View {
+    @ObservedObject var sidebar: SidebarModel
+
+    var body: some View { if !sidebar.isHidden { SidebarView(model: sidebar) } }
 }
 
 /// The window's tabs, or the empty state.
@@ -79,6 +93,8 @@ extension EnvironmentValues {
     /// False in every window but the one chosen to show the app-wide sheets (New Connection, SSH prompts, import),
     /// so a sheet never opens in several windows at once.
     @Entry var presentsSharedSheets = true
+    /// The window's command palette, for the toolbar's search button.
+    @Entry var commandPalette: CommandPaletteModel?
 }
 
 /// Sets `presentsSharedSheets` for one window from the app's choice (`AppModel.sheetWindowID`). Only the environment

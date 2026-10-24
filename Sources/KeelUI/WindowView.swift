@@ -43,6 +43,7 @@ struct WindowContent: View {
 struct ConnectionToolbar: View {
     @ObservedObject var sidebar: SidebarModel
     @ObservedObject var tabs: ConnectionTabs
+    @Environment(\.commandPalette) private var palette
 
     var body: some View {
         HStack(spacing: 16) {
@@ -61,13 +62,16 @@ struct ConnectionToolbar: View {
                 // The `Info` board puts the refresh button where the other modes have search.
                 ToolbarInfoRefresh(session: session)
             } else {
-                // ⌘K is the command palette (KEEL-043); the icon is in place and inactive until then.
-                Image(systemName: "magnifyingglass").font(.system(size: 14)).foregroundStyle(Tokens.muted)
-                    .frame(width: 30, height: 30)
-                    .opacity(0.5)
-                    .accessibilityLabel("Search, command palette ⌘K")
-                    .accessibilityAddTraits(.isButton)
-                    .accessibilityHint("Not available yet")
+                // The search icon opens the command palette (⌘K, FR-AP03).
+                Button {
+                    palette?.toggle()
+                } label: {
+                    Image(systemName: "magnifyingglass").font(.system(size: 14)).foregroundStyle(Tokens.muted).frame(width: 30, height: 30).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(palette == nil)
+                .help("Command Palette")
+                .accessibilityLabel("Search, command palette")
             }
         }
         .padding(.horizontal, 20)

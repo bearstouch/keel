@@ -161,6 +161,10 @@ Filter field (glob pattern) on `soft`: the magnifier is a menu that switches the
 
 Key title (mono) + type badge + `⋯`; one metadata line; field table (Field / Value) with the selected row in `selection` and changed rows marked by an accent dot; "+ Add field"; **value viewer** on `codeBg` with the element name, "✓ Valid JSON" and a **Text / JSON / Hex / Raw** switch; floating save bar only with unsaved changes. Read-only: lock + "Read-only" in the metadata line, no add/save.
 
+### Command palette
+
+A 560 px card on `sheet`, 64 px from the window's top, with a hairline border and a soft shadow: a 44 px search field (Inter 15, magnifier icon) over up to eight 36 px rows. A row is the title (Inter 13; JetBrains Mono for key names), the muted subtitle, then at the right the muted shortcut and kind ("Connection", "Tab", "Recent key", "Database", "Command", "Settings"). The highlighted row is on `selection`; nothing else is colored. Settings → Keyboard is a grouped list (one section per menu, then "Can't be changed" with lock icons) with the rejection message in `danger` beside an icon above **Restore Defaults**.
+
 ### Sheets and cards
 
 New Connection, typed confirmation (bulk delete, FLUSHDB, multi-key delete), bulk-delete progress. Each has a title, at most one sentence of explanation, the minimum fields, and two or three buttons with the primary on the right. The destructive button stays disabled until the typed text matches.

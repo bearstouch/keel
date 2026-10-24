@@ -394,6 +394,8 @@ public final class EditorSession: ObservableObject {
     }
 
     @Published public var requestedKeyAction: KeyActionRequest?
+    /// Key → Delete Selected Keys… (⌘⌫) with one key open: the shell shows its normal delete confirmation (FR-ED12).
+    @Published public var requestsDelete = false
 
     /// Set by the browser: a rename re-selects the key under its new name, a delete clears the editor.
     public var onKeyChange: ((KeyChange) -> Void)?
