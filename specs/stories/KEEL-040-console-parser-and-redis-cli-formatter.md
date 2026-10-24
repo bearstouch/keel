@@ -17,9 +17,9 @@ As a power user, I want the console to read and print commands exactly like redi
 
 ## Acceptance criteria
 
-- [ ] **AC1.** `SET k "a\x00b"` produces a 3-byte value.
-- [ ] **AC2.** Golden outputs match redis-cli 7.4 for the fixture command set.
-- [ ] **AC3.** Unbalanced quotes show an inline error and send nothing.
+- [x] **AC1.** `SET k "a\x00b"` produces a 3-byte value. *(Observed: `ConsoleTokenizerTests.testEscapes` and the wire frame `$3\r\na\0b` through `DataCommandService` in `testNulEscapeIsSentAsThreeBytes`.)*
+- [ ] **AC2.** Golden outputs match redis-cli 7.4 for the fixture command set. *(Observed against **redis-cli 7.2.1** (the local binary): all 37 RESP2 and 35 RESP3 cases match byte for byte. **Pending:** re-capture with a redis-cli 7.4 binary — `python3 -I scripts/capture-console-goldens.py --redis-server … --redis-cli …` — and re-run the tests; building 7.4 here wasn't permitted.)*
+- [ ] **AC3.** Unbalanced quotes show an inline error and send nothing. *(Observed in Core: `ConsoleParseError.unbalancedQuotes` with its inline message is thrown before any command exists. **Pending:** the inline display in the console view, KEEL-041.)*
 
 ## Unit tests
 

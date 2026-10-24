@@ -1,0 +1,12 @@
+1) 1) "negative"
+   2) (double) -2.25
+2) 1) "tiny"
+   2) (double) 0.000001
+3) 1) "one"
+   2) (double) 1
+4) 1) "one-and-half"
+   2) (double) 1.5
+5) 1) "huge"
+   2) (double) 1e+20
+6) 1) "infinite"
+   2) (double) inf
