@@ -16,6 +16,8 @@ public final class TabSession: ObservableObject, Identifiable {
     @Published public private(set) var browser: BrowserModel?
     /// The console, made the first time the tab shows Console mode on this connection (`openConsole()`).
     @Published public private(set) var console: ConsoleModel?
+    /// Info mode, made the first time the tab shows it on this connection (`openInfo()`).
+    @Published public private(set) var info: InfoModel?
     /// Value edits not yet saved (KEEL-027's editors set it); closing the tab or its window asks first (MAC-06).
     @Published public var hasUnsavedEdits = false
     /// Whether the connected session refuses writes (FR-SF01): the profile was read-only when it connected, or was made
@@ -85,7 +87,8 @@ public final class TabSession: ObservableObject, Identifiable {
     public func disconnect() async {
         attempt += 1
         let server = connected, console = console
-        connected = nil; browser = nil; self.console = nil; self.server = nil; databaseChanges = nil; editChanges = nil; hasUnsavedEdits = false; failure = nil
+        info?.shutdown()
+        connected = nil; browser = nil; self.console = nil; info = nil; self.server = nil; databaseChanges = nil; editChanges = nil; hasUnsavedEdits = false; failure = nil
         writesBlocked = nil; serverReadOnly = false
         set(.disconnected)
         await server?.service.observeWrites(nil)
@@ -109,6 +112,19 @@ public final class TabSession: ObservableObject, Identifiable {
         let database = browser?.database ?? 0
         let session = ConsoleSession(service: connected.service, profile: connected.safety, database: database)
         console = ConsoleModel(console: session, profileID: profileID, histories: histories, prompt: ConsoleSession.prompt(address: session.address, database: database))
+    }
+
+    /// The tab's Info mode (FR-SI01): `INFO` through the data path on the browser's connection and database. Browse on a
+    /// database row moves the browser there; the window switches the mode.
+    public func openInfo(browse: @escaping (Int) -> Void) {
+        guard info == nil, let connected, status == .connected else { return }
+        let model = InfoModel(service: connected.service, context: DataContext(profile: connected.safety, database: browser?.database ?? 0))
+        model.onBrowse = { [weak self] database in
+            browse(database)
+            guard let browser = self?.browser else { return }
+            Task { await browser.selectDatabase(database) }
+        }
+        info = model
     }
 
     /// Hides the "Writing to PRODUCTION" banner; it doesn't come back for this tab.

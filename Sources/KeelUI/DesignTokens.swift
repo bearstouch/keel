@@ -27,6 +27,9 @@ enum Tokens {
     static let segOn = Color(light: 0xFFFFFF, dark: 0x48484A)
     /// The selected segment's lift: a soft shadow in light, none in dark.
     static let segShadow = Color(nsColor: NSColor(name: nil) { $0.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? .clear : NSColor(srgbRed: 24 / 255, green: 33 / 255, blue: 47 / 255, alpha: 0.12) })
+    /// Info tiles and the memory bar's track (08 Design).
+    static let card = Color(light: 0xF4F7FA, dark: 0x262628)
+    static let track = Color(light: 0xDDE4EC, dark: 0x48484A)
     /// The value viewer's panel and its view switch track (08 Design → Editor).
     static let codeBg = Color(light: 0xF6F8FB, dark: 0x262628)
     static let segBg = Color(light: 0xE7ECF2, dark: 0x38383A)

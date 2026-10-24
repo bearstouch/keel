@@ -66,8 +66,8 @@ final class BrowserKeyspace: @unchecked Sendable {
     }
 }
 
-/// Answers each command frame at once with `answer(arguments)`.
-private final class FakeTransport: Transport, @unchecked Sendable {
+/// Answers each command frame at once with `answer(arguments)`; shared with `InfoRefreshTests`.
+final class FakeTransport: Transport, @unchecked Sendable {
     private let lock = NSLock()
     private var pending: [Data] = []
     private var receiver: CheckedContinuation<Result<Data, TransportError>, Never>?

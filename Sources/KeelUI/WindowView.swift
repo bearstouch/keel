@@ -24,7 +24,10 @@ struct WindowContent: View {
             if let strip = sidebar.productionStrip { ProductionStrip(text: strip) }
             if let tab = tabs.selected {
                 if let session = tabs.app?.session(tab.id) {
-                    TabContent(tab: tab, session: session, profileName: sidebar.profileName(tab.profileID)) { tabs.app?.connectIfNeeded(tab.id) }
+                    // Resolved when clicked: the tab may have moved to another window since Info mode opened.
+                    TabContent(tab: tab, session: session, profileName: sidebar.profileName(tab.profileID), browse: { [weak app = tabs.app, id = tab.id] _ in app?.window(containing: id)?.setMode(.browser) }) {
+                        tabs.app?.connectIfNeeded(tab.id)
+                    }
                 } else {
                     Disconnected(name: sidebar.profileName(tab.profileID), failure: nil, connect: nil)
                 }
@@ -47,19 +50,25 @@ struct ConnectionToolbar: View {
                 Text(sidebar.profileName(tab.profileID)).font(Tokens.interface(14, weight: .semibold)).foregroundStyle(Tokens.fg).lineLimit(1)
                 if let session = tabs.app?.session(tab.id) {
                     if tab.mode == .browser { ToolbarDatabase(session: session) }
+                    if tab.mode == .info { ToolbarServerVersion(session: session) }
                     ServerReadOnlyBadge(session: session)
                 }
             }
             Spacer(minLength: 0)
             ModeSwitch(mode: tabs.selected?.mode) { tabs.setMode($0) }
             Spacer(minLength: 0)
-            // ⌘K is the command palette (KEEL-043); the icon is in place and inactive until then.
-            Image(systemName: "magnifyingglass").font(.system(size: 14)).foregroundStyle(Tokens.muted)
-                .frame(width: 30, height: 30)
-                .opacity(0.5)
-                .accessibilityLabel("Search, command palette ⌘K")
-                .accessibilityAddTraits(.isButton)
-                .accessibilityHint("Not available yet")
+            if let tab = tabs.selected, tab.mode == .info, let session = tabs.app?.session(tab.id) {
+                // The `Info` board puts the refresh button where the other modes have search.
+                ToolbarInfoRefresh(session: session)
+            } else {
+                // ⌘K is the command palette (KEEL-043); the icon is in place and inactive until then.
+                Image(systemName: "magnifyingglass").font(.system(size: 14)).foregroundStyle(Tokens.muted)
+                    .frame(width: 30, height: 30)
+                    .opacity(0.5)
+                    .accessibilityLabel("Search, command palette ⌘K")
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityHint("Not available yet")
+            }
         }
         .padding(.horizontal, 20)
         .frame(height: 52)
@@ -73,6 +82,24 @@ private struct ToolbarDatabase: View {
 
     var body: some View {
         if let browser = session.browser { DatabasePicker(model: browser) }
+    }
+}
+
+/// FR-SI02: "Redis 7.4.1" beside the connection name in Info mode.
+private struct ToolbarServerVersion: View {
+    @ObservedObject var session: TabSession
+
+    var body: some View {
+        if let server = session.server { Text(server.displayName).font(Tokens.interface(12)).foregroundStyle(Tokens.muted).lineLimit(1) }
+    }
+}
+
+/// Info's refresh button, once the tab's Info mode exists; a fixed-size placeholder keeps the switch centered until then.
+private struct ToolbarInfoRefresh: View {
+    @ObservedObject var session: TabSession
+
+    var body: some View {
+        if let info = session.info { InfoRefreshButton(model: info) } else { Color.clear.frame(width: 30, height: 30) }
     }
 }
 
@@ -325,6 +352,8 @@ struct TabContent: View {
     let tab: ConnectionTab
     @ObservedObject var session: TabSession
     let profileName: String
+    /// Browse on an Info database row: the window shows the tab's Browser mode.
+    let browse: (Int) -> Void
     let connect: () -> Void
 
     var body: some View {
@@ -336,7 +365,8 @@ struct TabContent: View {
             case .console:
                 if let console = session.console { ConsolePane(console: console, session: session) } else { Color(nsColor: ConsoleTheme.background).onAppear { session.openConsole() } }
             case .info:
-                ModePlaceholder(mode: tab.mode)
+                // One identity per tab: switching between two tabs in Info mode must disappear one model and appear the other.
+                Group { if let info = session.info { InfoPane(model: info) } else { Tokens.bg.onAppear { session.openInfo(browse: browse) } } }.id(session.id)
             }
         case .connecting:
             VStack(spacing: 10) {
@@ -402,19 +432,5 @@ private struct Disconnected: View {
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .contain)
-    }
-}
-
-/// Info (KEEL-042) isn't built yet; the mode says so in one quiet line.
-private struct ModePlaceholder: View {
-    let mode: TabMode
-
-    var body: some View {
-        VStack(spacing: 6) {
-            Text(mode.title).font(Tokens.interface(14, weight: .semibold)).foregroundStyle(Tokens.fg)
-            Text("Not available in this build yet.").font(Tokens.interface(12.5)).foregroundStyle(Tokens.muted)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .accessibilityElement(children: .combine)
     }
 }

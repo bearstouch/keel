@@ -27,6 +27,7 @@ Keel's visual contract. The reference is the **Keel — Native calm** design can
 | `field` / `soft` | `#F1F4F8` | Inputs, filter, db picker, secondary buttons |
 | `segBg` | `#E7ECF2` | Viewer switch track |
 | `card` | `#F4F7FA` | Info tiles |
+| `track` | `#DDE4EC` | Info memory bar track |
 | `hair` / `hairSoft` | `#E3E8EE` / `#EEF2F6` | Separators / table rows |
 | `fg` / `muted` | `#18212F` / `#4E5B6D` | Text / secondary text |
 | `accent` / `onAccent` | `#C7302A` / `#FFFFFF` | Redis red (darkened from `#DC382D` for text contrast) |
@@ -49,7 +50,7 @@ Keel's visual contract. The reference is the **Keel — Native calm** design can
 | `card` / `codeBg` | `#262628` | Info tiles, value viewer |
 | `field` / `segBg` | `#38383A` | Inputs in sheets, viewer switch track |
 | `soft` | `#2C2C2E` | Filter, db picker |
-| `segOn` | `#48484A` | Selected segment |
+| `segOn` / `track` | `#48484A` | Selected segment, Info memory bar track |
 | `hair` / `hairSoft` | `#38383A` / `#2C2C2E` | Separators / table rows |
 | `fg` / `muted` | `#E5E5E7` / `#A1A1A6` | Text / secondary text |
 | `accent` / `onAccent` | `#FF6F61` / `#2A0B08` | Redis red for dark backgrounds |
