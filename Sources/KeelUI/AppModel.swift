@@ -28,10 +28,14 @@ public final class AppModel: ObservableObject {
     @Published public var sheetWindowID: UUID?
     /// Shows a window this model created by itself (a tab moved out to a new window). Set by the app delegate.
     public var presentWindow: ((ConnectionTabs) -> Void)?
+    /// Follows `ProfileStore.changes()` so open sessions see read-only and production changes (FR-SF01, FR-SF02).
+    private var watchingProfiles: Task<Void, Never>?
 
     public init(profiles: ProfileStore, connector: any SessionConnecting, persistence: Persistence<WindowsDocument>?) {
         self.profiles = profiles; self.connector = connector; self.persistence = persistence
     }
+
+    deinit { watchingProfiles?.cancel() }
 
     // MARK: - Launch
 
@@ -64,6 +68,7 @@ public final class AppModel: ObservableObject {
         if windows.isEmpty { result.append((newWindow(), nil)) }
         restored = writable
         save()
+        watchProfiles()
         // FR-CN15: only profiles with Reconnect on launch, and never one treated as production.
         for window in windows {
             for tab in window.tabs {
@@ -189,6 +194,23 @@ public final class AppModel: ObservableObject {
         for session in sessions.values where session.profileID == profileID { await session.disconnect() }
     }
 
+    /// Every saved profile change reaches the open sessions of that profile: read-only turned on locks them at once.
+    private func watchProfiles() {
+        guard watchingProfiles == nil else { return }
+        let store = profiles
+        watchingProfiles = Task { [weak self] in
+            for await document in await store.changes() {
+                guard let self else { return }
+                for session in self.sessions.values { await self.apply(document, to: session) }
+            }
+        }
+    }
+
+    private func apply(_ document: ConnectionsDocument, to session: TabSession) async {
+        guard let profile = document.profiles.first(where: { $0.id == session.profileID }) else { return }
+        await session.applyProfile(readOnly: profile.settings.readOnly, production: document.label(profile.settings.label).treatAsProduction)
+    }
+
     private func tab(_ id: UUID) -> ConnectionTab? { window(containing: id)?.tabs.first { $0.id == id } }
 
     @discardableResult
@@ -197,7 +219,13 @@ public final class AppModel: ObservableObject {
         let session = TabSession(id: tab.id, profileID: tab.profileID, connector: connector)
         let id = tab.id
         // Whichever window holds the tab now shows its status and saves its database.
-        session.onStatus = { [weak self] status in self?.window(containing: id)?.setStatus(status, for: id) }
+        session.onStatus = { [weak self, weak session] status in
+            self?.window(containing: id)?.setStatus(status, for: id)
+            // A profile saved while the tab was connecting was read before that save: bring the session up to date.
+            guard status == .connected, let self, let session else { return }
+            Task { await self.apply(await self.profiles.document, to: session) }
+        }
+        session.onChromeChange = { [weak self] in self?.statusChanged() }
         session.onDatabase = { [weak self] database in self?.window(containing: id)?.setDatabase(database, for: id) }
         sessions[tab.id] = session
         return session

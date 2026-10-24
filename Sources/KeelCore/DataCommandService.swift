@@ -237,6 +237,33 @@ public struct DataCommandResult: Sendable, Equatable {
     public var isUnknownCommand: Bool { safetyClass == .unknown }
 }
 
+/// What the data path tells its tab about writes (FR-SF07, 02 Architecture → server-enforced read-only).
+public enum WriteEvent: Sendable, Equatable {
+    /// A command that may change data passed the policy and is being sent.
+    case sent
+    /// The server refused a write because this user or server can't write (`NOPERM … permissions to run`, `READONLY`).
+    case serverRefused
+}
+
+/// Server replies that mean writes are refused by the server itself, not by Keel.
+public enum ServerReadOnly {
+    /// `READONLY You can't write against a read only replica.`, or an ACL refusal of the command itself (Redis 6:
+    /// `NOPERM this user has no permissions to run the 'set' command…`; 7+ and Valkey: `NOPERM User u has no permissions
+    /// to run the 'set' command`). A key-pattern refusal (`no permissions to access a key`) leaves other keys writable,
+    /// so it doesn't count. Nor does an ACL refusal of anything but a plain data write (`-@admin`, `-@dangerous` refuse
+    /// `CONFIG SET` or `FLUSHALL` while `SET` still runs): `of` is the refused command's class.
+    public static func refusesWrites(_ reply: RESPValue, of safetyClass: SafetyClass = .write) -> Bool {
+        let text: Data
+        switch reply {
+        case .error(let bytes), .blobError(let bytes): text = bytes
+        default: return false
+        }
+        let message = String(decoding: text.prefix(256), as: UTF8.self)
+        if message.hasPrefix("READONLY ") { return true }
+        return safetyClass == .write && message.hasPrefix("NOPERM ") && message.contains("permissions to run")
+    }
+}
+
 /// The single entry point for every server command — editors, browser, console and bulk jobs
 /// (02 Architecture → One data path). The policy decides before anything is written: a refused command opens no
 /// connection and sends no byte.
@@ -251,6 +278,10 @@ public actor DataCommandService {
 
     /// The session's FR-CN12 probes, made on first use (06 → Probes).
     private var probe: CapabilityProbe?
+    /// Set when the profile became read-only while the session was open: every later command is evaluated as read-only,
+    /// whatever context the caller still holds. One way: turning read-only off takes a new session (Reconnect).
+    public private(set) var isReadOnlyLocked = false
+    private var writeObserver: (@Sendable (WriteEvent) -> Void)?
 
     public init(session: ServerSession, catalog: CommandCatalog = .bundled) { self.session = session; self.catalog = catalog }
 
@@ -269,19 +300,38 @@ public actor DataCommandService {
         return (try? await probe.status(capability))?.isAvailable ?? false
     }
 
+    /// The profile was made read-only while this session is open (FR-SF01): from now on nothing that may write is sent.
+    public func lockReadOnly() { isReadOnlyLocked = true }
+
+    /// Tells the tab about writes sent and writes the server refused; one observer, replaced by the next.
+    public func observeWrites(_ observer: (@Sendable (WriteEvent) -> Void)?) { writeObserver = observer }
+
+    /// The safety facts a command is evaluated with: the caller's, made read-only by `lockReadOnly()`.
+    private func effective(_ profile: SafetyProfile) -> SafetyProfile {
+        var profile = profile
+        if isReadOnlyLocked { profile.readOnly = true }
+        return profile
+    }
+
+    /// Connection-state and streaming commands change no data, so they don't count as writes for the notice.
+    private static func changesData(_ safetyClass: SafetyClass) -> Bool { safetyClass.mayWrite && ![.session, .streaming].contains(safetyClass) }
+
     public func execute(_ command: DataCommand, origin: CommandOrigin, context: DataContext) async throws(DataCommandError) -> DataCommandResult {
         let arguments = command.arguments
         guard !arguments.isEmpty else { throw .invalidRequest("A command needs at least its name.") }
         let info = catalog.resolve(arguments)
         let verdict = SafetyPolicy.evaluate(
-            arguments, command: info, origin: origin, profile: context.profile, database: context.database, confirmation: context.confirmation)
+            arguments, command: info, origin: origin, profile: effective(context.profile), database: context.database, confirmation: context.confirmation)
         guard case .allow(let safetyClass) = verdict else { throw .refused(verdict) }
         let role = try Self.role(for: origin, safetyClass, context)
+        let writes = Self.changesData(safetyClass)
+        if writes { writeObserver?(.sent) }
         let reply = try await session.send(
             arguments, mayWrite: safetyClass.mayWrite, role: role, database: context.database,
             // Connection-state commands, pub/sub and MONITOR don't touch a database's data (EXEC runs what was checked
             // when queued), so they also run while a console's database is unknown.
             bindsDatabase: ![.session, .streaming].contains(safetyClass), selecting: Self.selecting(arguments, info, role))
+        if writes, ServerReadOnly.refusesWrites(reply, of: safetyClass) { writeObserver?(.serverRefused) }
         return DataCommandResult(reply: reply, safetyClass: safetyClass, role: role)
     }
 
@@ -301,12 +351,15 @@ public actor DataCommandService {
         func evaluate(_ operation: DataOperation, confirmation: CommandConfirmation?) -> SafetyVerdict {
             let arguments = operation.arguments
             return SafetyPolicy.evaluate(
-                arguments, command: catalog.resolve(arguments), origin: .editor, profile: context.profile, database: context.database, confirmation: confirmation)
+                arguments, command: catalog.resolve(arguments), origin: .editor, profile: effective(context.profile), database: context.database, confirmation: confirmation)
         }
-        for write in writes {
-            let verdict = evaluate(write, confirmation: context.confirmation)
-            guard verdict.isAllowed else { throw .refused(verdict) }
+        func checkWrites() throws(DataCommandError) {
+            for write in writes {
+                let verdict = evaluate(write, confirmation: context.confirmation)
+                guard verdict.isAllowed else { throw .refused(verdict) }
+            }
         }
+        try checkWrites()
         for read in watch?.reads ?? [] {
             let verdict = evaluate(read, confirmation: nil)
             guard case .allow(let safetyClass) = verdict else { throw .refused(verdict) }
@@ -316,11 +369,17 @@ public actor DataCommandService {
         let role = ConnectionRole.browser(database: context.database)
         await beginTransaction(role)
         defer { endTransaction(role) }
-        let reply = try await transaction(writes, watch, on: try await session.pinnedConnection(for: role, database: context.database))
+        // Re-checked after each wait (another save holding the connection, opening it, the guard reads): the profile may
+        // have been made read-only meanwhile.
+        if isReadOnlyLocked { try checkWrites() }
+        let connection = try await session.pinnedConnection(for: role, database: context.database)
+        let reply = try await transaction(writes, watch, on: connection) { () throws(DataCommandError) in if self.isReadOnlyLocked { try checkWrites() } }
         return DataCommandResult(reply: reply, safetyClass: .write, role: role)
     }
 
-    private func transaction(_ writes: [DataOperation], _ watch: WatchGuard?, on connection: RedisConnection) async throws(DataCommandError) -> RESPValue {
+    private func transaction(
+        _ writes: [DataOperation], _ watch: WatchGuard?, on connection: RedisConnection, recheck: () throws(DataCommandError) -> Void
+    ) async throws(DataCommandError) -> RESPValue {
         func send(_ arguments: [Data]) async throws(DataCommandError) -> RESPValue {
             do throws(RedisError) { return try await connection.send(arguments, mayWrite: false) } catch { throw .command(error) }
         }
@@ -346,6 +405,11 @@ public actor DataCommandService {
                 throw error
             }
         }
+        do throws(DataCommandError) { try recheck() } catch {
+            if watch != nil { await unwatch() }
+            throw error
+        }
+        writeObserver?(.sent)
         // One write, so nothing else on the browser connection can be queued inside this transaction.
         let replies: [Result<RESPValue, RedisError>]
         do throws(RedisError) {
@@ -354,6 +418,14 @@ public actor DataCommandService {
             // Thrown only before anything was sent (not connected, cancelled), so the WATCH is still there.
             if watch != nil { await unwatch() }
             throw .command(error)
+        }
+        // A write the server refused when queued (ACL, replica) aborts EXEC; one refused inside EXEC is in its array.
+        let classes = writes.map { SafetyPolicy.classify($0.arguments, command: catalog.resolve($0.arguments)) }
+        let queued = replies.dropFirst().dropLast().map { (try? $0.get()) ?? .null }
+        var executed: [RESPValue] = []
+        if case .success(.array(let items))? = replies.last { executed = items }
+        if zip(queued, classes).contains(where: ServerReadOnly.refusesWrites) || zip(executed, classes).contains(where: ServerReadOnly.refusesWrites) {
+            writeObserver?(.serverRefused)
         }
         // Without MULTI the writes ran one by one: what happened is unknown, so the editor re-reads.
         guard case .success(.simpleString) = replies.first else {

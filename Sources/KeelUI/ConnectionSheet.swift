@@ -24,9 +24,18 @@ public struct ConnectionSheet: View {
             urlField
             fields
             labelRow
-            Toggle(isOn: $model.readOnly) { Text("Read-only").font(Tokens.interface(13)) }
+            Toggle(isOn: Binding(get: { model.readOnly }, set: { model.setReadOnly($0) })) { Text("Read-only").font(Tokens.interface(13)) }
                 .toggleStyle(.switch).tint(Tokens.accent)
                 .accessibilityHint("Blocks every write, script and admin command on this connection")
+                .alert(
+                    model.writableProductionTitle,
+                    isPresented: Binding(get: { model.confirmingWritableProduction }, set: { _ in })
+                ) {
+                    Button("Keep Read-only", role: .cancel) { model.cancelWritableProduction() }
+                    Button("Allow Writes", role: .destructive) { if model.confirmWritableProduction() { Task { await model.save() } } }
+                } message: {
+                    Text("This connection is labeled Production. Edits, deletes and console writes will reach the server.")
+                }
             sections
             footer
         }

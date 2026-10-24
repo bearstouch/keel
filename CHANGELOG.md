@@ -162,6 +162,12 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - New Key… (⇧⌘N in Browser): a key of any core type with its first value(s) and an optional TTL, prefilled with the
   selected namespace; create-only (`SET NX`, or `EXISTS` under `WATCH` with `MULTI/EXEC`), so an existing key shows
   "Key already exists" and is never touched; the new key is selected; unavailable on read-only profiles (KEEL-036).
+- Production chrome and read-only mode: a 28 px maroon strip under the tab bar reads "Production · Read-only" (or
+  "Production") for the selected production tab, and the window title — listed in the Window menu — ends in "[PROD]".
+  Turning read-only off on a Production profile, or saving a writable profile with a production label, asks first;
+  turning read-only on locks open tabs at once. The first write in a writable production tab shows a dismissible
+  "Writing to PRODUCTION" line, once per tab, and a server that refuses writes (`NOPERM`, read-only replica) shows
+  "Server-enforced read-only" in the toolbar (KEEL-037).
 
 ### Removed
 

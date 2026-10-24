@@ -12,6 +12,8 @@ final class FakeConnector: SessionConnecting, @unchecked Sendable {
     var fails: ConnectionFailure?
     /// Runs inside each connect before it answers, so a test can act while a tab is connecting.
     var during: (@Sendable () async -> Void)?
+    /// What the connected session enforces.
+    var safety = SafetyProfile(name: "t", readOnly: true)
 
     var connects: [(profileID: UUID, database: Int)] { lock.withLock { calls.map { ($0.0, $0.1) } } }
     var closed: Int { lock.withLock { closes } }
@@ -24,7 +26,7 @@ final class FakeConnector: SessionConnecting, @unchecked Sendable {
         let identity = ServerIdentity(kind: .redis, version: ServerVersion("7.4.0"), redisCompatibleVersion: ServerVersion("7.4.0"), mode: .standalone, role: "master")
         return .success(
             ConnectedServer(
-                session: session, service: DataCommandService(session: session), identity: identity, databaseCount: 16, safety: SafetyProfile(name: "t", readOnly: true),
+                session: session, service: DataCommandService(session: session), identity: identity, databaseCount: 16, safety: safety,
                 close: { [weak self] in self?.lock.withLock { self?.closes += 1 } }))
     }
 }

@@ -16,6 +16,16 @@ public final class TabSession: ObservableObject, Identifiable {
     @Published public private(set) var browser: BrowserModel?
     /// Value edits not yet saved (KEEL-027's editors set it); closing the tab or its window asks first (MAC-06).
     @Published public var hasUnsavedEdits = false
+    /// Whether the connected session refuses writes (FR-SF01): the profile was read-only when it connected, or was made
+    /// read-only since. Nil while not connected, when the profile's own flag is what the tab shows.
+    @Published public private(set) var writesBlocked: Bool?
+    /// The server refused a write because this user or server can't write; until the session ends.
+    @Published public private(set) var serverReadOnly = false
+    /// FR-SF07: the "Writing to PRODUCTION" banner, shown once per tab (reconnects included) until dismissed.
+    @Published public private(set) var showsProductionWriteNotice = false
+    /// Whether the profile is treated as production now; set at connect and by every profile change (`applyProfile`).
+    public private(set) var isProduction = false
+    private var productionNoticeShown = false
 
     private let connector: any SessionConnecting
     private var connected: ConnectedServer?
@@ -26,6 +36,8 @@ public final class TabSession: ObservableObject, Identifiable {
     /// Status and database changes, for the window that holds the tab.
     var onStatus: ((ConnectionStatus) -> Void)?
     var onDatabase: ((Int) -> Void)?
+    /// What the production strip and window title show changed (read-only locked, server read-only).
+    var onChromeChange: (() -> Void)?
 
     init(id: UUID, profileID: UUID, connector: any SessionConnecting) { self.id = id; self.profileID = profileID; self.connector = connector }
 
@@ -46,7 +58,10 @@ public final class TabSession: ObservableObject, Identifiable {
         case .failure(let error):
             failure = error; set(.failed)
         case .success(let server):
+            await server.service.observeWrites { [weak self] event in Task { @MainActor in self?.written(event, attempt: mine) } }
+            guard mine == attempt else { await server.close(); return }
             connected = server; self.server = server.identity
+            isProduction = server.safety.production; writesBlocked = server.safety.readOnly; serverReadOnly = false
             let browser = Self.browser(for: server, database: database)
             self.browser = browser
             // The tab saves the database the switcher moves to (FR-AP01 restores it).
@@ -66,8 +81,36 @@ public final class TabSession: ObservableObject, Identifiable {
         attempt += 1
         let server = connected
         connected = nil; browser = nil; self.server = nil; databaseChanges = nil; editChanges = nil; hasUnsavedEdits = false; failure = nil
+        writesBlocked = nil; serverReadOnly = false
         set(.disconnected)
+        await server?.service.observeWrites(nil)
         await server?.close()
+    }
+
+    /// The profile was saved (or its label changed): production follows at once; read-only turned on locks the open
+    /// session so nothing more is written. Turning read-only off takes effect on the next connect, never mid-session.
+    func applyProfile(readOnly: Bool, production: Bool) async {
+        isProduction = production
+        guard readOnly, writesBlocked == false, let connected else { return }
+        writesBlocked = true; onChromeChange?()
+        await connected.service.lockReadOnly()
+    }
+
+    /// Hides the "Writing to PRODUCTION" banner; it doesn't come back for this tab.
+    public func dismissProductionWriteNotice() { showsProductionWriteNotice = false }
+
+    /// A write event from the data path of connect `attempt`; one from an older session is ignored.
+    private func written(_ event: WriteEvent, attempt: Int) {
+        guard attempt == self.attempt else { return }
+        switch event {
+        case .sent:
+            // FR-SF07: only on writable production profiles, and only the first time in this tab.
+            guard isProduction, writesBlocked == false, !productionNoticeShown else { return }
+            productionNoticeShown = true; showsProductionWriteNotice = true
+        case .serverRefused:
+            guard !serverReadOnly else { return }
+            serverReadOnly = true; onChromeChange?()
+        }
     }
 
     /// Reconnect (⇧⌘R): a fresh session on the tab's database.

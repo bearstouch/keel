@@ -148,7 +148,7 @@ Under the toolbar, 38 high on `tabBar`: one 31 px tab per open connection (7 px 
 
 ### Production strip
 
-Under the tab bar, only for production connections: centered "Production · Read-only" on `prodStrip`.
+Under the tab bar, only for production connections: centered "Production · Read-only" on `prodStrip` (Inter 12 semibold in the strip's text color; "Production" alone while writes are allowed), full width and 28 high. It follows the window's selected tab. The first write in a writable production tab adds one 34 px `soft` line above the editor: a `warning` triangle, "Writing to PRODUCTION" (semibold), "Changes here reach the production server." in `muted` and a trailing ×. A session the server refuses writes to shows a muted lock and "Server-enforced read-only" in the toolbar after the database picker.
 
 ### Key list
 

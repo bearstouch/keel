@@ -93,6 +93,12 @@ public final class ConnectionSheetModel: ObservableObject {
     @Published public private(set) var saveError: String?
     @Published public private(set) var isSaving = false
     @Published public private(set) var outcome: Outcome?
+    /// FR-SF01: the sheet asks before a Production profile becomes writable; true while that question is up.
+    @Published public private(set) var confirmingWritableProduction = false
+    /// The user said yes once in this sheet; it isn't asked again.
+    private var writableProductionConfirmed = false
+    /// Save was asked while the question was pending: a yes saves.
+    private var savesAfterConfirmation = false
 
     private let tester: any ConnectionTesting
     private let store: any ProfileSaving
@@ -289,11 +295,53 @@ public final class ConnectionSheetModel: ObservableObject {
     /// Awaits a running test; for tests and callers that need its result.
     public func waitForTest() async { await testTask?.value }
 
+    // MARK: Read-only
+
+    /// The Read-only switch. Turning it off on a profile whose label is treated as production asks first; the switch
+    /// stays on until the user confirms.
+    public func setReadOnly(_ on: Bool) {
+        guard !on, isProductionLabel, !writableProductionConfirmed else { readOnly = on; return }
+        // Already writable: there is nothing to confirm.
+        guard readOnly else { return }
+        confirmingWritableProduction = true
+    }
+
+    /// Yes: the profile may be writable. Returns true when a Save was waiting for this answer; the caller saves then.
+    @discardableResult public func confirmWritableProduction() -> Bool {
+        guard confirmingWritableProduction else { return false }
+        writableProductionConfirmed = true; confirmingWritableProduction = false; readOnly = false
+        defer { savesAfterConfirmation = false }
+        return savesAfterConfirmation
+    }
+
+    /// No: read-only stays on, nothing is saved.
+    public func cancelWritableProduction() {
+        confirmingWritableProduction = false; savesAfterConfirmation = false; readOnly = true
+    }
+
+    public var isProductionLabel: Bool { labels.first { $0.color == label }?.treatAsProduction ?? (label == .production) }
+
+    /// "Allow writes to “payments-prod”?" for the confirmation.
+    public var writableProductionTitle: String {
+        let shown = name.trimmingCharacters(in: .whitespaces).isEmpty ? host : name
+        return "Allow writes to “\(shown)”?"
+    }
+
+    /// A save that would leave a production profile writable when it wasn't already: the label just became production
+    /// with read-only off, a new Production profile, or read-only turned off.
+    var needsWritableProductionConfirmation: Bool {
+        guard isProductionLabel, !readOnly, !writableProductionConfirmed else { return false }
+        if case .edit(let profile) = mode, !profile.settings.readOnly, labels.first(where: { $0.color == profile.settings.label })?.treatAsProduction == true { return false }
+        return true
+    }
+
     // MARK: Save and Cancel
 
     /// Creates or updates the profile; the password goes to the Keychain only here, through the store.
     @discardableResult public func save() async -> ConnectionProfile? {
         guard !isSaving, outcome == nil else { return nil }
+        // Nothing is saved until the user agrees to a writable production profile.
+        if needsWritableProductionConfirmation { savesAfterConfirmation = true; confirmingWritableProduction = true; return nil }
         let settings: ConnectionSettings
         do throws(ProfileStoreError) { settings = try self.settings() } catch {
             saveError = error.sheetMessage; return nil

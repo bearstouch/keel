@@ -270,6 +270,24 @@ public final class SidebarModel: ObservableObject {
 
     public func profileLabel(_ id: UUID) -> LabelColor { profile(id)?.settings.label ?? .none }
 
+    /// Whether the profile's label is treated as production (FR-SF02); a deleted profile isn't.
+    public func isProduction(_ id: UUID) -> Bool { profile(id).map { document.label($0.settings.label).treatAsProduction } ?? false }
+
+    /// The production strip over the selected tab (FR-SF02): nil unless that tab is production. "Read-only" follows what
+    /// the connected session enforces (or the server refuses); a tab that isn't connected shows the profile's flag.
+    public var productionStrip: String? {
+        guard let tab = tabs.selected, isProduction(tab.profileID) else { return nil }
+        let session = tabs.app?.session(tab.id)
+        let readOnly = session?.writesBlocked ?? profile(tab.profileID)?.settings.readOnly ?? true
+        return ProductionChrome.stripText(readOnly: readOnly || session?.serverReadOnly == true)
+    }
+
+    /// The native window's title, which the Window menu lists: the selected tab's connection, "[PROD]" for production.
+    public var windowTitle: String {
+        guard let tab = tabs.selected else { return ProductionChrome.windowTitle(name: nil, production: false) }
+        return ProductionChrome.windowTitle(name: profileName(tab.profileID), production: isProduction(tab.profileID))
+    }
+
     private func profile(_ id: UUID) -> ConnectionProfile? { document.profiles.first { $0.id == id } }
     private func folder(_ id: UUID) -> ProfileFolder? { document.folders.first { $0.id == id } }
 

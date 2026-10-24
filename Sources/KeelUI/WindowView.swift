@@ -21,6 +21,7 @@ struct WindowContent: View {
         VStack(spacing: 0) {
             ConnectionToolbar(sidebar: sidebar, tabs: tabs)
             TabBar(sidebar: sidebar, tabs: tabs)
+            if let strip = sidebar.productionStrip { ProductionStrip(text: strip) }
             if let tab = tabs.selected {
                 if let session = tabs.app?.session(tab.id) {
                     TabContent(tab: tab, session: session, profileName: sidebar.profileName(tab.profileID)) { tabs.app?.connectIfNeeded(tab.id) }
@@ -44,7 +45,10 @@ struct ConnectionToolbar: View {
         HStack(spacing: 16) {
             if let tab = tabs.selected {
                 Text(sidebar.profileName(tab.profileID)).font(Tokens.interface(14, weight: .semibold)).foregroundStyle(Tokens.fg).lineLimit(1)
-                if tab.mode == .browser, let session = tabs.app?.session(tab.id) { ToolbarDatabase(session: session) }
+                if let session = tabs.app?.session(tab.id) {
+                    if tab.mode == .browser { ToolbarDatabase(session: session) }
+                    ServerReadOnlyBadge(session: session)
+                }
             }
             Spacer(minLength: 0)
             ModeSwitch(mode: tabs.selected?.mode) { tabs.setMode($0) }
@@ -69,6 +73,62 @@ private struct ToolbarDatabase: View {
 
     var body: some View {
         if let browser = session.browser { DatabasePicker(model: browser) }
+    }
+}
+
+/// "Server-enforced read-only" with a lock, once the server refused a write for lack of permission (or as a replica).
+private struct ServerReadOnlyBadge: View {
+    @ObservedObject var session: TabSession
+
+    var body: some View {
+        if session.serverReadOnly {
+            Label(ProductionChrome.serverReadOnly, systemImage: "lock").font(Tokens.interface(12)).foregroundStyle(Tokens.muted).lineLimit(1)
+                .help("The server refused a write: this user or server can't write.")
+        }
+    }
+}
+
+// MARK: - Production
+
+/// 28 px under the tab bar for production tabs (FR-SF02, DS-03): centered text on the maroon `prodStrip`.
+struct ProductionStrip: View {
+    let text: String
+
+    var body: some View {
+        Text(text).font(Tokens.interface(12, weight: .semibold)).foregroundStyle(Tokens.onProdStrip).lineLimit(1)
+            .frame(maxWidth: .infinity).frame(height: ProductionChrome.stripHeight)
+            .background(Tokens.prodStrip)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(text)
+            .accessibilityAddTraits(.isStaticText)
+    }
+}
+
+/// FR-SF07: the first write in a production tab that isn't read-only shows this non-blocking line until dismissed.
+private struct ProductionWriteNotice: View {
+    @ObservedObject var session: TabSession
+
+    var body: some View {
+        if session.showsProductionWriteNotice {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Tokens.warning).accessibilityHidden(true)
+                Text(ProductionChrome.writeNotice).font(Tokens.interface(12.5, weight: .semibold)).foregroundStyle(Tokens.fg)
+                Text("Changes here reach the production server.").font(Tokens.interface(12.5)).foregroundStyle(Tokens.muted).lineLimit(1)
+                Spacer(minLength: 0)
+                Button {
+                    session.dismissProductionWriteNotice()
+                } label: {
+                    Text("×").font(.system(size: 14)).foregroundStyle(Tokens.muted)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Dismiss")
+            }
+            .padding(.horizontal, 16).frame(height: 34)
+            .background(Tokens.soft)
+            .overlay(alignment: .bottom) { Tokens.hair.frame(height: 1) }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(ProductionChrome.writeNotice)
+        }
     }
 }
 
@@ -272,7 +332,7 @@ struct TabContent: View {
         case .connected:
             switch tab.mode {
             case .browser:
-                if let browser = session.browser { BrowserLayout(browser: browser) }
+                if let browser = session.browser { BrowserLayout(browser: browser, session: session) }
             case .console, .info:
                 ModePlaceholder(mode: tab.mode)
             }
@@ -292,6 +352,7 @@ struct TabContent: View {
 /// The key list (380 wide) beside the editor area.
 private struct BrowserLayout: View {
     @ObservedObject var browser: BrowserModel
+    let session: TabSession
 
     var body: some View {
         HStack(spacing: 0) {
@@ -303,7 +364,11 @@ private struct BrowserLayout: View {
             }
             .frame(width: 380)
             Tokens.hair.frame(width: 1)
-            EditorArea(browser: browser).frame(maxWidth: .infinity, maxHeight: .infinity).background(Tokens.bg)
+            VStack(spacing: 0) {
+                ProductionWriteNotice(session: session)
+                EditorArea(browser: browser).frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .background(Tokens.bg)
         }
         .sheet(isPresented: $browser.showsNewKey) { NewKeySheet(browser: browser) }
     }
