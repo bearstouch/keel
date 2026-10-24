@@ -105,7 +105,7 @@ struct ProductionStrip: View {
 }
 
 /// FR-SF07: the first write in a production tab that isn't read-only shows this non-blocking line until dismissed.
-private struct ProductionWriteNotice: View {
+struct ProductionWriteNotice: View {
     @ObservedObject var session: TabSession
 
     var body: some View {
@@ -333,7 +333,9 @@ struct TabContent: View {
             switch tab.mode {
             case .browser:
                 if let browser = session.browser { BrowserLayout(browser: browser, session: session) }
-            case .console, .info:
+            case .console:
+                if let console = session.console { ConsolePane(console: console, session: session) } else { Color(nsColor: ConsoleTheme.background).onAppear { session.openConsole() } }
+            case .info:
                 ModePlaceholder(mode: tab.mode)
             }
         case .connecting:
@@ -403,7 +405,7 @@ private struct Disconnected: View {
     }
 }
 
-/// Console (KEEL-041) and Info (KEEL-042) aren't built yet; the mode says so in one quiet line.
+/// Info (KEEL-042) isn't built yet; the mode says so in one quiet line.
 private struct ModePlaceholder: View {
     let mode: TabMode
 

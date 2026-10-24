@@ -217,6 +217,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     @objc private func setKeyTTL(_ sender: Any?) { NotificationCenter.default.post(name: EditorCommands.setTTLNotification, object: NSApp.keyWindow) }
     /// ⇧⌘N: the key window's browser shows the new-key sheet (FR-ED14).
     @objc private func newKey(_ sender: Any?) { NotificationCenter.default.post(name: KeyListCommands.newKeyNotification, object: NSApp.keyWindow) }
+    /// ⌥⌘K / ⌘.: the key window's console clears, or stops its stream or command (FR-CO07, FR-CO08).
+    @objc private func clearConsole(_ sender: Any?) { NotificationCenter.default.post(name: ConsoleCommands.clearNotification, object: NSApp.keyWindow) }
+    @objc private func stopConsoleCommand(_ sender: Any?) { NotificationCenter.default.post(name: ConsoleCommands.stopNotification, object: NSApp.keyWindow) }
     /// ⌥⌘0…⌥⌘9: the key window's browser switches to the item's database (FR-KB08).
     @objc private func selectDatabase(_ sender: NSMenuItem) {
         NotificationCenter.default.post(name: KeyListCommands.selectDatabaseNotification, object: NSApp.keyWindow, userInfo: [KeyListCommands.databaseKey: sender.tag])
@@ -239,6 +242,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         // Browser mode only, on a writable profile (FR-ED14).
         case #selector(newKey(_:)): return tab.flatMap { $0.mode == .browser ? app?.session($0.id)?.browser?.canCreateKey : nil } ?? false
         case #selector(setKeyTTL(_:)): return tab.flatMap { app?.session($0.id)?.browser?.editor?.canRunKeyAction } ?? false
+        // Console mode only; Stop while a command or stream runs.
+        case #selector(clearConsole(_:)): return tab.flatMap { $0.mode == .console ? app?.session($0.id)?.console : nil } != nil
+        case #selector(stopConsoleCommand(_:)): return tab.flatMap { $0.mode == .console ? app?.session($0.id)?.console?.state : nil }.map { $0 != .idle } ?? false
         default: return true
         }
     }
@@ -286,6 +292,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         let databaseMenu = NSMenu(title: "Database")
         for database in 0...9 { add("db\(database)", #selector(selectDatabase(_:)), String(database), [.command, .option], to: databaseMenu).tag = database }
         databaseItem.submenu = databaseMenu
+        viewMenu.addItem(.separator())
+        // ⌘K is the command palette, so Clear Console is ⌥⌘K (FR-CO08).
+        add("Clear Console", #selector(clearConsole(_:)), "k", [.command, .option], to: viewMenu)
+        add("Stop", #selector(stopConsoleCommand(_:)), ".", to: viewMenu)
         viewItem.submenu = viewMenu
         let keyItem = NSMenuItem(); menu.addItem(keyItem)
         let keyMenu = NSMenu(title: "Key")

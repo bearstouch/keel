@@ -326,13 +326,48 @@ public actor DataCommandService {
         let role = try Self.role(for: origin, safetyClass, context)
         let writes = Self.changesData(safetyClass)
         if writes { writeObserver?(.sent) }
+        // A console's blocking command (`BLPOP k 0`) may wait for good; its Stop closes the connection (FR-CO07).
+        let blocking = origin == .console && info?.flags.contains(.blocking) == true
         let reply = try await session.send(
             arguments, mayWrite: safetyClass.mayWrite, role: role, database: context.database,
             // Connection-state commands, pub/sub and MONITOR don't touch a database's data (EXEC runs what was checked
             // when queued), so they also run while a console's database is unknown.
-            bindsDatabase: ![.session, .streaming].contains(safetyClass), selecting: Self.selecting(arguments, info, role))
+            bindsDatabase: ![.session, .streaming].contains(safetyClass), selecting: Self.selecting(arguments, info, role),
+            timeout: blocking ? RedisConnection.noTimeout : nil)
         if writes, ServerReadOnly.refusesWrites(reply, of: safetyClass) { writeObserver?(.serverRefused) }
         return DataCommandResult(reply: reply, safetyClass: safetyClass, role: role)
+    }
+
+    /// What the policy says about `command` now, sending nothing: the console asks first, so it can measure (FR-SF08) and
+    /// confirm before the command runs. `execute` evaluates again, so a verdict here never lets anything through.
+    public func verdict(_ command: DataCommand, origin: CommandOrigin, context: DataContext) -> SafetyVerdict {
+        let arguments = command.arguments
+        return SafetyPolicy.evaluate(
+            arguments, command: catalog.resolve(arguments), origin: origin, profile: effective(context.profile), database: context.database,
+            confirmation: context.confirmation)
+    }
+
+    /// A console's streaming command (`MONITOR`, `SUBSCRIBE`, … FR-CO07) on that console's `stream` connection: the
+    /// server's confirmation and everything it sends after, until `stopStream(console:)`. Anything the policy doesn't
+    /// class as streaming is refused here (`execute` runs it), sending nothing.
+    public func stream(_ command: DataCommand, context: DataContext) async throws(DataCommandError) -> AsyncStream<RESPValue> {
+        let arguments = command.arguments
+        guard !arguments.isEmpty else { throw .invalidRequest("A command needs at least its name.") }
+        let verdict = verdict(command, origin: .console, context: context)
+        guard case .allow(let safetyClass) = verdict else { throw .refused(verdict) }
+        guard safetyClass == .streaming else { throw .invalidRequest("Only MONITOR and the SUBSCRIBE commands stream.") }
+        guard let console = context.consoleID else { throw .invalidRequest("A console command needs its console.") }
+        return try await session.stream(arguments, role: .stream(console), database: context.database)
+    }
+
+    /// Stop (⌘.) for a console's stream: closes its `stream` connection, which ends the stream at once.
+    public func stopStream(console: UUID) async { await session.close(.stream(console)) }
+
+    /// Cancels a console's blocking command (FR-CO07) by closing its connection: the command fails (`OUTCOME_UNKNOWN`
+    /// for a possible write, never re-sent) and the next one opens a new connection on the console's database.
+    public func closeConsole(_ console: UUID) async {
+        await session.close(.console(console))
+        await session.close(.stream(console))
     }
 
     /// An editor's save (03 → Value editors, concurrency): `writes` apply together in one `MULTI … EXEC`. With

@@ -178,6 +178,12 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - Console parsing and output like redis-cli: lines split with redis-cli's quoting and escape rules (`"a\x00b"` is three
   bytes; unbalanced quotes are an error and send nothing), and replies printed in redis-cli 7 notation for RESP2 and
   RESP3, checked against golden redis-cli output (KEEL-040).
+- Console mode: a dark redis-cli-style console on its own connection with a `host:port[db]>` prompt (`SELECT` changes
+  only the console's database), in-memory history per profile (1,000 entries, ↑/↓, ⌃R), command and subcommand
+  completion with an inline argument hint, MONITOR / SUBSCRIBE on a stream connection with Stop (⌘.) and the newest
+  10,000 lines kept, cancellable blocking commands, Clear Console (⌥⌘K, ⌃L), Copy Reply / Copy All Output, and
+  credentials (`AUTH`, `HELLO … AUTH`, `ACL SETUSER >…`, `CONFIG SET requirepass`, `MIGRATE … AUTH`) shown as `••••••`
+  in the echo and history. Refusals print as `(error) KEEL_…`; confirmations and size warnings ask first (KEEL-041).
 
 ### Removed
 

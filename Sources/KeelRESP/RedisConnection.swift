@@ -35,6 +35,8 @@ public actor RedisConnection {
     private nonisolated let transport: any Transport
     private let sleep: @Sendable (Duration) async throws -> Void
     private let pushSink: AsyncStream<RESPValue>.Continuation
+    /// Set by `stream(_:buffer:)`: from then on every reply and push goes here, none to a command.
+    private var streamSink: AsyncStream<RESPValue>.Continuation?
     private var parser: RESPParser
     private var readLoop: Task<Void, Never>?
 
@@ -52,6 +54,10 @@ public actor RedisConnection {
         var waiter: ((Result<RESPValue, RedisError>) -> Void)?
         var timer: Task<Void, Never>?
     }
+
+    /// A per-command timeout that never fires: a console's blocking command (`BLPOP k 0`) waits as long as the server
+    /// does and ends only with its reply, a drop, or a cancel that closes the connection.
+    public static let noTimeout = Duration.seconds(Int64.max)
 
     /// `sleep` drives the connect and command timeouts; tests inject a manual one.
     public init(transport: any Transport, options: Options = Options(), sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) {
@@ -149,6 +155,7 @@ public actor RedisConnection {
             slot.waiter?(.failure(slot.mayWrite ? .outcomeUnknown : readError))
         }
         pushSink.finish()
+        streamSink?.finish(); streamSink = nil
     }
 
     // MARK: - Commands
@@ -160,7 +167,7 @@ public actor RedisConnection {
     /// that exceeds `timeout` fails with `TIMEOUT` and closes the connection. Throws `NOT_CONNECTED`, sending
     /// nothing, unless the connection is ready.
     public func send(_ arguments: [Data], mayWrite: Bool = true, timeout: Duration? = nil) async throws(RedisError) -> RESPValue {
-        guard state == .ready else { throw .notConnected }
+        guard state == .ready, streamSink == nil else { throw .notConnected }
         guard !Task.isCancelled else { throw .cancelled }
         let id = nextID
         let frame = RESPEncoder.command(arguments)
@@ -185,7 +192,7 @@ public actor RedisConnection {
     /// on its own as `send` would (a write in flight when the connection ends reports `OUTCOME_UNKNOWN`). Throws
     /// `NOT_CONNECTED`, sending nothing, unless the connection is ready.
     public func sendPipeline(_ commands: [[Data]], mayWrite: Bool = true, timeout: Duration? = nil) async throws(RedisError) -> [Result<RESPValue, RedisError>] {
-        guard state == .ready else { throw .notConnected }
+        guard state == .ready, streamSink == nil else { throw .notConnected }
         guard !Task.isCancelled else { throw .cancelled }
         guard !commands.isEmpty else { return [] }
         let first = nextID, count = commands.count
@@ -207,8 +214,22 @@ public actor RedisConnection {
         }
     }
 
-    private func startTimer(_ id: UInt64, _ limit: Duration) -> Task<Void, Never> {
-        Task { [weak self, sleep] in
+    /// Sends a streaming command (`MONITOR`, `SUBSCRIBE`, …) and hands over everything the server sends from then on:
+    /// its confirmation, each MONITOR line or pub/sub message, RESP3 pushes included. Nothing else can be sent on the
+    /// connection afterwards (`NOT_CONNECTED`), and there is no timeout. The stream keeps the newest `buffer` values
+    /// while its reader is behind and finishes when the connection ends, so `close()` is Stop. Throws `NOT_CONNECTED`,
+    /// sending nothing, unless the connection is ready with no reply outstanding.
+    public func stream(_ arguments: [Data], buffer: Int = 10_000) throws(RedisError) -> AsyncStream<RESPValue> {
+        guard state == .ready, streamSink == nil, head == pending.count else { throw .notConnected }
+        let (stream, sink) = AsyncStream.makeStream(of: RESPValue.self, bufferingPolicy: .bufferingNewest(max(buffer, 1)))
+        streamSink = sink
+        transport.send(RESPEncoder.command(arguments))
+        return stream
+    }
+
+    private func startTimer(_ id: UInt64, _ limit: Duration) -> Task<Void, Never>? {
+        guard limit != Self.noTimeout else { return nil }
+        return Task { [weak self, sleep] in
             do { try await sleep(limit) } catch { return }
             await self?.commandTimedOut(id)
         }
@@ -261,6 +282,7 @@ public actor RedisConnection {
             parser.append(bytes)
             do {
                 while let reply = try parser.next() {
+                    if let streamSink { streamSink.yield(reply); continue }
                     if case .push = reply { pushSink.yield(reply); continue }
                     guard deliver(reply) else { return false }
                 }

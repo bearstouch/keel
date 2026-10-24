@@ -30,6 +30,8 @@ public final class AppModel: ObservableObject {
     public var presentWindow: ((ConnectionTabs) -> Void)?
     /// Follows `ProfileStore.changes()` so open sessions see read-only and production changes (FR-SF01, FR-SF02).
     private var watchingProfiles: Task<Void, Never>?
+    /// Console history per profile, shared by its tabs for the app's lifetime (FR-CO04).
+    private let histories = ConsoleHistoryBook()
 
     public init(profiles: ProfileStore, connector: any SessionConnecting, persistence: Persistence<WindowsDocument>?) {
         self.profiles = profiles; self.connector = connector; self.persistence = persistence
@@ -216,7 +218,7 @@ public final class AppModel: ObservableObject {
     @discardableResult
     private func session(for tab: ConnectionTab) -> TabSession {
         if let existing = sessions[tab.id] { return existing }
-        let session = TabSession(id: tab.id, profileID: tab.profileID, connector: connector)
+        let session = TabSession(id: tab.id, profileID: tab.profileID, connector: connector, histories: histories)
         let id = tab.id
         // Whichever window holds the tab now shows its status and saves its database.
         session.onStatus = { [weak self, weak session] status in
