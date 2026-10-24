@@ -98,16 +98,8 @@ public final class StreamEditorModel: ObservableObject {
         return true
     }
 
-    /// Why the add sheet's input can't be sent; nil when it can. The server checks the ID itself (greater than the last);
-    /// only its first byte is checked here, so it can't be taken for an `XADD` option.
-    public static func problem(id: Data, fields: [DataOperation.FieldValue]) -> String? {
-        if id.isEmpty { return "Enter an entry ID, or use an automatic one." }
-        // `XADD key MAXLEN 0 * …` would trim the stream: an ID that doesn't start with a digit would be read as an option.
-        if id != StreamEditor.autoID, id.first.map({ !(0x30...0x39).contains($0) }) ?? true { return "An entry ID starts with a digit (1700000000000-0)." }
-        if fields.isEmpty { return "Add at least one field." }
-        if fields.contains(where: { $0.field.isEmpty }) { return "Every field needs a name." }
-        return nil
-    }
+    /// Why the add sheet's input can't be sent; nil when it can (`StreamEditor.problem`).
+    public static func problem(id: Data, fields: [DataOperation.FieldValue]) -> String? { StreamEditor.problem(id: id, fields: fields) }
 
     // MARK: - Sorting
 

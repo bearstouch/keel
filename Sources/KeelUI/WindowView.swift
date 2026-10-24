@@ -305,6 +305,7 @@ private struct BrowserLayout: View {
             Tokens.hair.frame(width: 1)
             EditorArea(browser: browser).frame(maxWidth: .infinity, maxHeight: .infinity).background(Tokens.bg)
         }
+        .sheet(isPresented: $browser.showsNewKey) { NewKeySheet(browser: browser) }
     }
 }
 

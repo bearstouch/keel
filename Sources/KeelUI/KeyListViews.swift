@@ -27,6 +27,8 @@ public enum KeyListCommands {
     /// View → Database → db0…db9 (⌥⌘0…⌥⌘9), posted with the key window and the index under `databaseKey` (FR-KB08).
     public static let selectDatabaseNotification = Notification.Name("com.bearstouch.keel.selectDatabase")
     public static let databaseKey = "database"
+    /// Key → New Key… (⇧⌘N), posted with the key window: its browser shows the new-key sheet (FR-ED14).
+    public static let newKeyNotification = Notification.Name("com.bearstouch.keel.newKey")
 }
 
 /// File → Save Changes (⌘S) and Revert Changes (⌘Z), posted with the key window: its open editor saves or reverts.

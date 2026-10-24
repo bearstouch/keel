@@ -6,7 +6,7 @@ import XCTest
 @testable import KeelUI
 
 /// An in-memory server for the browser: a keyspace per database that "another client" changes between calls,
-/// answering `SCAN` (one page, `MATCH` applied), `TYPE`, `DBSIZE` and `INFO keyspace` for the connection's database.
+/// answering `SCAN` (one page, `MATCH` applied), `TYPE`, `DBSIZE`, `SET … NX` and `INFO keyspace` for the connection's database.
 final class BrowserKeyspace: @unchecked Sendable {
     private let lock = NSLock()
     private var databases: [Int: Set<String>]
@@ -48,6 +48,11 @@ final class BrowserKeyspace: @unchecked Sendable {
                 if arguments[0] == "RENAMENX", keys.contains(arguments[2]) { return ":0\r\n" }
                 databases[database]?.remove(arguments[1]); databases[database]?.insert(arguments[2])
                 return arguments[0] == "RENAME" ? "+OK\r\n" : ":1\r\n"
+            case "SET":
+                // The new-key sheet's `SET key value NX`: nil when the name is taken.
+                if arguments.contains("NX"), keys.contains(arguments[1]) { return "$-1\r\n" }
+                databases[database, default: []].insert(arguments[1])
+                return "+OK\r\n"
             case "UNLINK":
                 let removed = arguments.dropFirst().filter { databases[database]?.remove($0) != nil }.count
                 return ":\(removed)\r\n"

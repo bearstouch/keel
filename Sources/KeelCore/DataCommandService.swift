@@ -49,8 +49,12 @@ public enum DataOperation: Sendable, Equatable {
     case streamInfo(key: Data)
     /// `PEXPIRETIME key` (7.0+, probed): the absolute expiry as Unix milliseconds (FR-ED11).
     case expireTime(key: Data)
+    /// `EXISTS key`: the new-key sheet's guard read (FR-ED14), 0 while the name is free.
+    case exists(key: Data)
     // Writes
     case stringSet(key: Data, value: Data, keepTTL: Bool)
+    /// `SET key value NX [PX ms]`: a new string that never replaces an existing key (FR-ED14).
+    case stringCreate(key: Data, value: Data, milliseconds: Int64?)
     case hashSetField(key: Data, field: Data, value: Data)
     case hashDeleteFields(key: Data, fields: [Data])
     case listPush(key: Data, values: [Data], atHead: Bool)
@@ -124,7 +128,9 @@ public enum DataOperation: Sendable, Equatable {
         case .streamRange(let key, let from, let to, let count, let reverse): return [d(reverse ? "XREVRANGE" : "XRANGE"), key, from, to, d("COUNT"), d(String(count))]
         case .streamInfo(let key): return [d("XINFO"), d("STREAM"), key]
         case .expireTime(let key): return [d("PEXPIRETIME"), key]
+        case .exists(let key): return [d("EXISTS"), key]
         case .stringSet(let key, let value, let keepTTL): return [d("SET"), key, value] + (keepTTL ? [d("KEEPTTL")] : [])
+        case .stringCreate(let key, let value, let milliseconds): return [d("SET"), key, value, d("NX")] + (milliseconds.map { [d("PX"), d(String($0))] } ?? [])
         case .hashSetField(let key, let field, let value): return [d("HSET"), key, field, value]
         case .hashDeleteFields(let key, let fields): return [d("HDEL"), key] + fields
         case .listPush(let key, let values, let atHead): return [d(atHead ? "LPUSH" : "RPUSH"), key] + values
