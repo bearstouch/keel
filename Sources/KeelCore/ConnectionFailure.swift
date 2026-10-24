@@ -260,7 +260,7 @@ public struct ConnectionFailure: Error, Equatable, Sendable, CustomStringConvert
         case "NOPERM":
             return .init(
                 category: .permissionDenied, message: "User “\(user)” isn't allowed to run \(step.command).",
-                suggestion: step == .setName ? "Turn off CLIENT SETNAME for this connection, or grant the command in the ACL." : "Grant \(step.command) to this user in the ACL.", serverError: serverError)
+                suggestion: step == .setName ? "Turn off CLIENT SETNAME in Settings → Advanced, or grant the command in the ACL." : "Grant \(step.command) to this user in the ACL.", serverError: serverError)
         case "ERR" where text.contains("invalid password") || text.contains("invalid username-password"):
             return .init(category: .authFailed, message: "Authentication failed for user “\(user)”: wrong password.", suggestion: "Check the username and password.", serverError: serverError)
         case "ERR" where text.contains("without any password configured") || text.contains("no password is set"):

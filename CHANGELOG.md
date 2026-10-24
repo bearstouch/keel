@@ -219,6 +219,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
   restricted ACL user and an sshd bastion; per server it covers connect and detection, browsing, each editor, the
   console and the bulk delete, and checks that Redis 5 is refused with `UNSUPPORTED_SERVER`. Ports are published on
   loopback only, and the new CI `integration` job requires it (KEEL-048).
+- Settings window (⌘,) with General, Browser, Editors, Console, Keyboard and Advanced panes: theme and reopening
+  windows at launch; the default separator, keys per page and auto-page limit for new scans; the default value viewer;
+  the console's RESP3/RESP2 protocol; default connect and command timeouts and `CLIENT SETNAME`. Changes are a draft
+  until **Apply** (the theme previews live); **Cancel** or closing the window restores the exact prior settings. Applied
+  settings are saved in `settings.json`, and a bad value in the file reads as its default (KEEL-049).
 
 ### Removed
 

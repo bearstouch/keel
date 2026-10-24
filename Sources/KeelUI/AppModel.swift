@@ -37,8 +37,11 @@ public final class AppModel: ObservableObject {
     /// Brings a window to the front (the palette picked one of its tabs). Set by the app delegate.
     public var focusWindow: ((UUID) -> Void)?
 
-    public init(profiles: ProfileStore, connector: any SessionConnecting, persistence: Persistence<WindowsDocument>?) {
-        self.profiles = profiles; self.connector = connector; self.persistence = persistence
+    /// The applied settings every tab's session reads (FR-AP09); the settings model writes it.
+    private let settings: SettingsSnapshot
+
+    public init(profiles: ProfileStore, connector: any SessionConnecting, persistence: Persistence<WindowsDocument>?, settings: SettingsSnapshot = SettingsSnapshot()) {
+        self.profiles = profiles; self.connector = connector; self.persistence = persistence; self.settings = settings
     }
 
     deinit { watchingProfiles?.cancel() }
@@ -47,14 +50,16 @@ public final class AppModel: ObservableObject {
 
     /// Reads `windows.json` and rebuilds the windows; the saved frame of each is returned for the app to apply. Tabs
     /// of deleted profiles are dropped. With no saved window (first launch, or an unreadable file waiting for
-    /// recovery) one empty window opens. Load the profiles first: a tab needs its profile to restore.
+    /// recovery) one empty window opens. Load the profiles first: a tab needs its profile to restore. Settings →
+    /// General's "Reopen windows and tabs" off (`reopens` false) still reads the file, so one waiting for recovery is
+    /// never written over, but starts from one empty window.
     @discardableResult
-    public func restore() async -> [(window: ConnectionTabs, frame: SavedFrame?)] {
+    public func restore(reopens: Bool = true) async -> [(window: ConnectionTabs, frame: SavedFrame?)] {
         guard !didRestore else { return [] }
         didRestore = true
         let document: WindowsDocument
         switch await persistence?.load() {
-        case .loaded(let saved)?: document = saved
+        case .loaded(let saved)?: document = reopens ? saved : WindowsDocument()
         // Missing: first launch. Recovery: KEEL-050 offers the choice; until then nothing is saved over the file.
         case .missing?, .recovery?, nil: document = WindowsDocument()
         }
@@ -239,7 +244,7 @@ public final class AppModel: ObservableObject {
     @discardableResult
     private func session(for tab: ConnectionTab) -> TabSession {
         if let existing = sessions[tab.id] { return existing }
-        let session = TabSession(id: tab.id, profileID: tab.profileID, connector: connector, histories: histories)
+        let session = TabSession(id: tab.id, profileID: tab.profileID, connector: connector, histories: histories, settings: settings)
         let id = tab.id
         // Whichever window holds the tab now shows its status and saves its database.
         session.onStatus = { [weak self, weak session] status in

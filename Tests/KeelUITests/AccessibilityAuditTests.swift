@@ -178,6 +178,14 @@ final class AuditScreens {
         return host(KeyboardSettingsView(model: KeyboardSettingsModel(bindings: bindings), bindings: bindings), size: CGSize(width: 640, height: 560))
     }
 
+    /// The Settings window on `pane` (FR-AP09).
+    func settings(_ pane: SettingsDraft.Pane) -> ScreenHost {
+        let bindings = ShortcutBindings(defaults: UserDefaults(suiteName: "keel-audit-\(UUID().uuidString)")!)
+        let draft = SettingsDraft(settings: SettingsModel(persistence: nil, applyAppearance: { _ in }))
+        draft.pane = pane
+        return host(SettingsView(draft: draft, keyboard: KeyboardSettingsModel(bindings: bindings)), size: CGSize(width: 640, height: 560))
+    }
+
     static let fixtures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Fixtures")
 }
 
@@ -241,6 +249,7 @@ final class AccessibilityAuditTests: XCTestCase {
             "SSH host key prompt")
         assertLabeled(screens.commandPalette(), "Command palette")
         assertLabeled(screens.keyboardSettings(), "Keyboard settings")
+        for pane in SettingsDraft.Pane.allCases { assertLabeled(screens.settings(pane), "\(pane.title) settings") }
     }
 
     /// The audit itself fails on what it is meant to catch, so a passing run means something.

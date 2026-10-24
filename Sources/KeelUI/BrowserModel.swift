@@ -40,7 +40,7 @@ public final class BrowserModel: ObservableObject {
     let editorBinding: @MainActor (KeyType) -> EditorBinding?
 
     /// The viewer choice per key pattern, for every key this tab opens (03 → Value editors).
-    let viewerChoices = ValueViewerChoices()
+    let viewerChoices: ValueViewerChoices
     /// Each key the editor opens, with its database: the palette's recent keys (FR-AP03, memory only).
     var onKeyOpened: ((Data, Int) -> Void)?
 
@@ -54,8 +54,9 @@ public final class BrowserModel: ObservableObject {
     public init(
         list: KeyListDataSource, filter: KeyFilterModel? = nil, database: Int, serverMode: ServerMode = .standalone, databaseCount: Int? = nil,
         startScan: @escaping @MainActor (KeyIndex) async -> Void = { _ = await $0.loadMore() },
-        editorBinding: @escaping @MainActor (KeyType) -> EditorBinding? = { _ in nil }
+        editorBinding: @escaping @MainActor (KeyType) -> EditorBinding? = { _ in nil }, defaultViewer: ValueViewMode? = nil
     ) {
+        viewerChoices = ValueViewerChoices(defaultMode: defaultViewer)
         self.list = list; self.filter = filter; self.database = database; self.serverMode = serverMode; self.databaseCount = databaseCount
         self.startScan = startScan; self.editorBinding = editorBinding
         databases = DatabaseList(keyspace: [:], databaseCount: databaseCount, mode: serverMode)

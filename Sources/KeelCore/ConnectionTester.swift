@@ -65,15 +65,18 @@ public struct ConnectionTester: ConnectionTesting {
     private let readCAFile: @Sendable (String) throws(KnownCAError) -> Data
     private let makeConnection: MakeConnection
     private let detector: ServerDetector
+    /// Settings → Advanced (FR-AP09), so Test uses the timeouts and `CLIENT SETNAME` a real connect would.
+    private let advanced: @Sendable () -> AdvancedSettings
 
     public init(
         tunnels: TunnelManager? = nil, resolveSavedHost: @escaping ResolveSavedHost = { _ in nil }, savedHostPassword: @escaping SavedHostPassword = { _ in nil },
         clientIdentity: @escaping @Sendable (UUID) -> TLSClientIdentity? = { try? TLSIdentityImporter().clientIdentity(profileID: $0) },
         readCAFile: @escaping @Sendable (String) throws(KnownCAError) -> Data = { path throws(KnownCAError) in try CAFile.read(path) },
-        makeConnection: @escaping MakeConnection = { RedisConnection(endpoint: $0, tls: $1, options: $2) }, detector: ServerDetector = ServerDetector()
+        makeConnection: @escaping MakeConnection = { RedisConnection(endpoint: $0, tls: $1, options: $2) }, detector: ServerDetector = ServerDetector(),
+        advanced: @escaping @Sendable () -> AdvancedSettings = { AdvancedSettings() }
     ) {
         self.tunnels = tunnels; self.resolveSavedHost = resolveSavedHost; self.savedHostPassword = savedHostPassword; self.clientIdentity = clientIdentity; self.readCAFile = readCAFile
-        self.makeConnection = makeConnection; self.detector = detector
+        self.makeConnection = makeConnection; self.detector = detector; self.advanced = advanced
     }
 
     public func test(_ settings: ConnectionSettings, password: Data?, profileID: UUID?) async -> Result<ConnectionTestResult, ConnectionFailure> {
@@ -81,8 +84,9 @@ public struct ConnectionTester: ConnectionTesting {
     }
 
     private func run(_ settings: ConnectionSettings, password: Data?, profileID: UUID?) async throws(ConnectionFailure) -> ConnectionTestResult {
-        let connectTimeout = settings.connectTimeoutMilliseconds.map { Duration.milliseconds($0) } ?? Self.defaultConnectTimeout
-        let commandTimeout = settings.commandTimeoutMilliseconds.map { Duration.milliseconds($0) } ?? Self.defaultCommandTimeout
+        let defaults = advanced()
+        let connectTimeout = settings.connectTimeoutMilliseconds.map { Duration.milliseconds($0) } ?? defaults.connectTimeout
+        let commandTimeout = settings.commandTimeoutMilliseconds.map { Duration.milliseconds($0) } ?? defaults.commandTimeout
         // The CA file is checked before anything is opened, so a missing file never starts ssh or a socket.
         let tls = try tlsConfiguration(settings, profileID: profileID)
 
@@ -106,7 +110,8 @@ public struct ConnectionTester: ConnectionTesting {
         defer { Task { await connection.close() } }
         do throws(RedisError) { try await connection.connect() } catch { throw ConnectionFailure(connecting: error, endpoint: shown, timeout: connectTimeout, tls: tls) }
         let options = HandshakeOptions(
-            username: settings.username, password: password.map { String(decoding: $0, as: UTF8.self) }, database: settings.database, timeout: connectTimeout)
+            username: settings.username, password: password.map { String(decoding: $0, as: UTF8.self) }, database: settings.database, setName: defaults.setsClientName,
+            timeout: connectTimeout)
         do throws(HandshakeError) { _ = try await connection.handshake(options) } catch {
             throw ConnectionFailure(handshake: error, endpoint: shown, options: options, tls: tls)
         }

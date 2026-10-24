@@ -11,13 +11,13 @@ public struct ConnectedServer: Sendable {
     /// The server's `databases` when `CONFIG GET databases` was permitted (FR-KB08); nil offers db0–db15.
     public var databaseCount: Int?
     public var safety: SafetyProfile
-    /// The profile's namespace separator (FR-KB03).
-    public var separator: NamespaceSeparator
+    /// The profile's namespace separator (FR-KB03); nil uses Settings → Browser's default.
+    public var separator: NamespaceSeparator?
     /// Closes every connection of the session and releases its tunnel. Safe to call more than once.
     public var close: @Sendable () async -> Void
 
     public init(
-        session: ServerSession, service: DataCommandService, identity: ServerIdentity, databaseCount: Int?, safety: SafetyProfile, separator: NamespaceSeparator = .default,
+        session: ServerSession, service: DataCommandService, identity: ServerIdentity, databaseCount: Int?, safety: SafetyProfile, separator: NamespaceSeparator? = nil,
         close: @escaping @Sendable () async -> Void
     ) {
         self.session = session; self.service = service; self.identity = identity; self.databaseCount = databaseCount; self.safety = safety; self.separator = separator
@@ -49,16 +49,20 @@ public struct ProfileSessionConnector: SessionConnecting {
     private let confirmCAChange: @Sendable (CAChange) async -> Bool
     private let makeConnection: MakeConnection
     private let detector: ServerDetector
+    /// Settings → Advanced and Console (FR-AP09), read once per connect: an Apply reaches the next connection.
+    private let settings: @Sendable () -> SettingsDocument
 
     public init(
         profiles: ProfileStore, knownCA: KnownCAStore? = nil, tunnels: TunnelManager? = nil, resolveSavedHost: @escaping ConnectionTester.ResolveSavedHost = { _ in nil },
         savedHostPassword: @escaping ConnectionTester.SavedHostPassword = { _ in nil },
         clientIdentity: @escaping @Sendable (UUID) -> TLSClientIdentity? = { try? TLSIdentityImporter().clientIdentity(profileID: $0) },
         confirmCAChange: @escaping @Sendable (CAChange) async -> Bool = { _ in false },
-        makeConnection: @escaping MakeConnection = { RedisConnection(endpoint: $0, tls: $1, options: $2) }, detector: ServerDetector = ServerDetector()
+        makeConnection: @escaping MakeConnection = { RedisConnection(endpoint: $0, tls: $1, options: $2) }, detector: ServerDetector = ServerDetector(),
+        settings: @escaping @Sendable () -> SettingsDocument = { SettingsDocument() }
     ) {
         self.profiles = profiles; self.knownCA = knownCA; self.tunnels = tunnels; self.resolveSavedHost = resolveSavedHost; self.savedHostPassword = savedHostPassword
         self.clientIdentity = clientIdentity; self.confirmCAChange = confirmCAChange; self.makeConnection = makeConnection; self.detector = detector
+        self.settings = settings
     }
 
     public func connect(profileID: UUID, database: Int) async -> Result<ConnectedServer, ConnectionFailure> {
@@ -69,10 +73,11 @@ public struct ProfileSessionConnector: SessionConnecting {
         guard let profile = await profiles.profile(profileID) else {
             throw ConnectionFailure(category: .connectionFailed, message: "This connection no longer exists.", suggestion: "Close the tab, or create the connection again.")
         }
-        let settings = profile.settings
+        let settings = profile.settings, applied = self.settings()
         let safety = SafetyProfile(name: settings.name, readOnly: settings.readOnly, production: await profiles.isProduction(profile), server: settings.serverAddress)
-        let connectTimeout = settings.connectTimeoutMilliseconds.map { Duration.milliseconds($0) } ?? ConnectionTester.defaultConnectTimeout
-        let commandTimeout = settings.commandTimeoutMilliseconds.map { Duration.milliseconds($0) } ?? ConnectionTester.defaultCommandTimeout
+        // A profile's own timeouts win; without them, Settings → Advanced's.
+        let connectTimeout = settings.connectTimeoutMilliseconds.map { Duration.milliseconds($0) } ?? applied.advanced.connectTimeout
+        let commandTimeout = settings.commandTimeoutMilliseconds.map { Duration.milliseconds($0) } ?? applied.advanced.commandTimeout
         // Bound to the revision just read: an edit that changed the connection since never gets the old password.
         let password: Data?
         do throws(ProfileStoreError) { password = try await profiles.password(profileID: profileID, connectionRevision: profile.connectionRevision) } catch {
@@ -99,7 +104,8 @@ public struct ProfileSessionConnector: SessionConnecting {
         let options = RedisConnection.Options(connectTimeout: connectTimeout, commandTimeout: commandTimeout)
         let username = settings.username, secret = password.map { String(decoding: $0, as: UTF8.self) }
         let closed = CloseOnce()
-        let session = ServerSession { (_: ConnectionRole, database: Int) async throws(ConnectionFailure) -> RedisConnection in
+        let setsName = applied.advanced.setsClientName, consoleProtocol = applied.console.protocolVersion
+        let session = ServerSession { (role: ConnectionRole, database: Int) async throws(ConnectionFailure) -> RedisConnection in
             // After Disconnect a browser task still running (a SCAN page, row metadata) must not open a new, unowned
             // connection; an open already under way when the session closes is closed by `ServerSession`.
             guard !closed.isClaimed else {
@@ -110,7 +116,10 @@ public struct ProfileSessionConnector: SessionConnecting {
                 await connection.close()
                 throw ConnectionFailure(connecting: error, endpoint: shown, timeout: connectTimeout, tls: tls)
             }
-            let handshake = HandshakeOptions(username: username, password: secret, database: database, timeout: connectTimeout)
+            // Only the console's own connection takes Settings → Console's protocol; the browser, streams and jobs stay
+            // on RESP3, which their parsing and push handling expect.
+            let version = if case .console = role { consoleProtocol } else { 3 }
+            let handshake = HandshakeOptions(username: username, password: secret, database: database, setName: setsName, protocolVersion: version, timeout: connectTimeout)
             do throws(HandshakeError) { _ = try await connection.handshake(handshake) } catch {
                 await connection.close()
                 throw ConnectionFailure(handshake: error, endpoint: shown, options: handshake, tls: tls)
@@ -136,7 +145,7 @@ public struct ProfileSessionConnector: SessionConnecting {
                 return try await connection.send(arguments, mayWrite: false)
             }
             return ConnectedServer(
-                session: session, service: service, identity: identity, databaseCount: count, safety: safety, separator: NamespaceSeparator(profile: settings.separator), close: close)
+                session: session, service: service, identity: identity, databaseCount: count, safety: safety, separator: settings.separator.flatMap { NamespaceSeparator(Data($0.utf8)) }, close: close)
         } catch {
             await close()
             throw error
