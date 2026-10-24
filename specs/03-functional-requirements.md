@@ -155,7 +155,7 @@ Common rules for all editors:
 | FR-AP07 | Automatic updates with Sparkle 2: check daily (default on, can be turned off), signed EdDSA appcast over HTTPS, user confirms install, "Check for Updates…" in the app menu. No system profile is sent. | See [MAC-08](07-macos-support.md). |
 | FR-AP08 | Welcome screen with no tabs: recent connections, New Connection, Paste URL, Import. | |
 | FR-AP09 | Settings: General (theme, updates, restore behavior), Browser (default separator, page size, auto-page limit, TTL display), Editors (default viewer, load limits), Console (font size, RESP version, match chrome), Keyboard, Advanced (timeouts, CLIENT SETNAME default). Changes are drafts until Apply where they affect live connections; cancel restores the exact prior state. | |
-| FR-AP10 | Diagnostics export (Help → Export Diagnostics): app version, macOS, architecture, profile **count** and server types, recent error codes; never hosts, key names, values, or secrets. | |
+| FR-AP10 | Diagnostics export (Help → Export Diagnostics): app version, macOS, architecture, profile **count** and server types, recent error codes; never hosts, key names, values, or secrets. A JSON file saved where the user chooses; fields in [02 → Logging and diagnostics](02-architecture.md#logging-and-diagnostics). | |
 
 ### Default shortcuts
 

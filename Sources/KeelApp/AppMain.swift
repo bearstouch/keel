@@ -403,8 +403,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         add(.nextTab, #selector(nextTab(_:)), to: windowMenu)
         add(.previousTab, #selector(previousTab(_:)), to: windowMenu)
         windowItem.submenu = windowMenu
+        let helpItem = NSMenuItem(); menu.addItem(helpItem)
+        let helpMenu = NSMenu(title: "Help")
+        add("Export Diagnostics…", #selector(exportDiagnostics(_:)), "", to: helpMenu)
+        helpItem.submenu = helpMenu
         NSApp.mainMenu = menu
         NSApp.windowsMenu = windowMenu
+        NSApp.helpMenu = helpMenu
         // `$map` publishes before the change lands, with the new value.
         bindingChanges = bindings.$map.dropFirst().sink { [weak self] in self?.applyShortcuts($0) }
     }
@@ -433,6 +438,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         let equivalent = chord?.menuKeyEquivalent
         item.keyEquivalent = equivalent?.key ?? ""
         item.keyEquivalentModifierMask = equivalent?.modifiers ?? []
+    }
+
+    // MARK: - Diagnostics
+
+    /// Help → Export Diagnostics (FR-AP10): versions, the profile count, server types and recent error codes, written
+    /// only where the user chooses. Never hosts, key names, values or secrets.
+    @objc private func exportDiagnostics(_ sender: Any?) {
+        Task { [profiles] in
+            let report = DiagnosticsReport.current(profileCount: await profiles.profiles.count)
+            let panel = NSSavePanel()
+            panel.title = "Export Diagnostics"; panel.prompt = "Export"
+            panel.allowedContentTypes = [.json]; panel.nameFieldStringValue = DiagnosticsReport.fileName; panel.canCreateDirectories = true
+            guard panel.runModal() == .OK, let url = panel.url else { return }
+            do { try report.encoded().write(to: url, options: .atomic) } catch {
+                let alert = NSAlert()
+                alert.messageText = "The diagnostics couldn't be exported."; alert.informativeText = error.localizedDescription
+                alert.runModal()
+            }
+        }
     }
 
     // MARK: - Command palette

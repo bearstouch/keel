@@ -15,6 +15,15 @@ public enum MultiKeyDelete {
         case server(String)
         /// The task was cancelled between batches.
         case cancelled
+
+        /// The shared error code (`specs/02-architecture.md#errors`); a server's text is never part of it.
+        public var code: String {
+            switch self {
+            case .command(let error): return error.code
+            case .server: return "SERVER_ERROR"
+            case .cancelled: return "CANCELLED"
+            }
+        }
     }
 
     public struct Report: Sendable, Equatable {

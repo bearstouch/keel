@@ -8,6 +8,7 @@ import KeelRESP
 /// Cancel is a flag, not task cancellation: cancelling the task would drop an in-flight `UNLINK`'s reply and make its
 /// outcome unknown, while the flag lets that batch finish and stops before the next (02 Architecture → Concurrency).
 public actor BulkDeleteJob {
+    private static let log = KeelLog(.jobs)
     public static let scanCount = 1_000
     public static let batchSize = 1_000
     /// Preview matches shows at most this many names.
@@ -272,6 +273,9 @@ public actor BulkDeleteJob {
             if finished { break }
         }
         report.progress.elapsed = clock.now() - started
+        // Counts and the stop code only: never the pattern or a key (NFR-PV02).
+        let stop: LogField = .code(report.failure.map(\.code) ?? "COMPLETED")
+        Self.log.log(.info, "bulk_delete.finished", .count("scans", report.progress.scans), .count("matched", report.progress.matched), .count("deleted", report.deleted), stop)
         await close()
         return report
     }

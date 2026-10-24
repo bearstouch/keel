@@ -271,6 +271,8 @@ public enum ServerReadOnly {
 public actor DataCommandService {
     public let session: ServerSession
     public private(set) var catalog: CommandCatalog
+    /// Refusals and failures log their code only (NFR-PV02): never the command, its keys or the reply.
+    private static let log = KeelLog(.data)
 
     /// Roles with a transaction in progress, and the transactions waiting for each. `EXEC` ends every `WATCH` on its
     /// connection, so two saves on the browser connection must not overlap.
@@ -317,7 +319,17 @@ public actor DataCommandService {
     /// Connection-state and streaming commands change no data, so they don't count as writes for the notice.
     private static func changesData(_ safetyClass: SafetyClass) -> Bool { safetyClass.mayWrite && ![.session, .streaming].contains(safetyClass) }
 
+    // `execute` and `executeTransaction` wrap their bodies so every throw path, refusals included, logs its code once.
     public func execute(_ command: DataCommand, origin: CommandOrigin, context: DataContext) async throws(DataCommandError) -> DataCommandResult {
+        do { return try await run(command, origin: origin, context: context) } catch {
+            // A refusal (READ_ONLY, CONFIRMATION_REQUIRED before the typed confirmation) is the policy working, not a
+            // failure: logged at info, so it doesn't crowd real errors out of the diagnostics.
+            if case .refused = error { Self.log.log(.info, "command.refused", .code(error.code)) } else { Self.log.error("command.failed", .code(error.code)) }
+            throw error
+        }
+    }
+
+    private func run(_ command: DataCommand, origin: CommandOrigin, context: DataContext) async throws(DataCommandError) -> DataCommandResult {
         let arguments = command.arguments
         guard !arguments.isEmpty else { throw .invalidRequest("A command needs at least its name.") }
         let info = catalog.resolve(arguments)
@@ -382,6 +394,13 @@ public actor DataCommandService {
     public func executeTransaction(_ writes: [DataOperation], unchanged watch: WatchGuard?, context: DataContext) async throws(DataCommandError)
         -> DataCommandResult
     {
+        do { return try await runTransaction(writes, unchanged: watch, context: context) } catch {
+            if case .refused = error { Self.log.log(.info, "transaction.refused", .code(error.code)) } else { Self.log.error("transaction.failed", .code(error.code)) }
+            throw error
+        }
+    }
+
+    private func runTransaction(_ writes: [DataOperation], unchanged watch: WatchGuard?, context: DataContext) async throws(DataCommandError) -> DataCommandResult {
         guard !writes.isEmpty else { throw .invalidRequest("A save needs at least one write.") }
         if let watch, watch.reads.count != watch.expected.count { throw .invalidRequest("Each guard read needs the reply it expects.") }
         func evaluate(_ operation: DataOperation, confirmation: CommandConfirmation?) -> SafetyVerdict {

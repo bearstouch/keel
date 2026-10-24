@@ -205,6 +205,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
   visible accent focus ring in the editor tables, focus rings for the sidebar, connection form and key list, ⌃Tab to
   leave the value viewer and console, ⌘I to edit the sidebar's selected connection, table rows read with their column
   headers, and "TLS not verified" shown in the toolbar and on the tab (KEEL-045).
+- Privacy and logging guardrails: a single logging wrapper that logs codes and counts publicly, server text only as
+  private in debug builds and not at all in release builds; Help → Export Diagnostics saves a JSON file with the app
+  and macOS versions, architecture, profile count, server types and recent error codes, never hosts, key names, values
+  or secrets; a source scan test keeps `print`, `NSLog` and raw `os_log` out of the app (KEEL-046).
 
 ### Removed
 
