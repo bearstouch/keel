@@ -195,7 +195,7 @@ public struct KeyListPane: View {
                 .buttonStyle(.plain).foregroundStyle(Tokens.accent)
             }
             Spacer(minLength: 0)
-            if dataSource.metadataLoader != nil { moreMenu }
+            if dataSource.metadataLoader != nil || dataSource.onBulkDelete != nil { moreMenu }
         }
         .font(Tokens.interface(11.5)).foregroundStyle(Tokens.muted)
         .lineLimit(1)
@@ -205,10 +205,21 @@ public struct KeyListPane: View {
         .accessibilityLabel(footer.text)
     }
 
-    /// The list's secondary actions ("show less, reveal on demand"). Show Sizes measures the visible rows (FR-KB07).
+    /// The list's secondary actions ("show less, reveal on demand"). Show Sizes measures the visible rows (FR-KB07);
+    /// Delete Keys Matching… deletes what the server pattern filter matches (FR-SF05), so it needs one.
     private var moreMenu: some View {
         Menu {
-            Toggle("Show Sizes", isOn: Binding(get: { dataSource.showsSizes }, set: { on in Task { await dataSource.setShowsSizes(on) } }))
+            if dataSource.metadataLoader != nil {
+                Toggle("Show Sizes", isOn: Binding(get: { dataSource.showsSizes }, set: { on in Task { await dataSource.setShowsSizes(on) } }))
+            }
+            if let bulkDelete = dataSource.onBulkDelete {
+                Divider()
+                let applied = filter?.applied
+                let title = applied?.pattern.map { "Delete Keys Matching \(KeyDisplay.name($0))…" } ?? "Delete Keys Matching…"
+                // Shown but disabled for what the job refuses (no pattern, `*`, a module-type filter).
+                let refused = applied.flatMap { BulkDeleteJob.refusal(pattern: $0.pattern ?? Data(), type: $0.type) } != nil
+                Button(title, action: bulkDelete).disabled(refused)
+            }
         } label: {
             Image(systemName: "ellipsis")
         }

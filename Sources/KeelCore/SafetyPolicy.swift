@@ -217,8 +217,8 @@ public enum SafetyPolicy {
         case .keys(let selection):
             return isKeyDeletion(arguments, safetyClass) && arguments.dropFirst().allSatisfy(selection.contains)
         case .pattern(let pattern):
-            // `*` deletes everything: that is FLUSHDB, with its own confirmation (FR-SF05).
-            guard pattern != Data("*".utf8), isKeyDeletion(arguments, safetyClass) else { return false }
+            // `*` (or `**`) deletes everything: that is FLUSHDB, with its own confirmation (FR-SF05).
+            guard !GlobPattern.matchesEverything(pattern), isKeyDeletion(arguments, safetyClass) else { return false }
             return arguments.dropFirst().allSatisfy { GlobPattern.matches(pattern, $0) }
         }
     }

@@ -171,6 +171,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - Multi-key selection in the key list; ⌫ or **Delete N Keys…** asks for a typed confirmation (type the number of
   keys; production names the server) and deletes with `UNLINK` in batches of 500; **Copy N Key Names** (KEEL-038).
 - Shared typed-confirmation sheet for destructive operations, and O(N) size warnings for the console (KEEL-038).
+- Bulk delete by pattern from the key list's ⋯ menu (**Delete Keys Matching …**): the applied server pattern
+  (and core type filter), an estimated count with **Preview matches** (first 100), typed confirmation and a throttle
+  (default 10 batches/s, 1–100 or unthrottled); `SCAN MATCH … COUNT 1000` + `UNLINK` batches of 1,000 on the job's
+  own connection, with progress, ETA, Cancel after the current batch and a final report. `*` is refused (KEEL-039).
 
 ### Removed
 

@@ -22,6 +22,11 @@ public final class BrowserModel: ObservableObject {
     @Published public private(set) var isReadOnly = true
     /// The typed confirmation for deleting the multi-key selection (FR-SF03, FR-SF04); the pane shows it as a sheet.
     @Published public var deleteConfirmation: TypedConfirmationModel?
+    /// Bulk delete by the filter's pattern (FR-SF05); the pane shows it as a sheet. A sheet closed before its run
+    /// releases the job's connection.
+    @Published public var bulkDelete: BulkDeleteModel? {
+        didSet { if let oldValue, oldValue !== bulkDelete { Task { await oldValue.dismissed() } } }
+    }
 
     public let list: KeyListDataSource
     public let filter: KeyFilterModel?
@@ -118,6 +123,7 @@ public final class BrowserModel: ObservableObject {
         isReadOnly = await list.index.context.profile.readOnly
         // Read-only profiles don't offer the delete (FR-KB11): no ⌫, no Delete N Keys… in the menu.
         list.onDelete = isReadOnly ? nil : { [weak self] in Task { await self?.requestDeleteSelection() } }
+        list.onBulkDelete = isReadOnly || filter == nil ? nil : { [weak self] in Task { await self?.requestBulkDelete() } }
         await scan()
     }
 
@@ -284,6 +290,27 @@ public final class BrowserModel: ObservableObject {
         }
     }
 
+    // MARK: - Bulk delete by pattern (FR-SF05)
+
+    /// ⋯ → Delete Keys Matching…: the applied server pattern (and core type filter) in the shown database. Refused
+    /// patterns (`*`, none, a module-type filter) never open the sheet.
+    public func requestBulkDelete() async {
+        guard !isReadOnly, bulkDelete == nil, let applied = filter?.applied, let pattern = applied.pattern else { return }
+        let index = list.index
+        let context = await index.context
+        let job: BulkDeleteJob
+        do throws(DataCommandError) {
+            job = try BulkDeleteJob(pattern: pattern, type: applied.type, service: await index.service, profile: context.profile, database: context.database)
+        } catch {
+            return
+        }
+        bulkDelete = BulkDeleteModel(job: job, profile: context.profile, database: context.database) { [weak self] in
+            // The deleted keys leave the list by a fresh scan; the run's keys aren't tracked one by one.
+            guard let self, self.database == context.database else { return }
+            await self.refresh()
+        }
+    }
+
     // MARK: - New key (FR-ED14)
 
     /// Writable profiles only. Selecting the new key reopens the editor, which would drop a draft, so unsaved changes are
@@ -371,6 +398,9 @@ public struct BrowserPane: View {
         }
         .sheet(item: $model.deleteConfirmation) { confirmation in
             TypedConfirmationSheet(model: confirmation) { model.deleteConfirmation = nil }
+        }
+        .sheet(item: $model.bulkDelete) { bulkDelete in
+            BulkDeleteSheet(model: bulkDelete) { model.bulkDelete = nil }
         }
     }
 }
