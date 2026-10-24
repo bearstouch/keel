@@ -48,6 +48,9 @@ public final class EditorSession: ObservableObject {
 
     let service: DataCommandService
     let context: DataContext
+    let separator: NamespaceSeparator
+    /// The wall clock for expiry times; tests fix it.
+    var now: @Sendable () -> Date = Date.init
     /// The row the viewer was last opened on, so selecting another row with the same bytes still re-opens it.
     private var viewedRowID: Data?
     /// Bumped by every value adopted (load, reload, save), so a "Load more" page read before it is dropped.
@@ -58,7 +61,7 @@ public final class EditorSession: ObservableObject {
         key: Data, type: KeyType, binding: EditorBinding?, service: DataCommandService, context: DataContext,
         viewerChoices: ValueViewerChoices = ValueViewerChoices(), separator: NamespaceSeparator = .default
     ) {
-        self.key = key; self.type = type; self.binding = binding; self.service = service; self.context = context
+        self.key = key; self.type = type; self.binding = binding; self.service = service; self.context = context; self.separator = separator
         header = KeyHeader(type: type, readOnly: context.profile.readOnly)
         viewer = ValueViewerModel(
             choices: viewerChoices, pattern: ValueViewerMemory.pattern(of: key, separator: separator), isEditable: !context.profile.readOnly && binding?.editsValues != false)
@@ -366,6 +369,134 @@ public final class EditorSession: ObservableObject {
     /// ⋯ → Details: encoding and exact TTL, and a stream's `XINFO STREAM` summary; `memory` measures the size too (on request).
     public func loadDetails(memory: Bool = false) async {
         details = await KeyDetails.load(key: key, memory: memory, stream: type == .stream, service: service, context: context)
+    }
+
+    // MARK: - Key actions (FR-ED10–FR-ED12, FR-ED15)
+
+    /// What a key action did to the key itself; the browser follows it in the list.
+    public enum KeyChange: Equatable {
+        /// `replaced`: an existing key was overwritten, so the database holds one key fewer.
+        case renamed(to: Data, replaced: Bool)
+        case deleted
+    }
+
+    public enum RenameResult: Equatable {
+        case renamed
+        /// The new name is taken and nothing changed; renaming again with this token replaces that key.
+        case needsOverwrite(KeyActions.RenameOverwrite)
+        case failed(String)
+    }
+
+    /// A sheet the ⋯ menu or a shortcut (⌘E, ⌥⌘E) asked for; the shell presents it and clears this on dismiss.
+    public enum KeyActionRequest: String, Identifiable {
+        case rename, setTTL
+        public var id: String { rawValue }
+    }
+
+    @Published public var requestedKeyAction: KeyActionRequest?
+
+    /// Set by the browser: a rename re-selects the key under its new name, a delete clears the editor.
+    public var onKeyChange: ((KeyChange) -> Void)?
+    /// When the key expires, as last read (the Set TTL sheet reads it on open); nil until then.
+    @Published public private(set) var expiry: KeyExpiry?
+
+    /// Rename, Set TTL and Delete: writable profiles, while nothing else runs (a module type without an editor too, FR-ED07).
+    public var canRunKeyAction: Bool { allowsWrites && phase != .loading && phase != .saving && !isLoadingMore }
+    /// A rename reopens the key under its new name, which would drop unsaved changes, so they are saved or reverted first.
+    public var canRename: Bool { canRunKeyAction && !hasUnsavedChanges }
+
+    /// Rename…: `RENAMENX`, or `RENAME` with the token from an earlier `needsOverwrite` (the user confirmed).
+    public func rename(to newKey: Data, overwrite: KeyActions.RenameOverwrite? = nil) async -> RenameResult {
+        guard canRename else { return .failed("Save or revert your changes before renaming.") }
+        let outcome: KeyActions.RenameOutcome
+        do throws(DataCommandError) {
+            outcome = try await keyAction { [key, service, context] () async throws(DataCommandError) in
+                try await KeyActions.rename(key, to: newKey, overwrite: overwrite, service: service, context: context)
+            }
+        } catch {
+            return .failed(Self.keyActionMessage(error))
+        }
+        switch outcome {
+        case .targetExists(let token): return .needsOverwrite(token)
+        case .renamed:
+            onKeyChange?(.renamed(to: newKey, replaced: overwrite != nil))
+            return .renamed
+        }
+    }
+
+    /// Set TTL…: applies the change, then shows the new expiry (clock time, or "—" after Persist) and re-reads the header.
+    /// Returns why it failed; nil when applied.
+    public func setTTL(_ change: KeyActions.TTLChange) async -> String? {
+        guard canRunKeyAction else { return "Wait for the current action to finish." }
+        var failure: String?
+        do throws(DataCommandError) {
+            expiry = try await keyAction { [key, service, context, now] () async throws(DataCommandError) in
+                try await KeyActions.setTTL(key, change, service: service, context: context, now: now)
+            }
+        } catch {
+            // The sheet shows what the server has now, whatever happened.
+            await loadExpiry()
+            failure = Self.keyActionMessage(error)
+        }
+        header = await KeyHeader.load(key: key, type: type, service: service, context: context)
+        return failure
+    }
+
+    public func loadExpiry() async { expiry = await KeyActions.expiry(of: key, service: service, context: context, now: now) }
+
+    /// Delete… after the normal confirmation: `UNLINK`, then the browser drops the key and the editor closes.
+    /// Returns why it failed; nil when deleted.
+    public func delete() async -> String? {
+        guard canRunKeyAction else { return "Wait for the current action to finish." }
+        do throws(DataCommandError) {
+            try await keyAction { [key, service, context] () async throws(DataCommandError) in try await KeyActions.delete(key, service: service, context: context) }
+        } catch {
+            return Self.keyActionMessage(error)
+        }
+        onKeyChange?(.deleted)
+        return nil
+    }
+
+    /// Runs one key action with the editor marked busy (no save or second action meanwhile), then restores its phase.
+    private func keyAction<T>(_ body: () async throws(DataCommandError) -> T) async throws(DataCommandError) -> T {
+        let previous = phase
+        phase = .saving
+        defer { if phase == .saving { phase = previous } }
+        return try await body()
+    }
+
+    /// An unknown outcome the re-read couldn't settle: say so rather than "failed", since it may have happened.
+    static func keyActionMessage(_ error: DataCommandError) -> String {
+        switch error {
+        case .command(.outcomeUnknown), .command(.timeout):
+            return "The connection dropped, so the outcome is unknown. Refresh the list to see whether it was applied."
+        default: return message(error)
+        }
+    }
+
+    /// Why Export and Copy Value are unavailable; nil when they can run. They use the value as loaded from the server
+    /// (unsaved changes aren't in it), and only a whole value: a first page exported as the file would silently drop the rest.
+    public var exportBlock: String? {
+        guard binding != nil else { return "There's no editor for this type, so there's no value to export." }
+        guard let loaded else { return "The value isn't loaded." }
+        if loaded.partial != nil { return "Only part of the value is loaded. Load all first." }
+        if type != .string, loaded.next != nil || header.length != Int64(loaded.rows.count) {
+            return "Only part of the value is loaded. Load every page first."
+        }
+        return nil
+    }
+
+    /// The export file's bytes: a string's raw value, a collection's JSON.
+    public func exportData() -> Data? {
+        guard exportBlock == nil, let loaded else { return nil }
+        return ValueExport.data(key: key, type: type, rows: loaded.rows)
+    }
+
+    public var exportFileName: String { ValueExport.suggestedFileName(key: key, type: type, rows: loaded?.rows ?? [], separator: separator) }
+
+    public func copyValueText() -> String? {
+        guard exportBlock == nil, let loaded else { return nil }
+        return ValueExport.copyText(key: key, type: type, rows: loaded.rows)
     }
 
     // MARK: - Messages

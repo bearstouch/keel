@@ -22,11 +22,17 @@ struct EditorArea: View {
 struct EditorShell: View {
     @ObservedObject var session: EditorSession
     @State private var showsDetails = false
+    @State private var confirmsDelete = false
+    /// Why the last Delete, Export or Copy failed; shown under the metadata line.
+    @State private var keyActionFailure: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             metadata.padding(.top, 6)
+            if let keyActionFailure {
+                Text(keyActionFailure).font(Tokens.interface(12.5)).foregroundStyle(Tokens.danger).fixedSize(horizontal: false, vertical: true).padding(.top, 6)
+            }
             content.padding(.top, 28)
         }
         .padding(.horizontal, 36).padding(.top, 28)
@@ -46,6 +52,29 @@ struct EditorShell: View {
                     ? "Nothing was saved. Reload shows the server's value and drops your changes; Overwrite saves your changes over it."
                     : "Nothing was saved. Edits by index could now land on other items, so they can't be forced; Reload shows the server's value and drops your changes.")
         }
+        // FR-ED12: a normal confirmation for one key.
+        .alert("Delete “\(KeyDisplay.name(session.key))”?", isPresented: $confirmsDelete) {
+            Button("Delete", role: .destructive) { Task { keyActionFailure = await session.delete() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(deleteMessage)
+        }
+        .sheet(item: requestedSheet) { request in
+            switch request {
+            case .rename: RenameKeySheet(session: session)
+            case .setTTL: SetTTLSheet(session: session)
+            }
+        }
+    }
+
+    private var deleteMessage: String {
+        let removal = "The key is removed from db\(session.context.database) on \(session.context.profile.name) with UNLINK."
+        return session.hasUnsavedChanges ? removal + " Your unsaved changes are discarded." : removal
+    }
+
+    /// ⌘E / ⌥⌘E and the ⋯ menu ask the session, so the menu bar and the button open the same sheet.
+    private var requestedSheet: Binding<EditorSession.KeyActionRequest?> {
+        Binding(get: { session.requestedKeyAction }, set: { session.requestedKeyAction = $0 })
     }
 
     private var conflict: Binding<Bool> {
@@ -62,31 +91,29 @@ struct EditorShell: View {
         }
     }
 
-    /// Secondary actions (DS-01). Rename, Set TTL and Delete arrive with KEEL-035; on a read-only profile they stay
-    /// disabled whatever is built.
+    /// Secondary actions (DS-01, FR-ED10–FR-ED15). Writes stay disabled on a read-only profile; Copy Value and Export
+    /// need the whole value loaded.
     private var actions: some View {
         Menu {
-            Button("Rename…") {}.disabled(true)
-            Button("Set TTL…") {}.disabled(true)
+            Button("Rename…") { session.requestedKeyAction = .rename }.disabled(!session.canRename)
+            Button("Set TTL…") { session.requestedKeyAction = .setTTL }.disabled(!session.canRunKeyAction)
             Menu("Copy") {
-                Button("Copy Name") { copy(KeyDisplay.name(session.key)) }
-                Button("Copy as redis-cli Argument") { copy(KeyDisplay.redisCliArgument(session.key)) }
+                Button("Copy Name") { KeyValueTransfer.copy(KeyDisplay.name(session.key)) }
+                Button("Copy as redis-cli Argument") { KeyValueTransfer.copy(KeyDisplay.redisCliArgument(session.key)) }
+                Button("Copy Value") { session.copyValueText().map(KeyValueTransfer.copy) }.disabled(session.exportBlock != nil)
+                    .help(session.exportBlock ?? "Copies the saved value")
             }
-            Button("Delete…") {}.disabled(true)
+            Button("Export Value…") { keyActionFailure = KeyValueTransfer.export(session) }.disabled(session.exportBlock != nil)
+                .help(session.exportBlock ?? "Saves the saved value to a file: raw bytes for a string, JSON for a collection")
+            Button("Delete…") { confirmsDelete = true }.disabled(!session.canRunKeyAction)
             Divider()
             Button("Details…") { showsDetails = true }
         } label: {
             Image(systemName: "ellipsis").font(.system(size: 14)).foregroundStyle(Tokens.muted).frame(width: 32, height: 32)
         }
         .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-        .accessibilityLabel("More actions: rename, TTL, copy, delete, details")
+        .accessibilityLabel("More actions: rename, TTL, copy, export, delete, details")
         .popover(isPresented: $showsDetails, arrowEdge: .bottom) { DetailsPopover(session: session) }
-    }
-
-    /// FR-KB10: the display name, or the always-escaped argument that parses back to the same bytes.
-    private func copy(_ text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
     }
 
     private var metadata: some View {

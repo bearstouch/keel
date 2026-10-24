@@ -19,9 +19,19 @@ As a user, I want to rename keys, change TTLs, delete and export values from the
 
 ## Acceptance criteria
 
-- [ ] **AC1.** Renaming onto an existing key without confirming changes nothing.
-- [ ] **AC2.** Setting TTL to 1 h shows the expiry clock time; Persist shows no expiry.
-- [ ] **AC3.** Exporting a binary string writes identical bytes.
+- [x] **AC1.** Renaming onto an existing key without confirming changes nothing.
+- [x] **AC2.** Setting TTL to 1 h shows the expiry clock time; Persist shows no expiry.
+- [x] **AC3.** Exporting a binary string writes identical bytes.
+
+### Verification notes
+
+- AC1 observed in `KeyActionsTests.testRenameOverwriteRequiresConfirmation` (in-memory server: `RENAMENX` replies 0, both keys keep their values and no `RENAME` is sent; a confirmation for another target is refused with nothing sent; the confirmed `RENAME` replaces the target) and `KeyActionsSessionTests.testRenameSelectsTheNewNameAndOverwriteAsksFirst` (KeelUITests: the editor stays open on the old key until Replace; a plain rename reopens the editor on the new name and the list holds it).
+- AC2 observed in `KeyActionsTests.testTTLPresetsAndAbsolute` (1 h → `PEXPIRE k 3600000`, then `PEXPIRETIME`; the expiry reads `1/15/2027, 9:00:00 AM` in a fixed UTC style; on a server without `PEXPIRETIME` the time is now + `PTTL`; `PEXPIREAT` for a date; zero, negative and past times send nothing) and `testPersistRemovesTTL` (`PERSIST`, expiry `—`). It is observed at the model level; the Set TTL sheet in the running app is **pending**.
+- AC3 observed in `ValueExportTests.testBinaryExportIsByteExact` (all 256 byte values plus invalid UTF-8 written to a file and read back identical, `.bin` suggested). `KeyActionsSessionTests.testExportUsesTheLoadedValueOnlyWhenWhole`: a partial 2 MiB string or a paged hash can't be exported.
+- Delete: `testDeleteUsesUnlinkForOneKey`, `KeyActionsSessionTests.testDeleteRemovesKeyAndShowsEmptyEditor` (the key leaves the list, the editor closes, the total goes down by one). Read-only: `testReadOnlyProfileSendsNothing`, `testReadOnlyProfileBlocksKeyActions`.
+- Review fix: a rename onto a loaded key resets that row's metadata (TTL, size, stale mark) and bumps the generation, so answers read for the replaced key are dropped (`KeyActionsReviewTests.testAddOntoLoadedKeyResetsItsMetadata`).
+- Pending: the sheets, the save panel and the ⋯ menu seen in the running app in light and dark; a VoiceOver pass; real Redis 6.0 / 7.x and Valkey containers (KEEL-048). ⌘⌫ isn't bound to Delete here (as a menu shortcut it would catch ⌘⌫ in the value editor); it arrives with the key list's multi-key delete in KEEL-038.
+- Follow-ups (from review, not applied): `BrowserModel.keyChanged` doesn't check whether the selection or database changed while it awaits; `KeyIndex.add` ignores the key limit and the local filter; export stays disabled without a clear reason when the header's length couldn't be read; the total can be off by one after a replacing rename if the target was deleted elsewhere; a lost TTL reply shows the generic error rather than the unknown-outcome message (the expiry is re-read); the date picker's lower bound is set when the sheet renders.
 
 ## Unit tests
 

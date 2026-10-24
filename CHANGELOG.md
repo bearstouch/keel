@@ -155,6 +155,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
   possible ID, so no entry is repeated or skipped. Selecting an entry lists its fields and opens a value in the viewer.
   ⋯ → Details shows the `XINFO STREAM` summary (length, first and last ID, groups). **+ Add entry** (`XADD`, automatic
   `*` or explicit ID) shows the new entry at the top (KEEL-034).
+- Key actions in the editor's ⋯ menu and the Key menu: Rename… (⌘E, `RENAMENX`, asking before `RENAME` replaces an
+  existing key), Set TTL… (⌥⌘E: 1 min / 1 h / 1 day / 7 days, a custom duration or a date, Persist; the expiry shows as
+  a clock time from `PEXPIRETIME` or `PTTL`), Delete… (`UNLINK` after a confirmation; the key leaves the list), Copy
+  Value and Export Value… (a string's raw bytes, a collection as binary-safe JSON; whole values only) (KEEL-035).
 
 ### Removed
 

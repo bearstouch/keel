@@ -637,6 +637,20 @@ public actor KeyIndex {
         return true
     }
 
+    /// A key the user just made (a rename's new name, FR-ED10) joins the loaded keys at the end, so it can be selected
+    /// before a refresh; one the filter wouldn't list stays out (false). A key already loaded (the key a rename replaced)
+    /// is another value now: it takes the new type and its TTL, size and stale mark are read again.
+    @discardableResult
+    public func add(key: Data, type: KeyType) -> Bool {
+        let filter = configuration.filter
+        if let pattern = filter.pattern, !GlobPattern.matches(pattern, key) { return false }
+        if let wanted = filter.type?.keyType, wanted != type { return false }
+        guard ingest([key]).isEmpty, let added = index(of: key) else { return false }
+        updateMetadata(at: added) { $0 = KeyMetadata(type: type) }
+        generation += 1
+        return true
+    }
+
     // MARK: - Local filter
 
     /// Keys searched per call, so the first results of a local filter over a million keys show within the budget (AC3).
