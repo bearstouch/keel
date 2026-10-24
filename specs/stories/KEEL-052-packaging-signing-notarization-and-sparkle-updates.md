@@ -12,7 +12,7 @@ As a user, I want a signed, notarized Universal DMG that updates itself safely, 
 
 ## Scope
 
-- `scripts/package-release.sh`: Universal 2 (`lipo`), hardened runtime, sign app + `keel-askpass` + Sparkle helpers, notarize and staple DMG, `release-evidence.json`, `SHA256SUMS.txt`
+- `scripts/package-release.sh`: Universal 2 (`lipo`), hardened runtime, sign app + `keel-askpass` + Sparkle helpers, notarize and staple DMG, `release-evidence.json` (including the latest `.build/bench/evidence.json` from KEEL-047 under `performance`), `SHA256SUMS.txt`
 - DMG layout with light icon background; `NSLocalNetworkUsageDescription`
 - Sparkle 2 pinned: EdDSA appcast over HTTPS, daily check (toggle), user-confirmed installs, no system profiling
 - `.github/workflows/release.yml` pinned to SHAs; unsigned/unnotarized builds only as pre-releases

@@ -25,6 +25,7 @@ swift test                                    # XCTest suite
 swift format lint --strict -r Sources Tests ThirdParty   # must print nothing
 swift run Keel                                # run the app (development identity)
 swift run Keel --state-directory /abs/path    # use a separate state folder
+python3 scripts/bench-browser.py --redis-server "$(which redis-server)"   # performance benchmarks, evidence in .build/bench/
 ```
 
 ## License

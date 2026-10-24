@@ -19,7 +19,7 @@ Keel is a macOS-only application.
 
 - **MAC-08 (P0):** distributed directly as a signed DMG (not the Mac App Store), Developer ID signed with the hardened runtime, notarized and stapled. The app and the bundled `keel-askpass` helper (`Contents/Helpers`) are signed; Sparkle's helpers are signed as Sparkle documents. Automatic updates through Sparkle 2 (INT-11): EdDSA-signed appcast, user-confirmed install, daily check that can be turned off. Gatekeeper acceptance is verified on a clean machine (**pending** until observed).
 - **MAC-09 (P0):** not sandboxed. Keel must run `/usr/bin/ssh`, read `~/.ssh/config`, and reference certificate files anywhere the user keeps them. Entitlements: none beyond the hardened runtime defaults (no JIT, no unsigned memory, no library validation exceptions). A sandboxed build would need its own feasibility decision.
-- **MAC-10 (P0):** release decisions are recorded in `release/manifest.json` (version, bundle ID `com.bearstouch.keel`, minimum macOS, architectures, helpers, Sparkle feed URL and public EdDSA key) and checked by `KeelReleaseTests`. `scripts/package-release.sh` produces `dist/Keel.app`, `dist/Keel-<version>.dmg`, the Sparkle archive and `dist/release-evidence.json`; ad-hoc unless `KEEL_SIGN_IDENTITY` / `KEEL_NOTARY_PROFILE` are set. A signed-but-not-notarized build is only ever published as a pre-release.
+- **MAC-10 (P0):** release decisions are recorded in `release/manifest.json` (version, bundle ID `com.bearstouch.keel`, minimum macOS, architectures, helpers, Sparkle feed URL and public EdDSA key) and checked by `KeelReleaseTests`. `scripts/package-release.sh` produces `dist/Keel.app`, `dist/Keel-<version>.dmg`, the Sparkle archive and `dist/release-evidence.json` (which includes the latest benchmark evidence, `.build/bench/evidence.json`, under `performance`); ad-hoc unless `KEEL_SIGN_IDENTITY` / `KEEL_NOTARY_PROFILE` are set. A signed-but-not-notarized build is only ever published as a pre-release.
 - **MAC-11 (P0):** the release workflow pins actions to commit SHAs, verifies signature, hardened-runtime flag, both architectures, minimum OS and `spctl`, and publishes `SHA256SUMS.txt`.
 
 ## Files, credentials and permissions
@@ -48,7 +48,7 @@ Keel is a macOS-only application.
 | OS and architecture | Cold launch and the acceptance scenario on macOS 14 and the current release, on Apple silicon and Intel |
 | Servers | Integration matrix (INT-01) green, plus a manual run against one managed TLS service |
 | Connections | TLS custom CA, client cert, skip-verify banner, SSH tunnel with known/unknown/changed host key, password and agent auth, Local Network prompt |
-| Browser | 1M-key performance targets (NFR-PF02–PF05) with recorded evidence |
+| Browser | 1M-key performance targets (NFR-PF01–PF08, NFR-RS01) with recorded evidence: `.build/bench/evidence.json` from `scripts/bench-browser.py`, copied into `release-evidence.json` |
 | Safety | Read-only protocol trace, typed confirmations, bulk delete cancel, production chrome |
 | Accessibility | VoiceOver pass, keyboard-only pass, Increase Contrast, Reduce Motion |
 | Security | Gatekeeper, signing, notarization, Sparkle EdDSA verification, no secrets in files or logs, no unexpected network traffic |

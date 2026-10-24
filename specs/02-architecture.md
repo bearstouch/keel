@@ -279,7 +279,7 @@ Internally every failure is a `KeelError` with a SCREAMING_SNAKE `code` from the
 - Time, the filesystem, the Keychain, processes (ssh), and transports are injected. `RedisConnection` accepts a transport protocol so `KeelRESPTests` run against in-memory fakes, including fragmented and malformed frames.
 - `KeelIntegrationTests` run against containerized Redis 6.0, 6.2, 7.4, 8.x, Valkey 7.2, 8.x and 9.x and Dragonfly 1.x (TLS and ACL fixtures included), with a local `sshd` container for tunnels. They never touch a user's servers.
 - Console golden tests (NFR-QA04) compare `RedisCliFormatter` with real redis-cli output in `Tests/Fixtures/Console` (raw reply bytes and printed text per case, RESP2 and RESP3), captured by `scripts/capture-console-goldens.py` against a throwaway local `redis-server`; `VERSION` records the redis-cli that printed them.
-- Large-data benchmarks (1M and 10M keys) live in `scripts/bench-browser.py` and record evidence in `.build/`.
+- Large-data benchmarks (1M and 10M keys) live in `scripts/bench-browser.py` and record evidence in `.build/bench/evidence.json`. It runs the KeelCoreTests performance tests (in-memory fakes), `KeelIntegrationTests.BrowserBenchmarkTests` against a throwaway server it seeds (a container or a local `redis-server`, loopback only, nothing on disk), and launches the app with 200 saved profiles; `KEEL_LAUNCH_METRICS=/abs/file` makes the first sidebar render write the seconds since process start (NFR-PF01). The benchmark tests run only with `KEEL_BENCH=1`, so a plain `swift test` never needs a server.
 
 ## Reuse from Trellis
 

@@ -40,7 +40,7 @@ KEEL_INTEGRATION=1 swift test --filter KeelIntegrationTests   # container matrix
 python3 -I scripts/generate-command-catalog.py --redis DIR VER --valkey DIR VER --check DIR VER   # bundled command catalog from src/commands sources
 python3 -I scripts/generate-design-tokens.py [--check]   # design-token fixture (Tests/Fixtures/Design) from specs/08-design.md
 python3 -I scripts/capture-console-goldens.py --redis-server PATH --redis-cli PATH   # console goldens (Tests/Fixtures/Console)
-python3 scripts/bench-browser.py [--quick]     # (later, KEEL-047) 1M/10M-key benchmarks; evidence in .build/
+python3 scripts/bench-browser.py [--quick] [--redis-server PATH] [--skip-launch] [--update-baseline]   # 1M/10M-key benchmarks; evidence in .build/bench/, fails on a missed NFR target or a >20% regression vs release/bench-baseline.json
 scripts/package-release.sh                     # (later, KEEL-052) Universal 2 DMG; ad-hoc unless KEEL_SIGN_IDENTITY / KEEL_NOTARY_PROFILE
 ```
 

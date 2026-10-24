@@ -65,6 +65,8 @@ final class NamespaceTreePerformanceTests: XCTestCase {
 
         let build = try XCTUnwrap(builds.max()), slowest = try XCTUnwrap(expands.max())
         print("NamespaceTree 1M keys: build \(build) (max of \(builds.count)), expand \(slowest) (max of \(expands.count))")
+        BenchmarkRecorder.record("xctest.namespace_tree_build_1m", build)
+        BenchmarkRecorder.record("xctest.namespace_tree_expand_1m", slowest)
         XCTAssertLessThan(build, .seconds(2 * Self.slack))
         XCTAssertLessThan(slowest, .milliseconds(200 * Self.slack))
     }
