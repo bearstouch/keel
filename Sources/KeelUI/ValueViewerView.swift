@@ -18,7 +18,7 @@ struct ValueViewerPanel: View {
 
     private var header: some View {
         HStack(spacing: 12) {
-            Text(model.title).font(Tokens.mono(12.5).weight(.semibold)).foregroundStyle(Tokens.fg).lineLimit(1).truncationMode(.middle)
+            Text(model.title).font(Tokens.mono(12.5, weight: .semibold)).foregroundStyle(Tokens.fg).lineLimit(1).truncationMode(.middle)
             if let state = model.state { ViewerNote(state: state) }
             Spacer(minLength: 0)
             ViewerSwitch(mode: model.state?.mode) { model.show($0) }

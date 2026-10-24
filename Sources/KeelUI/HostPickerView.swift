@@ -120,7 +120,7 @@ struct HostEditorSheet: View {
             // A saved password is never shown: the field only takes a replacement.
             SecureField(
                 "", text: $model.password,
-                prompt: Text(model.hasSavedPassword && !model.removePassword ? "Saved — type to replace" : "Optional").foregroundStyle(Tokens.muted.opacity(0.7))
+                prompt: Text(model.hasSavedPassword && !model.removePassword ? "Saved — type to replace" : "Optional").foregroundStyle(Tokens.muted)
             )
             .modifier(FieldStyle(mono: false))
             .accessibilityLabel("SSH password, saved in Keychain")

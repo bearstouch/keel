@@ -149,7 +149,7 @@ struct ProductionWriteNotice: View {
                 Button {
                     session.dismissProductionWriteNotice()
                 } label: {
-                    Text("×").font(.system(size: 14)).foregroundStyle(Tokens.muted)
+                    Text("×").font(Tokens.interface(14)).foregroundStyle(Tokens.muted)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Dismiss")
@@ -179,7 +179,7 @@ struct ModeSwitch: View {
                         .foregroundStyle(selected ? Tokens.fg : Tokens.muted)
                         .padding(.horizontal, 14).frame(height: 26)
                         .background(selected ? Tokens.segOn : .clear, in: RoundedRectangle(cornerRadius: 6))
-                        .shadow(color: selected ? .black.opacity(0.12) : .clear, radius: 1, y: 1)
+                        .shadow(color: selected ? Tokens.segShadow : .clear, radius: 1, y: 1)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -278,7 +278,7 @@ private struct TabItem: View {
             Button {
                 tabs.app?.requestClose(tab.id)
             } label: {
-                Text("×").font(.system(size: 14)).foregroundStyle(Tokens.muted)
+                Text("×").font(Tokens.interface(14)).foregroundStyle(Tokens.muted)
             }
             .buttonStyle(.plain)
             .padding(.leading, 4)

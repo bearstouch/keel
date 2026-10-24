@@ -220,14 +220,15 @@ final class ProductionChromeTests: XCTestCase {
     /// DS-03 / FR-SF02: strip text ≥ 4.5:1 in both themes; in light the strip stands ≥ 3:1 off the tab bar and content.
     /// In dark the maroon sits on dark graphite by design, so its text carries it. Never the accent's lightness.
     @MainActor func testStripContrast() {
-        let strip = Tokens.Hex.prodStrip, text = Tokens.Hex.onProdStrip
-        XCTAssertGreaterThanOrEqual(Tokens.contrast(text.light, strip.light), 4.5)
-        XCTAssertGreaterThanOrEqual(Tokens.contrast(text.dark, strip.dark), 4.5)
-        XCTAssertGreaterThanOrEqual(Tokens.contrast(strip.light, Tokens.Hex.tabBar.light), 3)
-        XCTAssertGreaterThanOrEqual(Tokens.contrast(strip.light, Tokens.Hex.bg.light), 3)
-        XCTAssertGreaterThanOrEqual(Tokens.contrast(strip.light, Tokens.Hex.accent.light), 1.5, "maroon is darker than the accent")
-        XCTAssertGreaterThanOrEqual(Tokens.contrast(strip.dark, Tokens.Hex.accent.dark), 3)
-        XCTAssertEqual(Tokens.contrast(0x000000, 0xFFFFFF), 21, accuracy: 0.01)
+        func hex(_ token: KeelTheme.Token, _ variant: KeelTheme.Variant) -> UInt32 { KeelTheme.value(token, in: variant).rgb }
+        let (light, dark) = (KeelTheme.Variant.light, KeelTheme.Variant.dark)
+        XCTAssertGreaterThanOrEqual(KeelTheme.contrast(hex(.onProdStrip, light), hex(.prodStrip, light)), 4.5)
+        XCTAssertGreaterThanOrEqual(KeelTheme.contrast(hex(.onProdStrip, dark), hex(.prodStrip, dark)), 4.5)
+        XCTAssertGreaterThanOrEqual(KeelTheme.contrast(hex(.prodStrip, light), hex(.tabBar, light)), 3)
+        XCTAssertGreaterThanOrEqual(KeelTheme.contrast(hex(.prodStrip, light), hex(.bg, light)), 3)
+        XCTAssertGreaterThanOrEqual(KeelTheme.contrast(hex(.prodStrip, light), hex(.accent, light)), 1.5, "maroon is darker than the accent")
+        XCTAssertGreaterThanOrEqual(KeelTheme.contrast(hex(.prodStrip, dark), hex(.accent, dark)), 3)
+        XCTAssertEqual(KeelTheme.contrast(0x000000, 0xFFFFFF), 21, accuracy: 0.01)
         XCTAssertEqual(ProductionChrome.stripHeight, 28)
     }
 

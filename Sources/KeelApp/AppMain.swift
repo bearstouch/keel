@@ -42,6 +42,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private var palettes: [UUID: CommandPaletteModel] = [:]
     private var sidebars: [UUID: SidebarModel] = [:]
     private var settingsWindow: NSWindow?
+    /// The single owner of `settings.json`: the theme (FR-AP04) and the Increase Contrast flag the tokens read.
+    let settings: SettingsModel
+    private var accessibilityObserver: NSObjectProtocol?
 
     init(arguments: LaunchArguments, stateDirectory: URL) {
         self.arguments = arguments; self.stateDirectory = stateDirectory
@@ -51,11 +54,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         profiles = ProfileStore(directory: stateDirectory)
         sshHosts = HostLibrary(storage: HostFileStorage(directory: stateDirectory), secrets: KeychainHostSecretStore())
         knownCA = KnownCAStore(directory: stateDirectory)
+        settings = SettingsModel(persistence: Persistence(directory: stateDirectory))
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Keel's tabs belong to its own model (MAC-05), never to macOS automatic window tabbing.
         NSWindow.allowsAutomaticWindowTabbing = false
+        // Inter and JetBrains Mono for this process only (MAC-19), before any view asks for them.
+        BundledFonts.register()
+        accessibilityDisplayOptionsChanged()
+        accessibilityObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.accessibilityDisplayOptionsChanged() }
+        }
         // ssh processes a crashed or killed run left behind (NFR-RS05); off the main thread, it only reads small files.
         Task.detached(priority: .utility) { StaleTunnelCleanup().run() }
         buildMenus()
@@ -78,7 +90,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         app.presentWindow = { [weak self] in self?.show($0, frame: nil) }
         app.focusWindow = { [weak self] in self?.nativeWindows[$0]?.makeKeyAndOrderFront(nil) }
         self.app = app
-        Task {
+        Task { [settings] in
+            // The saved theme first, so restored windows open in it rather than switching after they appear.
+            await settings.load()
             // Tabs restore against the profiles, so they load first. A connections.json that needs recovery keeps the
             // store read-only (KEEL-050 offers the choice); its tabs then have no profile and aren't restored.
             _ = await profiles.load()
@@ -93,8 +107,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     /// terminated (at most ~1 s).
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         terminating = true
-        Task { [tunnels, askpass, app] in
+        Task { [tunnels, askpass, app, settings] in
             await app?.flush()
+            await settings.flush()
             await tunnels.shutdown()
             askpass?.stop()
             NSApp.reply(toApplicationShouldTerminate: true)
@@ -212,6 +227,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     @objc private func toggleSidebar(_ sender: Any?) { keyWindowID.flatMap { sidebars[$0] }?.isHidden.toggle() }
     /// ⌘⌫: the key window's browser deletes its multi-key selection or the open key, each after its confirmation.
     @objc private func deleteKeys(_ sender: Any?) { NotificationCenter.default.post(name: KeyListCommands.deleteNotification, object: NSApp.keyWindow) }
+    private func accessibilityDisplayOptionsChanged() {
+        settings.accessibilityDisplayOptionsChanged(increasesContrast: NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast)
+    }
+
+    /// View → Theme → Light / Dark / System (FR-AP04).
+    @objc private func setTheme(_ sender: NSMenuItem) {
+        guard ThemeChoice.allCases.indices.contains(sender.tag) else { return }
+        settings.setTheme(ThemeChoice.allCases[sender.tag])
+    }
+
     /// Settings… (⌘,): one window, brought back when already open.
     @objc private func showSettings(_ sender: Any?) {
         if settingsWindow == nil { settingsWindow = SettingsWindow.make(model: KeyboardSettingsModel(bindings: bindings)) }
@@ -275,6 +300,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         case #selector(clearConsole(_:)): return tab.flatMap { $0.mode == .console ? app?.session($0.id)?.console : nil } != nil
         case #selector(stopConsoleCommand(_:)): return tab.flatMap { $0.mode == .console ? app?.session($0.id)?.console?.state : nil }.map { $0 != .idle } ?? false
         case #selector(toggleCommandPalette(_:)): return keyWindowID != nil
+        case #selector(setTheme(_:)):
+            item.state = ThemeChoice.allCases.firstIndex(of: settings.theme) == item.tag ? .on : .off
+            return true
         case #selector(toggleSidebar(_:)):
             let sidebar = keyWindowID.flatMap { sidebars[$0] }
             item.title = sidebar?.isHidden == true ? "Show Sidebar" : "Hide Sidebar"
@@ -347,6 +375,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         add(.stopCommand, #selector(stopConsoleCommand(_:)), to: viewMenu)
         viewMenu.addItem(.separator())
         add(.toggleSidebar, #selector(toggleSidebar(_:)), to: viewMenu)
+        viewMenu.addItem(.separator())
+        // DS-11: applies at once to every window; sessions and loaded keys are untouched.
+        let themeItem = viewMenu.addItem(withTitle: "Theme", action: nil, keyEquivalent: "")
+        let themeMenu = NSMenu(title: "Theme")
+        for (offset, theme) in ThemeChoice.allCases.enumerated() { add(theme.title, #selector(setTheme(_:)), "", to: themeMenu).tag = offset }
+        themeItem.submenu = themeMenu
         viewItem.submenu = viewMenu
         let keyItem = NSMenuItem(); menu.addItem(keyItem)
         let keyMenu = NSMenu(title: "Key")

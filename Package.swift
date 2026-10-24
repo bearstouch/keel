@@ -21,7 +21,8 @@ let package = Package(
         .target(name: "KeelSSH", dependencies: ["KeelAskpass"]),
         // Resources: data-driven server detection rules (INT-02) and the bundled command catalog (INT-03).
         .target(name: "KeelCore", dependencies: ["KeelRESP", "KeelSSH"], resources: [.copy("Resources/ServerDetection.json"), .copy("Resources/Commands")]),
-        .target(name: "KeelUI", dependencies: ["KeelCore", "KeelSSH"]),
+        // Resources: Inter and JetBrains Mono, registered for the process at launch (MAC-19).
+        .target(name: "KeelUI", dependencies: ["KeelCore", "KeelSSH"], resources: [.copy("Resources/Fonts")]),
         .executableTarget(name: "KeelApp", dependencies: ["KeelUI", "KeelCore", "KeelSSH"]),
         .target(name: "KeelRelease"),
         .testTarget(name: "KeelRESPTests", dependencies: ["KeelRESP"]),
