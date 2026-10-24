@@ -18,9 +18,9 @@ As a user, I want guarantees that my data never leaves my Mac or lands in logs, 
 
 ## Acceptance criteria
 
-- [ ] **AC1.** A full scenario under `log stream --level debug` shows no key names, values or secrets.
-- [ ] **AC2.** Diagnostics contain only versions, counts, server types and error codes.
-- [ ] **AC3.** No network traffic except configured servers, SSH and the update feed (nettop observation).
+- [ ] **AC1.** A full scenario under `log stream --level debug` shows no key names, values or secrets. *Pending: manual log review of a live scenario; the wrapper and source scan are tested (`LoggingPolicyTests`, `SourceScanTests`).*
+- [x] **AC2.** Diagnostics contain only versions, counts, server types and error codes. *Observed in `DiagnosticsExportTests` on the generated report; clicking Help → Export Diagnostics in the running app is pending.*
+- [ ] **AC3.** No network traffic except configured servers, SSH and the update feed (nettop observation). *Pending: `nettop` observation during the acceptance scenario.*
 
 ## Unit tests
 

@@ -31,6 +31,7 @@ public final class TabSession: ObservableObject, Identifiable {
     public private(set) var isProduction = false
     private var productionNoticeShown = false
 
+    private static let log = KeelLog(.connection)
     private let connector: any SessionConnecting
     private let histories: ConsoleHistoryBook
     private var connected: ConnectedServer?
@@ -67,10 +68,15 @@ public final class TabSession: ObservableObject, Identifiable {
         }
         switch result {
         case .failure(let error):
+            // The message names the host, so it is server text: private in debug builds, absent in release.
+            Self.log.error("connect.failed", .code(error.category.rawValue), .serverText(error.message))
             failure = error; pendingReveal = nil; set(.failed)
         case .success(let server):
             await server.service.observeWrites { [weak self] event in Task { @MainActor in self?.written(event, attempt: mine) } }
             guard mine == attempt else { await server.close(); return }
+            // Counted only once the tab keeps the connection.
+            Self.log.log(.info, "connect.succeeded", .serverKind(server.identity.kind))
+            DiagnosticsRecorder.shared.recordConnection(server.identity.kind)
             connected = server; self.server = server.identity
             isProduction = server.safety.production; writesBlocked = server.safety.readOnly; serverReadOnly = false
             let browser = Self.browser(for: server, database: database)
