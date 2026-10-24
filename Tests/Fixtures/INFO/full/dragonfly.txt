@@ -1,0 +1,60 @@
+# Server
+redis_version:7.4.0
+dragonfly_version:df-v1.21.2
+redis_mode:standalone
+arch_bits:64
+os:Linux 6.8.0 aarch64
+thread_count:4
+multiplexing_api:epoll
+tcp_port:6379
+uptime_in_seconds:42
+uptime_in_days:0
+
+# Clients
+connected_clients:3
+max_clients:64000
+client_read_buffer_bytes:768
+blocked_clients:0
+pipeline_queue_length:0
+
+# Memory
+used_memory:2097152
+used_memory_human:2.00MiB
+used_memory_peak:2359296
+used_memory_rss:15728640
+object_used_memory:65536
+table_used_memory:131072
+maxmemory:8589934592
+maxmemory_human:8.00GiB
+cache_mode:store
+
+# Stats
+total_connections_received:7
+total_commands_processed:120
+instantaneous_ops_per_sec:5
+total_pipelined_commands:0
+keyspace_hits:0
+keyspace_misses:0
+eviction_policy_evictions:0
+
+# Persistence
+last_success_save:1729672990
+last_saved_file:
+loading:0
+rdb_changes_since_last_save:4
+
+# Transaction
+tx_shard_polls:0
+tx_type_cnt:global=0,normal=12,ooo=3
+
+# Replication
+role:master
+connected_slaves:1
+master_replid:0d2f0e3a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e
+
+# Keyspace
+db0:keys=12,expires=2,avg_ttl=-1
+
+# CPU
+used_cpu_sys:0.120000
+used_cpu_user:0.250000

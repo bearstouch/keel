@@ -15,8 +15,9 @@ public enum DataOperation: Sendable, Equatable {
     case getRange(key: Data, start: Int, end: Int)
     /// `DBSIZE` for the context's database: the footer's total (FR-KB09).
     case databaseSize
-    /// `INFO section`; the database switcher asks for `keyspace` (FR-KB08).
-    case info(section: Data)
+    /// `INFO section`; the database switcher asks for `keyspace` (FR-KB08). Nil sends a bare `INFO`, the server's default
+    /// sections, which Info mode shows (FR-SI01).
+    case info(section: Data?)
     /// `OBJECT ENCODING key` for the editor's Details (FR-ED13).
     case objectEncoding(key: Data)
     /// The editor's length for the metadata line (`STRLEN`, `HLEN`, `LLEN`, `SCARD`, `ZCARD`, `XLEN`).
@@ -110,7 +111,7 @@ public enum DataOperation: Sendable, Equatable {
         case .get(let key): return [d("GET"), key]
         case .getRange(let key, let start, let end): return [d("GETRANGE"), key, d(String(start)), d(String(end))]
         case .databaseSize: return [d("DBSIZE")]
-        case .info(let section): return [d("INFO"), section]
+        case .info(let section): return section.map { [d("INFO"), $0] } ?? [d("INFO")]
         case .objectEncoding(let key): return [d("OBJECT"), d("ENCODING"), key]
         case .length(let key, let command): return [d(command.rawValue), key]
         case .hashGetAll(let key): return [d("HGETALL"), key]

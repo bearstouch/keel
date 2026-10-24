@@ -1,0 +1,119 @@
+# Server
+redis_version:7.2.4
+server_name:valkey
+valkey_version:8.1.1
+valkey_git_sha1:00000000
+valkey_git_dirty:0
+valkey_build_id:5b3c1a9e8d7f6a2b
+server_mode:standalone
+redis_mode:standalone
+os:Linux 6.8.0 aarch64
+arch_bits:64
+monotonic_clock:POSIX clock_gettime
+multiplexing_api:epoll
+gcc_version:12.2.0
+process_id:1
+process_supervised:no
+run_id:4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e
+tcp_port:6379
+server_time_usec:1729673000000000
+uptime_in_seconds:1036800
+uptime_in_days:12
+hz:10
+configured_hz:10
+lru_clock:9876543
+executable:/data/valkey-server
+config_file:
+io_threads_active:0
+availability_zone:
+
+# Clients
+connected_clients:48
+cluster_connections:0
+maxclients:10000
+client_recent_max_input_buffer:20480
+client_recent_max_output_buffer:0
+blocked_clients:0
+tracking_clients:0
+pubsub_clients:0
+watching_clients:0
+clients_in_timeout_table:0
+total_watched_keys:0
+total_blocking_keys:0
+total_blocking_keys_on_nokey:0
+
+# Memory
+used_memory:1288490188
+used_memory_human:1.20G
+used_memory_rss:1395864371
+used_memory_rss_human:1.30G
+used_memory_peak:1395864371
+used_memory_peak_human:1.30G
+used_memory_dataset:1201006592
+maxmemory:4294967296
+maxmemory_human:4.00G
+maxmemory_policy:allkeys-lru
+mem_fragmentation_ratio:1.08
+mem_allocator:jemalloc-5.3.0
+
+# Persistence
+loading:0
+async_loading:0
+rdb_changes_since_last_save:12
+rdb_bgsave_in_progress:0
+rdb_last_save_time:1729672640
+rdb_last_bgsave_status:ok
+rdb_last_bgsave_time_sec:2
+rdb_saves:240
+aof_enabled:0
+aof_rewrite_in_progress:0
+
+# Stats
+total_connections_received:1922
+total_commands_processed:982341288
+instantaneous_ops_per_sec:3412
+instantaneous_input_kbps:212.40
+instantaneous_output_kbps:880.15
+rejected_connections:0
+expired_keys:20411
+evicted_keys:0
+keyspace_hits:978000
+keyspace_misses:22000
+pubsub_channels:0
+total_eviction_exceeded_time:0
+io_threaded_reads_processed:0
+io_threaded_writes_processed:0
+reply_buffer_shrinks:12
+reply_buffer_expands:9
+
+# Replication
+role:master
+connected_slaves:2
+slave0:ip=10.0.0.6,port=6379,state=online,offset=88123,lag=0
+slave1:ip=10.0.0.7,port=6379,state=online,offset=88123,lag=1
+replicas_waiting_psync:0
+master_failover_state:no-failover
+master_replid:a1b2c3d4e5f60718293a4b5c6d7e8f9012345678
+master_repl_offset:88123
+repl_backlog_active:1
+repl_backlog_size:1048576
+
+# CPU
+used_cpu_sys:812.551200
+used_cpu_user:1022.104400
+used_cpu_sys_children:1.002000
+used_cpu_user_children:4.208000
+used_cpu_sys_main_thread:801.120000
+used_cpu_user_main_thread:1011.500000
+
+# Modules
+
+# Errorstats
+errorstat_ERR:count=3
+
+# Cluster
+cluster_enabled:0
+
+# Keyspace
+db0:keys=1204551,expires=1000,avg_ttl=7200000
+db3:keys=1822,expires=0,avg_ttl=0

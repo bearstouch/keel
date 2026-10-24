@@ -139,7 +139,7 @@ Common rules for all editors:
 | FR-SI02 | Tile values match `INFO` at the same refresh; server type and version appear beside the connection name in the toolbar. | |
 | FR-SI03 | Auto-refresh off by default; interval 2 s, 5 s, 10 s, 30 s from the refresh button's menu; manual ⌘R. Sparklines are P1. | With refresh on, `INFO` is sent at the interval only while Info mode is visible. |
 | FR-SI04 | Keyspace section lists databases with keys, expires and avg TTL, each with "Open in Browser". | |
-| FR-SI05 | Missing permissions (`NOPERM` on INFO) or servers lacking sections show "unavailable" per section. | |
+| FR-SI05 | Missing permissions (`NOPERM` on INFO) or servers lacking sections show "unavailable" per section. Any other failed refresh keeps the last report on screen with the reason. | A `NOPERM` reply lists every Show all section as unavailable and says the user can't run INFO. |
 | FR-SI06 (P1) | Slow log, `CLIENT LIST`, latency doctor views. | |
 
 ## 7. App basics

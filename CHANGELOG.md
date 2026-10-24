@@ -184,6 +184,12 @@ and versions follow [Semantic Versioning](https://semver.org/).
   10,000 lines kept, cancellable blocking commands, Clear Console (⌥⌘K, ⌃L), Copy Reply / Copy All Output, and
   credentials (`AUTH`, `HELLO … AUTH`, `ACL SETUSER >…`, `CONFIG SET requirepass`, `MIGRATE … AUTH`) shown as `••••••`
   in the echo and history. Refusals print as `(error) KEEL_…`; confirmations and size warnings ask first (KEEL-041).
+- Info mode (⌘3): Memory (with a bar against `maxmemory`), Clients, Operations/sec and Uptime tiles, a Databases list
+  with keys, expiring keys and average TTL and **Browse**, and a Health list (replication, last save, hit ratio), all
+  from one bare `INFO` through the data path. **Show all INFO fields** lists every section and field, unknown ones
+  included, with "unavailable" for a section the server didn't send or an ACL that refuses `INFO`, plus a searchable
+  Raw view. The toolbar shows the server version and a refresh button (⌘R) whose menu sets auto-refresh (off, 2, 5,
+  10, 30 s), which sends `INFO` only while Info mode is on screen (KEEL-042).
 
 ### Removed
 

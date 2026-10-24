@@ -19,10 +19,10 @@ As an operator, I want a simple health overview with all INFO details one click 
 
 ## Acceptance criteria
 
-- [ ] **AC1.** Every INFO field appears under Show all, including unknown ones.
-- [ ] **AC2.** Auto-refresh sends INFO only while Info mode is visible.
-- [ ] **AC3.** Missing permission shows "unavailable" per section.
-- [ ] **AC4.** Matches the `Info` boards (manual design review).
+- [x] **AC1.** Every INFO field appears under Show all, including unknown ones. *(InfoParserTests over Redis, Valkey and Dragonfly fixtures)*
+- [x] **AC2.** Auto-refresh sends INFO only while Info mode is visible. *(InfoRefreshTests, InfoReviewTests with an injected sleeper)*
+- [x] **AC3.** Missing permission shows "unavailable" per section. *(InfoRefreshTests: NOPERM reply)*
+- [ ] **AC4.** Matches the `Info` boards (manual design review). **Pending:** not reviewed against `Info` / `InfoDark` in light and dark yet.
 
 ## Unit tests
 
