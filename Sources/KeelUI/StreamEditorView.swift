@@ -39,23 +39,27 @@ struct StreamEditorView: View {
                 .buttonStyle(.plain).disabled(!model.canToggleOrder)
                 .help(model.newestFirst ? "Newest first; click for oldest first" : "Oldest first; click for newest first")
                 .accessibilityLabel("ID, \(model.newestFirst ? "newest" : "oldest") first").accessibilityHint("Reverses the order")
+                .accessibilityAddTraits(.isHeader)
                 .frame(width: EntryRow.idWidth, alignment: .leading)
-                Text("Fields")
+                Text("Fields").accessibilityAddTraits(.isHeader)
                 Spacer(minLength: 0)
             }
             .font(Tokens.interface(11.5)).foregroundStyle(Tokens.muted).padding(.horizontal, 12).padding(.bottom, 8)
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(model.rows) { row in
-                        EntryRow(row: row, selected: model.selectedEntry == row.id) { model.select(row.id) }
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(model.rows) { row in
+                            EntryRow(row: row, selected: model.selectedEntry == row.id) { model.select(row.id) }
+                        }
                     }
                 }
+                .frame(minHeight: 120, maxHeight: .infinity)
+                .overlay(alignment: .topLeading) {
+                    if model.rows.isEmpty { Text("No entries.").font(Tokens.interface(12.5)).foregroundStyle(Tokens.muted).padding(12) }
+                }
+                .rowNavigation(model.rows.map(\.id), selected: model.selectedEntry, proxy: proxy) { model.select($0) }
+                .accessibilityLabel("Entries")
             }
-            .frame(minHeight: 120, maxHeight: .infinity)
-            .overlay(alignment: .topLeading) {
-                if model.rows.isEmpty { Text("No entries.").font(Tokens.interface(12.5)).foregroundStyle(Tokens.muted).padding(12) }
-            }
-            .accessibilityLabel("Entries")
         }
     }
 
@@ -98,10 +102,13 @@ struct StreamEditorView: View {
                 .contentShape(Rectangle())
                 .onTapGesture { model.selectField(index) }
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(EntryRow.preview(field.field)): \(EntryRow.preview(field.value))")
+                .accessibilityLabel(TableSpeech.row(["Field": EntryRow.preview(field.field), "Value": EntryRow.preview(field.value)]))
                 .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
             }
         }
+        .rowNavigation(Array(model.selectedFields.indices), selected: model.selectedField) { model.selectField($0) }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Fields of the selected entry")
     }
 }
 
@@ -124,7 +131,7 @@ private struct EntryRow: View {
         .contentShape(Rectangle())
         .onTapGesture(perform: select)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(KeyDisplay.name(row.id)), \(summary)")
+        .accessibilityLabel(TableSpeech.row(["ID": KeyDisplay.name(row.id), "Fields": summary]))
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
 

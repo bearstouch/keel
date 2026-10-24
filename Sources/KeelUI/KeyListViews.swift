@@ -9,6 +9,21 @@ public final class KeyListOutlineView: NSOutlineView {
     @objc public func toggleKeyListMode(_ sender: Any?) { if let owner { Task { await owner.toggleMode() } } }
 
     public override func keyDown(with event: NSEvent) { if owner?.handlesDelete(event) != true { super.keyDown(with: event) } }
+
+    public override var focusRingMaskBounds: NSRect { KeyListFocus.maskBounds(visibleRect) }
+    public override func drawFocusRingMask() { KeyListFocus.drawMask(visibleRect) }
+    public override func viewDidMoveToSuperview() { super.viewDidMoveToSuperview(); KeyListFocus.follow(self, #selector(visibleRectChanged)) }
+    @objc func visibleRectChanged(_ note: Notification) { noteFocusRingMaskChanged() }
+
+    /// AppKit's disclosure triangle has no name of its own (NFR-AX01); the row beside it names the folder.
+    public override func makeView(withIdentifier identifier: NSUserInterfaceItemIdentifier, owner: Any?) -> NSView? {
+        let view = super.makeView(withIdentifier: identifier, owner: owner)
+        // VoiceOver reads the button's cell.
+        if identifier == NSOutlineView.disclosureButtonIdentifier, let button = view as? NSButton { button.cell?.setAccessibilityLabel(Self.disclosureLabel) }
+        return view
+    }
+
+    static let disclosureLabel = "Show or hide the folder's keys"
 }
 
 /// The flat view.
@@ -18,6 +33,27 @@ public final class KeyListTableView: NSTableView {
     @objc public func toggleKeyListMode(_ sender: Any?) { if let owner { Task { await owner.toggleMode() } } }
 
     public override func keyDown(with event: NSEvent) { if owner?.handlesDelete(event) != true { super.keyDown(with: event) } }
+
+    public override var focusRingMaskBounds: NSRect { KeyListFocus.maskBounds(visibleRect) }
+    public override func drawFocusRingMask() { KeyListFocus.drawMask(visibleRect) }
+    public override func viewDidMoveToSuperview() { super.viewDidMoveToSuperview(); KeyListFocus.follow(self, #selector(visibleRectChanged)) }
+    @objc func visibleRectChanged(_ note: Notification) { noteFocusRingMaskChanged() }
+}
+
+/// The lists' focus ring (NFR-AX02): around the visible rows, inset so the scroll view doesn't clip it, whether or not a
+/// row is selected.
+enum KeyListFocus {
+    static func maskBounds(_ visible: NSRect) -> NSRect { visible.insetBy(dx: 3, dy: 3) }
+    static func drawMask(_ visible: NSRect) { NSBezierPath(roundedRect: maskBounds(visible), xRadius: 6, yRadius: 6).fill() }
+
+    /// The mask follows the visible rect, so scrolling or resizing the pane moves it; AppKit redraws the ring only when
+    /// told (`noteFocusRingMaskChanged`), else it would scroll away with the rows.
+    @MainActor static func follow(_ view: NSView, _ selector: Selector) {
+        // Never `removeObserver(view, name:object: nil)`: AppKit's table observes its clip view as itself.
+        guard let clip = view.superview as? NSClipView else { return }
+        clip.postsBoundsChangedNotifications = true; clip.postsFrameChangedNotifications = true
+        for name in [NSView.boundsDidChangeNotification, NSView.frameDidChangeNotification] { NotificationCenter.default.addObserver(view, selector: selector, name: name, object: clip) }
+    }
 }
 
 public enum KeyListCommands {

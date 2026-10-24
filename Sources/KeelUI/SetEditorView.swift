@@ -37,23 +37,26 @@ struct SetEditorView: View {
 
     private var list: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Member").font(Tokens.interface(11.5)).foregroundStyle(Tokens.muted).padding(.horizontal, 12).padding(.bottom, 8)
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(model.rows) { row in
-                        MemberRow(
-                            member: row.id, selected: session.selectedRow == row.id, writable: session.allowsWrites, select: { session.select(row.id) },
-                            remove: { model.remove(row.id) })
+            Text("Member").accessibilityAddTraits(.isHeader).font(Tokens.interface(11.5)).foregroundStyle(Tokens.muted).padding(.horizontal, 12).padding(.bottom, 8)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(model.rows) { row in
+                            MemberRow(
+                                member: row.id, selected: session.selectedRow == row.id, writable: session.allowsWrites, select: { session.select(row.id) },
+                                remove: { model.remove(row.id) })
+                        }
                     }
                 }
-            }
-            .frame(minHeight: 120, maxHeight: .infinity)
-            .overlay(alignment: .topLeading) {
-                if model.rows.isEmpty {
-                    Text(model.filter.isEmpty ? "No members." : "No loaded member matches.").font(Tokens.interface(12.5)).foregroundStyle(Tokens.muted).padding(12)
+                .frame(minHeight: 120, maxHeight: .infinity)
+                .overlay(alignment: .topLeading) {
+                    if model.rows.isEmpty {
+                        Text(model.filter.isEmpty ? "No members." : "No loaded member matches.").font(Tokens.interface(12.5)).foregroundStyle(Tokens.muted).padding(12)
+                    }
                 }
+                .rowNavigation(model.rows.map(\.id), selected: session.selectedRow, proxy: proxy) { session.select($0) }
+                .accessibilityLabel("Members")
             }
-            .accessibilityLabel("Members")
         }
     }
 
@@ -102,7 +105,7 @@ private struct MemberRow: View {
         .onTapGesture(perform: select)
         .contextMenu { Button("Remove Member", role: .destructive, action: remove).disabled(!writable) }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Self.preview(member))
+        .accessibilityLabel(TableSpeech.row(["Member": Self.preview(member)]))
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction(named: "Remove Member", remove)
     }

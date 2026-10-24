@@ -9,7 +9,7 @@ Keel's visual contract. The reference is the **Keel — Native calm** design can
 | DS-01 | **Show less, reveal on demand** ([NFR-UX05](04-non-functional-requirements.md#usability)). One toolbar row, one-line sidebar rows, one metadata line per key, secondary actions in `⋯`, Save only when something changed, TLS / SSH / Advanced collapsed, full INFO behind "Show all". |
 | DS-02 | **Redis red is the brand.** The accent is used only for the primary action, selection, focus, links, switches, the active tab cue and the Keel mark. It is never used to mean "warning". |
 | DS-03 | **Production is maroon, not accent red.** The production strip uses a deep maroon that differs from the accent in lightness, and always carries text. Destructive buttons use the danger color and always sit behind a typed confirmation. |
-| DS-04 | **Color is never the only signal.** Type badges have text, labels have names (VoiceOver and tooltip), status has words. Contrast ≥ 4.5:1 for text and ≥ 3:1 for badges and the strip (NFR-AX04). |
+| DS-04 | **Color is never the only signal.** Type badges have text, labels have names (VoiceOver and tooltip), status has words ("TLS not verified" beside the connection name in the toolbar, with an open lock on the tab). Contrast ≥ 4.5:1 for text and ≥ 3:1 for badges and the strip (NFR-AX04). Focus is always visible (NFR-AX02): views that draw their own selection show a 2 pt `accent` focus ring. |
 | DS-05 | **The console is always dark** (`#151719`, Trellis's terminal background), in both themes. |
 | DS-06 | Only the tokens below are used; new colors are added here first. |
 

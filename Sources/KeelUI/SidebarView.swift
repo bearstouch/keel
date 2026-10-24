@@ -39,6 +39,8 @@ public struct SidebarView: View {
                 }
                 .padding(.horizontal, 10).padding(.bottom, 12)
             }
+            // Focused with nothing selected: ↓ selects the first row; until then the list shows the focus.
+            .focusRing(focused && model.selectedProfileID == nil, cornerRadius: 0)
             .contextMenu {
                 Button("New Connection…") { model.newConnection() }; Button("New Folder…") { ask(.newFolder) }
             }
@@ -60,6 +62,10 @@ public struct SidebarView: View {
         }
         .onKeyPress(keys: [.return]) { press in
             model.openSelection(newTab: press.modifiers.contains(.option)); return .handled
+        }
+        .onKeyPress(keys: ["i"]) { press in
+            guard press.modifiers.subtracting(.capsLock) == .command else { return .ignored }
+            model.editSelection(); return .handled
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Connections")
@@ -168,6 +174,8 @@ public struct SidebarView: View {
         .font(Tokens.interface(13, weight: selected ? .semibold : .regular))
         .padding(.horizontal, 10).frame(height: 32)
         .background(selected ? Tokens.sidebarSelection : .clear, in: RoundedRectangle(cornerRadius: 7))
+        // The sidebar takes focus as a whole; its selected row shows it (NFR-AX02).
+        .focusRing(focused && selected)
         .contentShape(Rectangle())
         .help(row.tooltip)
         .onTapGesture(count: 2) { model.open(row.id, newTab: NSEvent.modifierFlags.contains(.option)) }
@@ -182,6 +190,7 @@ public struct SidebarView: View {
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction { model.open(row.id) }
         .accessibilityAction(named: "Open in New Tab") { model.open(row.id, newTab: true) }
+        .accessibilityAction(named: "Edit…") { model.edit(row.id) }
         .draggable(SidebarModel.DragItem.profile(row.id).payload)
         .dropDestination(for: String.self) { items, _ in drop(items, into: folderID, before: row.id) }
         .contextMenu { menu(for: row, folderID: folderID) }

@@ -10,6 +10,7 @@ import UniformTypeIdentifiers
 public struct ConnectionSheet: View {
     @ObservedObject var model: ConnectionSheetModel
     @State private var picking: FilePick?
+    @FocusState private var formFocused: Bool
 
     private enum FilePick: Identifiable {
         case caFile, identityFile
@@ -43,8 +44,10 @@ public struct ConnectionSheet: View {
         .padding(.vertical, 28).padding(.horizontal, 32)
         .frame(width: 560)
         .background(Tokens.sheet)
-        // ⌘V outside a text field fills the form from a copied URL (FR-CN08).
-        .focusable().focusEffectDisabled()
+        // ⌘V outside a text field fills the form from a copied URL (FR-CN08). The form is a Tab stop for that, so it
+        // shows its focus like any other (NFR-AX02).
+        .focusable().focused($formFocused).focusEffectDisabled()
+        .focusRing(formFocused, cornerRadius: 10)
         .onPasteCommand(of: [.plainText]) { _ in
             if let text = NSPasteboard.general.string(forType: .string) { model.paste(text) }
         }

@@ -60,7 +60,7 @@ struct SortedSetEditorView: View {
     private var table: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 0) {
-                Text("Member")
+                Text("Member").accessibilityAddTraits(.isHeader)
                 Spacer(minLength: 12)
                 Button {
                     Task { await model.toggleOrder() }
@@ -73,27 +73,31 @@ struct SortedSetEditorView: View {
                 .buttonStyle(.plain).disabled(!model.canToggleOrder)
                 .help(model.canToggleOrder ? "Reverses the order" : "Save or revert your changes first")
                 .accessibilityLabel("Score, \(model.descending ? "highest" : "lowest") first").accessibilityHint("Reverses the order")
+                .accessibilityAddTraits(.isHeader)
             }
             .font(Tokens.interface(11.5)).foregroundStyle(Tokens.muted).padding(.horizontal, 12).padding(.bottom, 8)
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(model.rows) { row in
-                        ScoredRow(
-                            row: row, selected: session.selectedRow == row.id, changed: session.changedRows.contains(row.id), writable: session.allowsWrites,
-                            canIncrement: model.canRunAction, select: { model.select(row.id) },
-                            change: { editing = ScoreEdit(member: row.id, kind: .change, current: String(decoding: row.value, as: UTF8.self)) },
-                            increment: { editing = ScoreEdit(member: row.id, kind: .increment, current: "1") }, remove: { model.remove(row.id) })
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(model.rows) { row in
+                            ScoredRow(
+                                row: row, selected: session.selectedRow == row.id, changed: session.changedRows.contains(row.id), writable: session.allowsWrites,
+                                canIncrement: model.canRunAction, select: { model.select(row.id) },
+                                change: { editing = ScoreEdit(member: row.id, kind: .change, current: String(decoding: row.value, as: UTF8.self)) },
+                                increment: { editing = ScoreEdit(member: row.id, kind: .increment, current: "1") }, remove: { model.remove(row.id) })
+                        }
                     }
                 }
-            }
-            .frame(minHeight: 120, maxHeight: .infinity)
-            .overlay(alignment: .topLeading) {
-                if model.rows.isEmpty {
-                    Text(emptyText)
-                        .font(Tokens.interface(12.5)).foregroundStyle(Tokens.muted).padding(12)
+                .frame(minHeight: 120, maxHeight: .infinity)
+                .overlay(alignment: .topLeading) {
+                    if model.rows.isEmpty {
+                        Text(emptyText)
+                            .font(Tokens.interface(12.5)).foregroundStyle(Tokens.muted).padding(12)
+                    }
                 }
+                .rowNavigation(model.rows.map(\.id), selected: session.selectedRow, proxy: proxy) { model.select($0) }
+                .accessibilityLabel(model.searchResults == nil ? "Members" : "Matching members")
             }
-            .accessibilityLabel(model.searchResults == nil ? "Members" : "Matching members")
         }
     }
 
@@ -178,7 +182,7 @@ private struct ScoredRow: View {
             Button("Remove Member", role: .destructive, action: remove).disabled(!writable)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(Self.preview(row.id)), score \(score)\(changed ? ", changed" : "")")
+        .accessibilityLabel(TableSpeech.row(["Member": Self.preview(row.id), "Score": score], changed: changed))
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction(named: "Change Score", change)
         .accessibilityAction(named: "Increment", increment)

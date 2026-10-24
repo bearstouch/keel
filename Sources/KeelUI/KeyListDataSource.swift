@@ -164,10 +164,14 @@ public final class KeyListDataSource: NSObject, ObservableObject {
         view.menu = NSMenu()
         view.menu?.delegate = self
         view.setAccessibilityLabel("Keys")
+        // The plain style draws no focus on its own; the views draw a ring inside the pane instead (NFR-AX02).
+        view.focusRingType = .exterior
     }
 
     private static func column() -> NSTableColumn {
         let column = NSTableColumn(identifier: KeyListCellView.identifier)
+        // The header is hidden; VoiceOver still names the column.
+        column.title = "Key"
         column.resizingMask = .autoresizingMask
         return column
     }

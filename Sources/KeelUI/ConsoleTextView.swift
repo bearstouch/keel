@@ -199,6 +199,7 @@ final class ConsoleTextView: NSTextView {
     }
 
     override func keyDown(with event: NSEvent) {
+        if FocusEscape.handle(event, from: self) { return }
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         if flags == .control, let key = event.charactersIgnoringModifiers?.lowercased() {
             switch key {
