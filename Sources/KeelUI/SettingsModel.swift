@@ -25,6 +25,8 @@ public final class SettingsModel: ObservableObject {
     public let snapshot = SettingsSnapshot()
 
     public var theme: ThemeChoice { applied.theme }
+    /// This build has an updater (a packaged build with a feed, FR-AP07); General shows the update toggle only then.
+    public var updatesAvailable = false
 
     /// What changed before `settings.json` was read, and so wins over the file: the theme alone (View → Theme), or the
     /// whole document (an Apply).

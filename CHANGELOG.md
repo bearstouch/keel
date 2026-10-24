@@ -233,6 +233,22 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - The Layered keel app icon, rendered from one SVG by `scripts/generate-app-icon.sh`: the `.icns` at 16–1024 px with
   the two-bar small form at 48 px and below, an Icon Composer bundle with Default, Dark and Tinted appearances for
   macOS 26, and Light, Dark and Tinted exports for the DMG and website (KEEL-051).
+- Release packaging: `scripts/package-release.sh` builds a Universal 2 `Keel.app` (hardened runtime, no entitlements,
+  `keel-askpass` and Sparkle's helpers signed inside-out), a drag-to-install DMG over the Light icon background, the
+  Sparkle archive and a signed one-item appcast, notarizes and staples when a profile is given, and writes
+  `SHA256SUMS.txt` and `release-evidence.json` with every check passed, failed or skipped (benchmark evidence under
+  `performance`); a failed check, a failed notarization included, fails the script, and a skipped one makes the build a
+  pre-release. `.github/workflows/release.yml` (actions pinned to SHAs) tests, benchmarks, packages and publishes
+  (KEEL-052).
+- Automatic updates with Sparkle 2.10.0: **Keel → Check for Updates…**, a daily check that Settings → General →
+  **Check for updates automatically** turns off, installs only after confirmation, EdDSA-signed appcast and archives
+  over HTTPS, no system profile. Builds without a feed (`swift run`, development builds, `--fixture`) have no updater.
+  Remove Keel Data… also removes Sparkle's preferences (KEEL-052).
+
+### Fixed
+
+- Packaged builds find their resource bundles (server detection rules, command catalog, fonts) in
+  `Contents/Resources` instead of crashing on SwiftPM's build-folder path (KEEL-052).
 
 ### Removed
 

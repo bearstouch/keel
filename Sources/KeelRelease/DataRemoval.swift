@@ -60,7 +60,7 @@ public struct DataRemovalPlan: Equatable, Sendable {
             if count > 0 { lines.append("\(Self.count(count, "Keychain item")) in “\(service)”") }
         }
         lines += unreadableServices.map { "Couldn't read the Keychain items in \($0); they stay." }
-        if !preferenceKeys.isEmpty { lines.append("Keyboard shortcut preferences") }
+        if !preferenceKeys.isEmpty { lines.append("Keyboard shortcut and update preferences") }
         return lines
     }
 
@@ -77,8 +77,8 @@ public struct DataRemovalResult: Equatable, Sendable {
 public enum DataRemovalPlanner {
     /// 02 Architecture → Keychain items. `DataRemovalPlannerTests` checks these against KeelCore and KeelSSH.
     public static let keychainServices = ["Keel Connection", "Keel TLS", "Keel SSH Host"]
-    /// `UserDefaults` keys Keel writes (the keyboard bindings, FR-AP02).
-    public static let preferenceKeys = ["keyboardShortcuts"]
+    /// `UserDefaults` keys Keel writes: the keyboard bindings (FR-AP02) and what Sparkle remembers (FR-AP07).
+    public static let preferenceKeys = ["keyboardShortcuts"] + UpdatePolicy.sparklePreferenceKeys
     /// The stems of Keel's state files (`PersistedFile`, `hosts.json`); checked against KeelCore by the tests.
     public static let stateFileStems = ["connections", "hosts", "windows", "settings", "known-ca"]
 

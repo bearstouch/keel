@@ -1,0 +1,155 @@
+name: Release
+
+# MAC-08 – MAC-11, KEEL-052. Push a tag matching release/manifest.json (v0.1.0) to test, benchmark, build, sign, notarize
+# and publish a GitHub release; a manual run builds the same artifacts without publishing (and without the benchmark,
+# so it can only be a pre-release). scripts/package-release.sh records every check in release-evidence.json and fails
+# on any failed one; a build with a skipped check (ad-hoc, unnotarized, no EdDSA key) is published only as a pre-release.
+#
+# Secrets (all optional; without them the build is ad-hoc signed and a pre-release):
+#   MACOS_CERTIFICATE_P12, MACOS_CERTIFICATE_PASSWORD   base64 Developer ID Application certificate (.p12) and its password
+#   MACOS_SIGN_IDENTITY                                 "Developer ID Application: … (TEAMID)"
+#   APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD         notarytool credentials (app-specific password)
+#   SPARKLE_ED_PRIVATE_KEY                              generate_keys --account com.bearstouch.keel -x (base64 seed)
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  release:
+    name: Package and publish
+    runs-on: macos-26
+    timeout-minutes: 120
+    steps:
+      # Actions are pinned to commit SHAs (NFR-SC07, MAC-11); Dependabot keeps them current.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The write token stays out of .git/config while the tests and benchmarks run; publishing uses GH_TOKEN.
+          persist-credentials: false
+
+      - name: Select Xcode 26
+        run: |
+          xcode=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)
+          sudo xcode-select -s "$xcode"
+          swift --version
+
+      - name: Read version
+        id: version
+        run: |
+          version=$(plutil -extract version raw -o - release/manifest.json)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match release/manifest.json version $version"; exit 1
+          fi
+
+      - name: Test
+        run: swift test
+
+      # The release verification matrix's browser row: the 1M/10M-key targets, copied into release-evidence.json.
+      - name: Benchmarks
+        if: github.ref_type == 'tag'
+        run: |
+          brew install redis
+          python3 scripts/bench-browser.py --redis-server "$(brew --prefix)/bin/redis-server"
+
+      - name: Import signing certificate and keys
+        id: signing
+        env:
+          P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          P12_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          SPARKLE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          if [ -n "$SPARKLE_KEY" ]; then
+            # Owner-only, outside the workspace, removed in the last step.
+            (umask 077; printf '%s' "$SPARKLE_KEY" > "$RUNNER_TEMP/sparkle.key")
+            echo "KEEL_SPARKLE_KEY_FILE=$RUNNER_TEMP/sparkle.key" >> "$GITHUB_ENV"
+          else
+            echo "::warning::No SPARKLE_ED_PRIVATE_KEY; the update archive and appcast are unsigned."
+          fi
+          if [ -z "$P12" ] || [ -z "$IDENTITY" ]; then
+            echo "::warning::No signing certificate configured; building an ad-hoc signed (non-distributable) pre-release."
+            echo "signed=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          keychain="$RUNNER_TEMP/release.keychain-db"
+          keychain_password=$(uuidgen)
+          (umask 077; echo "$P12" | base64 --decode > "$RUNNER_TEMP/cert.p12")
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$RUNNER_TEMP/cert.p12" -P "$P12_PASSWORD" -T /usr/bin/codesign -t cert -f pkcs12 -k "$keychain"
+          security set-key-partition-list -S apple-tool:,apple: -k "$keychain_password" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/cert.p12"
+          echo "KEEL_SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+          if [ -n "$APPLE_ID" ] && [ -n "$APPLE_TEAM_ID" ] && [ -n "$APPLE_APP_PASSWORD" ]; then
+            xcrun notarytool store-credentials keel-notary --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --keychain "$keychain"
+            echo "KEEL_NOTARY_PROFILE=keel-notary" >> "$GITHUB_ENV"
+            # notarytool looks for a profile in the default keychain only, not the search list.
+            echo "KEEL_NOTARY_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+          else
+            echo "::warning::Notary credentials not configured; the release will be signed but not notarized (pre-release)."
+          fi
+
+      # Fails on any failed check, a failed notarization included (AC4). Finder automation isn't available on runners.
+      - name: Package Universal 2
+        run: scripts/package-release.sh --no-layout
+
+      - name: Evidence
+        if: always()
+        run: cat dist/release-evidence.json 2>/dev/null || echo "no evidence written"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: Keel-${{ steps.version.outputs.version }}
+          path: |
+            dist/Keel-*.dmg
+            dist/Keel-*.zip
+            dist/appcast.xml
+            dist/SHA256SUMS.txt
+            dist/release-evidence.json
+
+      - name: Publish GitHub release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          channel=$(plutil -extract channel raw -o - dist/release-evidence.json)
+          awk -v v="$VERSION" '
+            $0 ~ "^## \\[" v "\\]" { found = 1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+          printf '\nUniversal 2 (Apple silicon and Intel), macOS 14 or later. Verify with `shasum -a 256 -c SHA256SUMS.txt`.\n' >> "$RUNNER_TEMP/notes.md"
+          flags=(--title "Keel $VERSION" --notes-file "$RUNNER_TEMP/notes.md" --verify-tag)
+          # Only evidence with every check passed is a release; the appcast is published to the feed host only then.
+          if [ "$channel" != release ]; then
+            flags+=(--prerelease)
+            printf '\n> **Pre-release:** some release checks were skipped (see release-evidence.json); Gatekeeper may block this build.\n' >> "$RUNNER_TEMP/notes.md"
+          fi
+          gh release create "$GITHUB_REF_NAME" "${flags[@]}" \
+            "dist/Keel-$VERSION.dmg" "dist/Keel-$VERSION.zip" dist/appcast.xml dist/SHA256SUMS.txt dist/release-evidence.json
+
+      - name: Clean up keychain and keys
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/sparkle.key"
+          if [ -f "$RUNNER_TEMP/release.keychain-db" ]; then security delete-keychain "$RUNNER_TEMP/release.keychain-db" || true; fi

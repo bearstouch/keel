@@ -27,7 +27,10 @@ swift run Keel                                # run the app (development identit
 swift run Keel --state-directory /abs/path    # use a separate state folder
 python3 scripts/bench-browser.py --redis-server "$(which redis-server)"   # performance benchmarks, evidence in .build/bench/
 python3 -I scripts/integration-matrix.py   # integration matrix against pinned Redis/Valkey/Dragonfly containers (needs Docker)
+scripts/package-release.sh                    # Universal 2 DMG and release evidence in dist/ (ad-hoc unless signing is configured)
 ```
+
+Releasing (signing, notarization, Sparkle keys, the appcast) is described in [release/README.md](release/README.md).
 
 ## License
 

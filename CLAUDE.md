@@ -42,7 +42,7 @@ python3 -I scripts/generate-design-tokens.py [--check]   # design-token fixture 
 scripts/generate-app-icon.sh [--check | --compile DIR]   # app icon assets (release/icon) from keel-icon.svg; needs rsvg-convert, --compile only actool
 python3 -I scripts/capture-console-goldens.py --redis-server PATH --redis-cli PATH   # console goldens (Tests/Fixtures/Console)
 python3 scripts/bench-browser.py [--quick] [--redis-server PATH] [--skip-launch] [--update-baseline]   # 1M/10M-key benchmarks; evidence in .build/bench/, fails on a missed NFR target or a >20% regression vs release/bench-baseline.json
-scripts/package-release.sh                     # (later, KEEL-052) Universal 2 DMG; ad-hoc unless KEEL_SIGN_IDENTITY / KEEL_NOTARY_PROFILE
+scripts/package-release.sh [--no-layout]       # Universal 2 app, DMG, Sparkle archive, appcast, SHA256SUMS.txt, dist/release-evidence.json; ad-hoc unless KEEL_SIGN_IDENTITY / KEEL_NOTARY_PROFILE; EdDSA via KEEL_SPARKLE_KEY_FILE or KEEL_SPARKLE_ACCOUNT; exits 1 on any failed check
 ```
 
 There is no SwiftLint/SwiftFormat binary; use the toolchain's `swift format` with the repo `.swift-format`
@@ -148,6 +148,9 @@ performed here (VoiceOver, notarization on a clean Mac, Intel hardware, managed 
   (7.4+/8.x) without a capability probe, and keep the Valkey cases in `KeelIntegrationTests` green.
 - macOS 15+ shows the Local Network prompt for LAN servers; keep `NSLocalNetworkUsageDescription` in `Info.plist`
   and surface a denied permission as such, not as a timeout.
+- Packaged builds load SwiftPM resources through `Bundle.keelCore` / `Bundle.keelUI` (`Contents/Resources` first); never
+  use `Bundle.module` directly, which looks beside `Keel.app` and crashes on a user's Mac.
+- `release/Info.plist` is the app's plist; the Sparkle keys there and in `release/manifest.json` are checked by `UpdatePolicyTests`.
 - `scripts/package-release.sh` must copy and sign `keel-askpass` and Sparkle's helpers; a new helper goes there,
   in `release/manifest.json` and in the data-removal plan.
 - Settings previews are never persisted; cancelling must restore the exact prior state.

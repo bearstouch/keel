@@ -5,6 +5,11 @@ public struct ReleaseManifest: Codable, Equatable, Sendable {
     public struct Dependency: Codable, Equatable, Sendable {
         public let name: String, version: String, revision: String, license: String, licenseFile: String
     }
+    /// The update channel (INT-11): the HTTPS appcast, where its archives are served, and the public EdDSA key every
+    /// archive and the appcast itself must verify against. The private key never enters the repository.
+    public struct Sparkle: Codable, Equatable, Sendable {
+        public let version: String, feedURL: String, downloadURLPrefix: String, publicEDKey: String
+    }
     public let bundleIdentifier: String
     public let name: String
     public let version: String
@@ -15,6 +20,9 @@ public struct ReleaseManifest: Codable, Equatable, Sendable {
     public let iconName: String
     public let artifacts: [String]
     public let dependencies: [Dependency]
+    public let sparkle: Sparkle
+    /// The checks `package-release.sh` records in `release-evidence.json`, by ID (MAC-11); see `ReleaseChecklist`.
+    public let releaseChecks: [String]
 
     /// Facts read from the built product, compared with the manifest.
     public struct BuiltProduct: Equatable, Sendable {
@@ -49,6 +57,21 @@ public struct ReleaseManifest: Codable, Equatable, Sendable {
         for dependency in dependencies where dependency.license.isEmpty || dependency.licenseFile.isEmpty {
             problems.append("Dependency \(dependency.name) has no recorded license.")
         }
+        problems += sparkleProblems
+        return problems
+    }
+
+    /// The Sparkle record on its own: an HTTPS feed and download host, a real Ed25519 public key, and the same Sparkle
+    /// version as the recorded dependency (which `Package.swift` pins exactly).
+    public var sparkleProblems: [String] {
+        var problems: [String] = []
+        for (name, url) in [("feed", sparkle.feedURL), ("download prefix", sparkle.downloadURLPrefix)] {
+            let parsed = URL(string: url)
+            if parsed?.scheme != "https" || parsed?.host == nil { problems.append("The Sparkle \(name) \(url) is not an HTTPS URL.") }
+        }
+        if !sparkle.downloadURLPrefix.hasSuffix("/") { problems.append("The Sparkle download prefix must end in /.") }
+        if !UpdatePolicy.isPublicEDKey(sparkle.publicEDKey) { problems.append("The Sparkle public key is not a base64 Ed25519 key.") }
+        if dependencies.first(where: { $0.name == "Sparkle" })?.version != sparkle.version { problems.append("Sparkle \(sparkle.version) is not a recorded dependency.") }
         return problems
     }
 }

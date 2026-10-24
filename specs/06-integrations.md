@@ -122,6 +122,11 @@ takes the host.
 
 **INT-11 (P0).** Sparkle 2 (pinned exact version), EdDSA-signed appcast and updates, HTTPS feed on the Bearstouch release host, `SUEnableSystemProfiling = NO`, automatic checks on by default with a user-visible toggle, user-confirmed installs. Release builds verify both the Developer ID signature and the EdDSA signature. See [MAC-08](07-macos-support.md).
 
+- **Feed and key.** `release/manifest.json` → `sparkle`: Sparkle 2.10.0, the feed `https://bearstouch.com/keel/appcast.xml`, archives under `https://bearstouch.com/keel/releases/`, and the public EdDSA key (`SUPublicEDKey`). The private key lives in the release owner's login keychain (`generate_keys --account com.bearstouch.keel`) and, exported, in the `SPARKLE_ED_PRIVATE_KEY` repository secret; it never enters the repository. Without it installed copies can never accept another update, so it is backed up offline.
+- **Info.plist** (`release/Info.plist`, checked by `UpdatePolicy`): `SUFeedURL`, `SUPublicEDKey`, `SUEnableAutomaticChecks = YES` (so Sparkle never asks at launch), `SUScheduledCheckInterval = 86400`, `SUAllowsAutomaticUpdates = NO` and `SUAutomaticallyUpdate = NO` (every install waits for the user), `SUEnableSystemProfiling = NO`, `SURequireSignedFeed = YES`, `SUVerifyUpdateBeforeExtraction = YES`; no `SUSendProfileInfo`.
+- **Updater.** Only a bundle with the installed identity, an HTTPS feed and a valid key has one, and never with `--fixture`: `swift run`, development builds and fixture launches show no **Check for Updates…** item and no update toggle, and never contact the feed. The user's choice (Settings → General → **Check for updates automatically**, `checksForUpdates` in `settings.json`) is put on the updater before it starts and on every Apply; profiling and automatic downloads are switched off then too, whatever Sparkle remembered.
+- **Appcast.** `package-release.sh` writes `dist/appcast.xml` with one item (the version, minimum macOS, the archive's URL, length and EdDSA signature) and signs the feed in place. The release workflow attaches it to the GitHub release; publishing it and the archive on the feed host is a manual step until that host has a deploy path.
+
 ## Import and export
 
 **INT-12 (P0).**
