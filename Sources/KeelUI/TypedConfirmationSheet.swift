@@ -59,15 +59,7 @@ struct TypedConfirmationSheet: View {
             Text(confirmation.title).font(Tokens.interface(15, weight: .semibold)).foregroundStyle(Tokens.fg)
                 .accessibilityAddTraits(.isHeader)
             Text(confirmation.message).font(Tokens.interface(12.5)).foregroundStyle(Tokens.fg).fixedSize(horizontal: false, vertical: true)
-            if let server = confirmation.serverLine {
-                // Production: words and the maroon chip together, so the server is never named by color alone.
-                HStack(spacing: 8) {
-                    Text("Production").font(Tokens.interface(11, weight: .semibold)).foregroundStyle(Tokens.onProdStrip)
-                        .padding(.horizontal, 7).padding(.vertical, 2).background(Tokens.prodStrip, in: RoundedRectangle(cornerRadius: 4))
-                    Text(server).font(Tokens.mono(12)).foregroundStyle(Tokens.fg).lineLimit(1).truncationMode(.middle)
-                }
-                .accessibilityElement(children: .combine)
-            }
+            if let server = confirmation.serverLine { ProductionServerLine(server: server) }
             if !model.listed.isEmpty {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(Array(model.listed.enumerated()), id: \.offset) { _, name in

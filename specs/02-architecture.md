@@ -204,7 +204,7 @@ Keel never implements SSH. `TunnelManager` runs, without a shell (`posix_spawn` 
 
 - Network I/O, RESP parsing, SCAN accumulation and tree building run off the main actor (actors and `Task`s). View models are `@MainActor`.
 - Every buffer that grows with server data is bounded: reply size, console scrollback, MONITOR output, key index limit, value page size.
-- Cancellation is cooperative: a cancelled bulk job finishes its in-flight batch and stops before the next.
+- Cancellation is cooperative: a cancelled bulk job finishes its in-flight batch and stops before the next. Cancel is a flag the job checks between steps, never task cancellation (which would drop the in-flight `UNLINK`'s reply); the job connection closes when the job ends or its sheet closes unrun.
 
 ## Persistence
 

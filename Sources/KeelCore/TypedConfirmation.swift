@@ -44,7 +44,7 @@ public struct TypedConfirmation: Sendable, Equatable {
             message = "The selected keys are removed from \(target). This can't be undone."
             expected = Data(String(count).utf8); actionTitle = "Delete"
         case .deletePattern(let pattern):
-            title = "Delete keys matching \(KeyDisplay.name(pattern))?"
+            title = "Delete matching keys?"
             message = "Every key matching the pattern is removed from \(target). This can't be undone."
             expected = pattern; actionTitle = "Delete"
         case .flushDatabase(let index):

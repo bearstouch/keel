@@ -60,6 +60,8 @@ public final class KeyListDataSource: NSObject, ObservableObject {
     @Published public private(set) var selectedKeys: [Int] = []
     /// ⌫ in the list (FR-KB11); the browser asks for the typed confirmation.
     var onDelete: (() -> Void)?
+    /// ⋯ → Delete Keys Matching… (FR-SF05); nil on read-only profiles, which don't offer it.
+    @Published var onBulkDelete: (() -> Void)?
     @Published public private(set) var footer: KeyIndexFooter
     /// The database's `DBSIZE`, shown in the footer beside the loaded count (FR-KB09); nil until known.
     @Published public private(set) var totalKeys: Int?
