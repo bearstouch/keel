@@ -122,6 +122,7 @@ struct KeyboardSettingsView: View {
                     }
                 }
             }
+            .accessibilityLabel("Keyboard shortcuts")
             Tokens.hair.frame(height: 1)
             HStack(spacing: 12) {
                 if let message = model.message {

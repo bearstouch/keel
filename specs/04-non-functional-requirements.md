@@ -60,10 +60,25 @@ Targets are measured on the reference machines (Apple silicon M1 8 GB and an Int
 
 | ID | Requirement | Acceptance check |
 | --- | --- | --- |
-| NFR-AX01 | Every control has a label, role and state; tables expose rows, columns and headers to VoiceOver; status (connection, read-only, production, TLS not verified, partial load) is text, never color only. | VoiceOver pass over the acceptance scenario (**pending** until run by hand). |
-| NFR-AX02 | Full keyboard operation: sidebar, tabs, key list, editors, sheets, palette; visible focus everywhere. | Keyboard-only run of the acceptance scenario. |
+| NFR-AX01 | Every control has a label, role and state; tables expose rows, columns and headers to VoiceOver; status (connection, read-only, production, TLS not verified, partial load) is text, never color only. | Automated audit (`AccessibilityAuditTests`): every screen is hosted and its accessibility tree walked; no control may lack a name, and each status is found in words. VoiceOver pass over the acceptance scenario (**pending** until run by hand). |
+| NFR-AX02 | Full keyboard operation: sidebar, tabs, key list, editors, sheets, palette; visible focus everywhere. See [Keyboard model](#keyboard-model). | `KeyboardNavigationTests`: the Tab order of each screen, arrows in tables, no keyboard trap. Keyboard-only run of the acceptance scenario (**pending** until run by hand). |
 | NFR-AX03 | Honors Increase Contrast, Reduce Motion (no animated countdown or sparkline motion), Reduce Transparency, and Dynamic Type equivalents via the data font size setting (9–32 pt). | |
 | NFR-AX04 | Contrast ≥ 4.5:1 for text and ≥ 3:1 for badges and the production strip, in light and dark, validated by Trellis's `ThemeContrast` checks. | Automated contrast test over the palette. |
+
+### Keyboard model
+
+- **Tab** moves between the text fields, lists and tables of a screen in reading order and wraps around: in the main
+  window the sidebar, the key filter, the key list, then the open editor's filter, table and value. With Full Keyboard
+  Access on, buttons, menus and segments join the loop between these stops.
+- **↑ / ↓** move the selection in the sidebar, the key list and every editor table (hash fields, list items, set and
+  sorted set members, stream entries and an entry's fields); the selected row opens in the viewer. Return opens the
+  sidebar's selected connection (⌥Return in a new tab); **⌘I** opens Edit Connection for it.
+- Text views that keep Tab — the value viewer (a tab is a character) and the console (Tab completes) — are left with
+  **⌃Tab** / **⌃⇧Tab**, as in every Mac text view, so no view traps the focus.
+- A focused view always shows it: system controls draw the system focus ring; the sidebar, the editor tables and the
+  connection form draw a 2 pt `accent` ring (DS-02); the key list draws the focus ring inside its pane.
+- VoiceOver reads editor table rows cell by cell after their column headers ("Field city, Value London, changed"); the
+  header labels are marked as headers. Row actions (rename, delete, insert) are also VoiceOver actions on the row.
 
 ## Usability
 

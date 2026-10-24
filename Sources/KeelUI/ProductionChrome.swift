@@ -7,6 +7,8 @@ public enum ProductionChrome {
     public static let writeNotice = "Writing to PRODUCTION"
     /// The toolbar's words when the server itself refuses writes (02 Architecture → Safety policy).
     public static let serverReadOnly = "Server-enforced read-only"
+    /// The toolbar's words, and the tab's spoken status, for a profile with TLS Skip verification on (FR-CN03, NFR-AX01).
+    public static let tlsNotVerified = "TLS not verified"
 
     /// "Production · Read-only", or "Production" alone while writes are allowed.
     public static func stripText(readOnly: Bool) -> String { readOnly ? "Production · Read-only" : "Production" }

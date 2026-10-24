@@ -59,25 +59,29 @@ struct HashEditorView: View {
                 }
                 .buttonStyle(.plain).frame(width: 200, alignment: .leading)
                 .accessibilityLabel("Field, sorted \(model.order == .ascending ? "ascending" : "descending")").accessibilityHint("Reverses the order")
-                Text("Value")
+                .accessibilityAddTraits(.isHeader)
+                Text("Value").accessibilityAddTraits(.isHeader)
             }
             .font(Tokens.interface(11.5)).foregroundStyle(Tokens.muted).padding(.horizontal, 12).padding(.bottom, 8)
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(model.rows) { row in
-                        FieldRow(
-                            row: row, selected: session.selectedRow == row.id, changed: session.changedRows.contains(row.id), writable: session.allowsWrites,
-                            select: { session.select(row.id) }, rename: { renaming = row.id }, delete: { model.delete(row.id) })
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(model.rows) { row in
+                            FieldRow(
+                                row: row, selected: session.selectedRow == row.id, changed: session.changedRows.contains(row.id), writable: session.allowsWrites,
+                                select: { session.select(row.id) }, rename: { renaming = row.id }, delete: { model.delete(row.id) })
+                        }
                     }
                 }
-            }
-            .frame(minHeight: 120, maxHeight: .infinity)
-            .overlay(alignment: .topLeading) {
-                if model.rows.isEmpty {
-                    Text(model.filter.isEmpty ? "No fields." : "No loaded field matches.").font(Tokens.interface(12.5)).foregroundStyle(Tokens.muted).padding(12)
+                .frame(minHeight: 120, maxHeight: .infinity)
+                .overlay(alignment: .topLeading) {
+                    if model.rows.isEmpty {
+                        Text(model.filter.isEmpty ? "No fields." : "No loaded field matches.").font(Tokens.interface(12.5)).foregroundStyle(Tokens.muted).padding(12)
+                    }
                 }
+                .rowNavigation(model.rows.map(\.id), selected: session.selectedRow, proxy: proxy) { session.select($0) }
+                .accessibilityLabel("Fields")
             }
-            .accessibilityLabel("Fields")
         }
     }
 
@@ -138,7 +142,7 @@ private struct FieldRow: View {
             Button("Delete Field", role: .destructive, action: delete).disabled(!writable)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(KeyDisplay.name(row.id)): \(Self.preview(row.value))\(changed ? ", changed" : "")")
+        .accessibilityLabel(TableSpeech.row(["Field": KeyDisplay.name(row.id), "Value": Self.preview(row.value)], changed: changed))
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction(named: "Rename Field", rename)
         .accessibilityAction(named: "Delete Field", delete)

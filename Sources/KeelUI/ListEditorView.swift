@@ -58,25 +58,28 @@ struct ListEditorView: View {
     private var table: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 0) {
-                Text("Index").frame(width: 90, alignment: .leading)
-                Text("Value")
+                Text("Index").frame(width: 90, alignment: .leading).accessibilityAddTraits(.isHeader)
+                Text("Value").accessibilityAddTraits(.isHeader)
             }
             .font(Tokens.interface(11.5)).foregroundStyle(Tokens.muted).padding(.horizontal, 12).padding(.bottom, 8)
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(model.rows) { row in
-                        ItemRow(
-                            row: row, selected: session.selectedRow == row.id, changed: session.changedRows.contains(row.id), writable: session.allowsWrites,
-                            canAct: model.canAct, select: { session.select(row.id) },
-                            insert: { before in entry = ValueEntry(kind: .insert(id: row.id, before: before)) }, delete: { model.delete(row.id) })
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(model.rows) { row in
+                            ItemRow(
+                                row: row, selected: session.selectedRow == row.id, changed: session.changedRows.contains(row.id), writable: session.allowsWrites,
+                                canAct: model.canAct, select: { session.select(row.id) },
+                                insert: { before in entry = ValueEntry(kind: .insert(id: row.id, before: before)) }, delete: { model.delete(row.id) })
+                        }
                     }
                 }
+                .frame(minHeight: 120, maxHeight: .infinity)
+                .overlay(alignment: .topLeading) {
+                    if model.rows.isEmpty { Text("No items.").font(Tokens.interface(12.5)).foregroundStyle(Tokens.muted).padding(12) }
+                }
+                .rowNavigation(model.rows.map(\.id), selected: session.selectedRow, proxy: proxy) { session.select($0) }
+                .accessibilityLabel("Items")
             }
-            .frame(minHeight: 120, maxHeight: .infinity)
-            .overlay(alignment: .topLeading) {
-                if model.rows.isEmpty { Text("No items.").font(Tokens.interface(12.5)).foregroundStyle(Tokens.muted).padding(12) }
-            }
-            .accessibilityLabel("Items")
         }
     }
 
@@ -166,7 +169,7 @@ private struct ItemRow: View {
             Button("Delete Item", role: .destructive, action: delete).disabled(!writable)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Index \(KeyDisplay.name(row.id)): \(Self.preview(row.value))\(changed ? ", changed" : "")")
+        .accessibilityLabel(TableSpeech.row(["Index": KeyDisplay.name(row.id), "Value": Self.preview(row.value)], changed: changed))
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction(named: "Insert Before") { if canAct { insert(true) } }
         .accessibilityAction(named: "Insert After") { if canAct { insert(false) } }

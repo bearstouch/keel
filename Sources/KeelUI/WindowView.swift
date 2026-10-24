@@ -54,6 +54,7 @@ struct ConnectionToolbar: View {
                     if tab.mode == .info { ToolbarServerVersion(session: session) }
                     ServerReadOnlyBadge(session: session)
                 }
+                if sidebar.tlsNotVerified(tab.profileID) { TLSNotVerifiedBadge() }
             }
             Spacer(minLength: 0)
             ModeSwitch(mode: tabs.selected?.mode) { tabs.setMode($0) }
@@ -116,6 +117,14 @@ private struct ServerReadOnlyBadge: View {
             Label(ProductionChrome.serverReadOnly, systemImage: "lock").font(Tokens.interface(12)).foregroundStyle(Tokens.muted).lineLimit(1)
                 .help("The server refused a write: this user or server can't write.")
         }
+    }
+}
+
+/// "TLS not verified" with an open lock while the profile skips certificate verification (FR-CN03): words, not a color.
+private struct TLSNotVerifiedBadge: View {
+    var body: some View {
+        Label(ProductionChrome.tlsNotVerified, systemImage: "lock.open").font(Tokens.interface(12)).foregroundStyle(Tokens.muted).lineLimit(1)
+            .help("TLS is on, but the server's certificate isn't checked.")
     }
 }
 
@@ -207,8 +216,11 @@ struct TabBar: View {
     var body: some View {
         HStack(alignment: .bottom, spacing: 2) {
             ForEach(Array(tabs.tabs.enumerated()), id: \.element.id) { offset, tab in
-                TabItem(tab: tab, selected: tab.id == tabs.selectedID, name: sidebar.profileName(tab.profileID), label: sidebar.profileLabel(tab.profileID), tabs: tabs)
-                    .dropDestination(for: String.self) { items, _ in drop(items, at: offset) }
+                TabItem(
+                    tab: tab, selected: tab.id == tabs.selectedID, name: sidebar.profileName(tab.profileID), label: sidebar.profileLabel(tab.profileID),
+                    tlsNotVerified: sidebar.tlsNotVerified(tab.profileID), tabs: tabs
+                )
+                .dropDestination(for: String.self) { items, _ in drop(items, at: offset) }
             }
             newTabButton
             Spacer(minLength: 0)
@@ -265,6 +277,7 @@ private struct TabItem: View {
     let selected: Bool
     let name: String
     let label: LabelColor
+    let tlsNotVerified: Bool
     @ObservedObject var tabs: ConnectionTabs
 
     var body: some View {
@@ -275,6 +288,7 @@ private struct TabItem: View {
                 Circle().strokeBorder(Tokens.muted, lineWidth: 1).frame(width: 7, height: 7)
             }
             Text(name).font(Tokens.interface(12.5, weight: selected ? .semibold : .regular)).lineLimit(1)
+            if tlsNotVerified { Image(systemName: "lock.open").font(.system(size: 10)).help(ProductionChrome.tlsNotVerified) }
             Button {
                 tabs.app?.requestClose(tab.id)
             } label: {
@@ -298,7 +312,7 @@ private struct TabItem: View {
         .draggable(TabDragItem.payload(tab.id)) { Text(name).font(Tokens.interface(12.5)).padding(6) }
         .contextMenu { menu }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(name), \(tab.status.spoken)")
+        .accessibilityLabel([name, tab.status.spoken, tlsNotVerified ? ProductionChrome.tlsNotVerified : nil].compactMap { $0 }.joined(separator: ", "))
         .accessibilityAddTraits(selected ? [.isSelected, .isButton] : [.isButton])
         .accessibilityAction { tabs.selectedID = tab.id }
     }

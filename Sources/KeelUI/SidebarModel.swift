@@ -142,6 +142,9 @@ public final class SidebarModel: ObservableObject {
     public func newConnection(inFolder folderID: UUID? = nil) { sheets?.newConnection(folderID: folderID) }
     public func edit(_ profileID: UUID) { sheets?.edit(profileID) }
 
+    /// ⌘I in the focused sidebar: Edit… without the context menu, the keyboard's way to the sheet (NFR-AX02).
+    public func editSelection() { if let selectedProfileID { edit(selectedProfileID) } }
+
     /// Copies `redis[s]://user@host:port/db`; the password never leaves the Keychain (INT-04).
     public func copyURL(_ profileID: UUID) {
         guard let profile = profile(profileID) else { return }
@@ -271,6 +274,9 @@ public final class SidebarModel: ObservableObject {
     public func profileName(_ id: UUID) -> String { profile(id)?.settings.name ?? "Deleted connection" }
 
     public func profileLabel(_ id: UUID) -> LabelColor { profile(id)?.settings.label ?? .none }
+
+    /// TLS is on with Skip verification (FR-CN03): the window and tab say "TLS not verified".
+    public func tlsNotVerified(_ id: UUID) -> Bool { profile(id)?.settings.tls?.skipVerification == true }
 
     /// Whether the profile's label is treated as production (FR-SF02); a deleted profile isn't.
     public func isProduction(_ id: UUID) -> Bool { profile(id).map { document.label($0.settings.label).treatAsProduction } ?? false }

@@ -161,6 +161,9 @@ struct ViewerTextView: NSViewRepresentable {
             guard let text = notification.object as? NSTextView else { return }
             model.edit(text.string)
         }
+
+        /// Tab types a tab into the value; ⌃Tab moves on.
+        func textView(_ textView: NSTextView, doCommandBy selector: Selector) -> Bool { FocusEscape.handle(NSApp.currentEvent, from: textView) }
     }
 }
 

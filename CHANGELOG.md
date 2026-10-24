@@ -201,6 +201,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
   generated from the page), Increase Contrast strengthens secondary text and hairlines, and Inter and JetBrains Mono
   ship in the app, registered for the Keel process only, with the system fonts as fallback. The console's argument
   hint is now `#768297` so it meets 4.5:1 (KEEL-044).
+- Accessibility pass: an automated audit of every screen's accessibility tree, Tab order tests, ↑/↓ selection and a
+  visible accent focus ring in the editor tables, focus rings for the sidebar, connection form and key list, ⌃Tab to
+  leave the value viewer and console, ⌘I to edit the sidebar's selected connection, table rows read with their column
+  headers, and "TLS not verified" shown in the toolbar and on the tab (KEEL-045).
 
 ### Removed
 
