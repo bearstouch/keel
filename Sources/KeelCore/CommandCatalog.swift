@@ -276,7 +276,7 @@ extension CommandCatalog {
 
     /// The catalog bundled with Keel. A missing, broken or newer resource is a build defect, caught by
     /// `CommandCatalogTests`.
-    static var bundledURL: URL? { Bundle.module.url(forResource: "commands", withExtension: "json", subdirectory: "Commands") }
+    static var bundledURL: URL? { Bundle.keelCore.url(forResource: "commands", withExtension: "json", subdirectory: "Commands") }
 
     public static let bundled: CommandCatalog = {
         guard let url = bundledURL, let data = try? Data(contentsOf: url),

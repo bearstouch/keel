@@ -4,6 +4,7 @@ import KeelCore
 import KeelRelease
 import KeelSSH
 import KeelUI
+import Sparkle
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItemValidation {
@@ -51,6 +52,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private var accessibilityObserver: NSObjectProtocol?
     /// Help → Remove Keel Data… confirmed: removed as the last step of quitting, once nothing is left to save (MAC-22).
     private var pendingRemoval: DataRemovalPlan?
+    /// Sparkle (FR-AP07): only in a packaged build with a feed, never with `--fixture`. Started once the settings are
+    /// read, so the first check already follows the user's choice.
+    private var updates: SPUStandardUpdaterController?
+    private var updateSettingChanges: AnyCancellable?
 
     init(arguments: LaunchArguments, stateDirectory: URL) {
         self.arguments = arguments; self.stateDirectory = stateDirectory
@@ -76,6 +81,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         }
         // ssh processes a crashed or killed run left behind (NFR-RS05); off the main thread, it only reads small files.
         Task.detached(priority: .utility) { StaleTunnelCleanup().run() }
+        if !arguments.fixture, UpdatePolicy.isAvailable(info: Bundle.main.infoDictionary, productionBundleIdentifier: AppInstanceIdentity.production) {
+            updates = SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: nil, userDriverDelegate: nil)
+            settings.updatesAvailable = true
+        }
         buildMenus()
         let prompts = SSHPromptCenter(relay: promptRelay)
         self.prompts = prompts
@@ -106,8 +115,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             _ = await profiles.load()
             for (window, frame) in await app.restore(reopens: settings.applied.restoresWindows) { show(window, frame: frame) }
             NSApp.activate()
+            startUpdates()
         }
     }
+
+    /// The saved choice goes on the updater before it starts, and every Apply after (Settings → General).
+    private func startUpdates() {
+        guard let updates else { return }
+        let updater = updates.updater
+        UpdatePolicy.apply(checksAutomatically: settings.applied.checksForUpdates, to: updater)
+        // `$applied` publishes before the change lands, with the new value.
+        updateSettingChanges = settings.$applied.map(\.checksForUpdates).removeDuplicates().dropFirst().sink { UpdatePolicy.apply(checksAutomatically: $0, to: updater) }
+        updates.startUpdater()
+    }
+
+    /// Keel → Check for Updates…: one check now, shown even when nothing is new; installing still asks first.
+    @objc private func checkForUpdates(_ sender: Any?) { updates?.checkForUpdates(sender) }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
@@ -312,6 +335,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         case #selector(reconnect(_:)), #selector(disconnect(_:)): return tab != nil
         case #selector(nextTab(_:)), #selector(previousTab(_:)): return (keyTabs?.tabs.count ?? 0) > 1
         case #selector(newTab(_:)): return keyTabs != nil
+        case #selector(checkForUpdates(_:)): return updates?.updater.canCheckForUpdates ?? false
         // Only while the selected tab's editor shows the save bar, so ⌘Z means nothing else then.
         case #selector(saveEdits(_:)), #selector(revertEdits(_:)):
             return tab.flatMap { app?.session($0.id)?.browser?.editor?.showsSaveBar } ?? false
@@ -344,6 +368,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         let menu = NSMenu()
         let appItem = NSMenuItem(); menu.addItem(appItem)
         let appMenu = NSMenu(title: "Keel")
+        // Builds without an updater have no item (FR-AP07).
+        if updates != nil {
+            add("Check for Updates…", #selector(checkForUpdates(_:)), "", to: appMenu)
+            appMenu.addItem(.separator())
+        }
         add("Settings…", #selector(showSettings(_:)), ",", to: appMenu)
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Hide Keel", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
@@ -556,6 +585,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         }
     }
 }
+
+/// Sparkle's updater takes the update policy directly (FR-AP07).
+extension SPUUpdater: UpdaterControlling {}
 
 extension SavedFrame {
     init(_ rect: NSRect) { self.init(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height) }

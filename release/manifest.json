@@ -6,6 +6,29 @@
   "architectures": ["arm64", "x86_64"],
   "packageFormat": "dmg",
   "iconName": "AppIcon",
-  "artifacts": ["Keel.app/Contents/MacOS/Keel", "Keel.app/Contents/Helpers/keel-askpass", "Keel.app/Contents/Resources/Assets.car", "Keel.app/Contents/Resources/AppIcon.icns"],
-  "dependencies": []
+  "artifacts": [
+    "Keel.app/Contents/MacOS/Keel",
+    "Keel.app/Contents/Helpers/keel-askpass",
+    "Keel.app/Contents/Resources/Assets.car",
+    "Keel.app/Contents/Resources/AppIcon.icns",
+    "Keel.app/Contents/Resources/Keel_KeelCore.bundle",
+    "Keel.app/Contents/Resources/Keel_KeelUI.bundle",
+    "Keel.app/Contents/Resources/Sparkle-LICENSE.txt",
+    "Keel.app/Contents/Frameworks/Sparkle.framework/Versions/B/Sparkle",
+    "Keel.app/Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate",
+    "Keel.app/Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app"
+  ],
+  "dependencies": [
+    {"name": "Sparkle", "version": "2.10.0", "revision": "eef1a539a373c1f1a320624b1130fc5de7b2e100", "license": "MIT", "licenseFile": "ThirdParty/Sparkle-LICENSE.txt"}
+  ],
+  "sparkle": {
+    "version": "2.10.0",
+    "feedURL": "https://bearstouch.com/keel/appcast.xml",
+    "downloadURLPrefix": "https://bearstouch.com/keel/releases/",
+    "publicEDKey": "yHLwx9euQhIbAuyqfDUEUszcOLv0pYhLWXplYDgvgZ8="
+  },
+  "releaseChecks": [
+    "manifest", "architectures", "minimumOS", "signature", "hardenedRuntime", "entitlements", "launch", "developerID",
+    "notarization", "stapling", "gatekeeper", "updateSignature", "feedSignature", "checksums", "performance"
+  ]
 }

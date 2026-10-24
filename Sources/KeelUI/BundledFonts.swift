@@ -1,5 +1,6 @@
 import AppKit
 import CoreText
+import KeelCore
 import SwiftUI
 
 /// Inter and JetBrains Mono, shipped in KeelUI's resource bundle and registered for the Keel process only (MAC-19):
@@ -35,7 +36,7 @@ public enum BundledFonts {
             }
         }
 
-        public var url: URL? { Bundle.module.url(forResource: rawValue, withExtension: "ttf", subdirectory: "Fonts") }
+        public var url: URL? { Bundle.keelUI.url(forResource: rawValue, withExtension: "ttf", subdirectory: "Fonts") }
     }
 
     /// Registers every face once per process (a Swift `static let` runs its initializer exactly once, on first use) and
@@ -56,4 +57,9 @@ public enum BundledFonts {
         }
         return available
     }()
+}
+
+extension Bundle {
+    /// KeelUI's resources (the fonts): in `Contents/Resources` when packaged, else SwiftPM's build folder.
+    static let keelUI = packagedResources("Keel_KeelUI") ?? .module
 }

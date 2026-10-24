@@ -20,6 +20,54 @@ final class ReleaseManifestTests: XCTestCase {
         XCTAssertEqual(manifest.version, AppVersion.release, "SwiftPM builds report the manifest version")
     }
 
+    /// INT-11: an HTTPS feed on the Bearstouch host, a real Ed25519 public key, the same Sparkle version that
+    /// `Package.swift` pins exactly and `Package.resolved` resolved, and the committed Info.plist carrying both.
+    func testManifestHasSparkleFeedAndKey() throws {
+        let manifest = try manifest()
+        XCTAssertEqual(manifest.sparkleProblems, [])
+        XCTAssertEqual(URL(string: manifest.sparkle.feedURL)?.scheme, "https")
+        XCTAssertEqual(URL(string: manifest.sparkle.feedURL)?.host, "bearstouch.com")
+        XCTAssertEqual(Data(base64Encoded: manifest.sparkle.publicEDKey)?.count, 32, "An Ed25519 public key")
+        let package = try String(contentsOf: root.appendingPathComponent("Package.swift"), encoding: .utf8)
+        XCTAssertTrue(package.contains(#"Sparkle", exact: "\#(manifest.sparkle.version)""#), "Package.swift pins the manifest's Sparkle exactly")
+        let resolved = try JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent("Package.resolved"))) as? [String: Any]
+        let pin = (resolved?["pins"] as? [[String: Any]])?.first { $0["identity"] as? String == "sparkle" }?["state"] as? [String: Any]
+        let dependency = try XCTUnwrap(manifest.dependencies.first { $0.name == "Sparkle" })
+        XCTAssertEqual(pin?["version"] as? String, manifest.sparkle.version)
+        XCTAssertEqual(pin?["revision"] as? String, dependency.revision)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent(dependency.licenseFile).path))
+        let info = try infoPlist()
+        XCTAssertEqual(info["SUFeedURL"] as? String, manifest.sparkle.feedURL)
+        XCTAssertEqual(info["SUPublicEDKey"] as? String, manifest.sparkle.publicEDKey)
+
+        // A broken record is reported, each problem once.
+        let broken = try JSONDecoder().decode(
+            ReleaseManifest.self,
+            from: JSONSerialization.data(withJSONObject: [
+                "bundleIdentifier": "com.bearstouch.keel", "name": "Keel", "version": "0.1.0", "minimumMacOS": "14.0", "architectures": ["arm64"], "packageFormat": "dmg",
+                "iconName": "AppIcon", "artifacts": [], "dependencies": [], "releaseChecks": [],
+                "sparkle": ["version": "2.10.0", "feedURL": "http://bearstouch.com/keel/appcast.xml", "downloadURLPrefix": "https://bearstouch.com/keel", "publicEDKey": "c2hvcnQ="]
+            ]))
+        XCTAssertEqual(broken.sparkleProblems.count, 4, "\(broken.sparkleProblems)")
+    }
+
+    /// The committed Info.plist is the packaged app's (MAC-14, AC2): identity, minimum OS, icon and version from the
+    /// manifest, and the Local Network purpose string.
+    func testInfoPlistMatchesManifest() throws {
+        let manifest = try manifest(), info = try infoPlist()
+        XCTAssertEqual(info["CFBundleIdentifier"] as? String, manifest.bundleIdentifier)
+        XCTAssertEqual(info["LSMinimumSystemVersion"] as? String, manifest.minimumMacOS)
+        XCTAssertEqual(info["CFBundleIconName"] as? String, manifest.iconName)
+        XCTAssertEqual(info["CFBundleShortVersionString"] as? String, manifest.version)
+        XCTAssertEqual(info["CFBundleExecutable"] as? String, "Keel")
+        XCTAssertEqual(info["NSLocalNetworkUsageDescription"] as? String, "Keel connects to Redis servers on your local network that you configure.")
+    }
+
+    private func infoPlist() throws -> [String: Any] {
+        let data = try Data(contentsOf: root.appendingPathComponent("release/Info.plist"))
+        return try XCTUnwrap(PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
+    }
+
     func testProblemsReportEveryMismatch() throws {
         let manifest = try manifest()
         let good = ReleaseManifest.BuiltProduct(bundleIdentifier: "com.bearstouch.keel", minimumMacOS: "14.0", architectures: ["arm64", "x86_64"], files: Set(manifest.artifacts), iconName: "AppIcon")

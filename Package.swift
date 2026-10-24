@@ -13,6 +13,10 @@ let package = Package(
         // SSH_ASKPASS helper for saved SSH passwords and the prompt relay; bundled beside the app binary.
         .executable(name: "keel-askpass", targets: ["KeelAskpassMain"])
     ],
+    dependencies: [
+        // FR-AP07 / INT-11: in-place updates. Pinned exactly (NFR-SC07); linked only by the app, packaging embeds the framework.
+        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.0")
+    ],
     targets: [
         // Protocol layer: no UI, no persistence (02 Architecture → Modules).
         .target(name: "KeelRESP"),
@@ -23,7 +27,7 @@ let package = Package(
         .target(name: "KeelCore", dependencies: ["KeelRESP", "KeelSSH"], resources: [.copy("Resources/ServerDetection.json"), .copy("Resources/Commands")]),
         // Resources: Inter and JetBrains Mono, registered for the process at launch (MAC-19).
         .target(name: "KeelUI", dependencies: ["KeelCore", "KeelSSH"], resources: [.copy("Resources/Fonts")]),
-        .executableTarget(name: "KeelApp", dependencies: ["KeelUI", "KeelCore", "KeelSSH", "KeelRelease"]),
+        .executableTarget(name: "KeelApp", dependencies: ["KeelUI", "KeelCore", "KeelSSH", "KeelRelease", .product(name: "Sparkle", package: "Sparkle")]),
         .target(name: "KeelRelease"),
         .testTarget(name: "KeelRESPTests", dependencies: ["KeelRESP"]),
         .testTarget(name: "KeelSSHTests", dependencies: ["KeelSSH", "KeelAskpass"]),

@@ -137,7 +137,7 @@ public struct ServerDetectionRules: Sendable, Equatable, Decodable {
 
     /// The rules bundled with Keel. A missing or broken resource is a build defect, caught by `ServerDetectionTests`.
     public static let bundled: ServerDetectionRules = {
-        guard let url = Bundle.module.url(forResource: "ServerDetection", withExtension: "json"), let data = try? Data(contentsOf: url),
+        guard let url = Bundle.keelCore.url(forResource: "ServerDetection", withExtension: "json"), let data = try? Data(contentsOf: url),
             let rules = try? JSONDecoder().decode(ServerDetectionRules.self, from: data)
         else { preconditionFailure("Resources/ServerDetection.json is missing or invalid") }
         return rules

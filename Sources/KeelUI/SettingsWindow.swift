@@ -122,6 +122,10 @@ struct SettingsForm: View {
             }
             .pickerStyle(.segmented)
             Toggle("Reopen windows and tabs at launch", isOn: $draft.document.restoresWindows).toggleStyle(.switch).tint(Tokens.accent)
+            if draft.settings.updatesAvailable {
+                Toggle("Check for updates automatically", isOn: $draft.document.checksForUpdates).toggleStyle(.switch).tint(Tokens.accent)
+                    .accessibilityHint("Once a day. Updates install only after you confirm.")
+            }
         } footer: {
             note("The theme shows as you choose it; Cancel puts back the one in use.")
         }

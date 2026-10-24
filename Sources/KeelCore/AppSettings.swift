@@ -139,19 +139,21 @@ public struct SettingsDocument: PersistedDocument, Equatable {
     public var theme: ThemeChoice
     /// General: reopen the last session's windows and tabs at launch (FR-AP01); off opens one empty window.
     public var restoresWindows: Bool
+    /// General: Sparkle's daily update check (FR-AP07); on by default. Only packaged builds with a feed have an updater.
+    public var checksForUpdates: Bool
     public var browser: BrowserSettings
     public var editors: EditorSettings
     public var console: ConsoleSettings
     public var advanced: AdvancedSettings
 
     public init(
-        theme: ThemeChoice = .default, restoresWindows: Bool = true, browser: BrowserSettings = BrowserSettings(), editors: EditorSettings = EditorSettings(),
+        theme: ThemeChoice = .default, restoresWindows: Bool = true, checksForUpdates: Bool = true, browser: BrowserSettings = BrowserSettings(), editors: EditorSettings = EditorSettings(),
         console: ConsoleSettings = ConsoleSettings(), advanced: AdvancedSettings = AdvancedSettings()
     ) {
-        self.theme = theme; self.restoresWindows = restoresWindows; self.browser = browser; self.editors = editors; self.console = console; self.advanced = advanced
+        self.theme = theme; self.restoresWindows = restoresWindows; self.checksForUpdates = checksForUpdates; self.browser = browser; self.editors = editors; self.console = console; self.advanced = advanced
     }
 
-    private enum CodingKeys: String, CodingKey { case theme, restoresWindows, browser, editors, console, advanced }
+    private enum CodingKeys: String, CodingKey { case theme, restoresWindows, checksForUpdates, browser, editors, console, advanced }
 
     /// A missing or unknown value (hand-edited, a file from before KEEL-049, or a choice a later build added) reads as
     /// its default rather than sending the whole file to recovery.
@@ -159,6 +161,7 @@ public struct SettingsDocument: PersistedDocument, Equatable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         theme = decoded(c, .theme) ?? .default
         restoresWindows = decoded(c, .restoresWindows) ?? true
+        checksForUpdates = decoded(c, .checksForUpdates) ?? true
         browser = decoded(c, .browser) ?? BrowserSettings()
         editors = decoded(c, .editors) ?? EditorSettings()
         console = decoded(c, .console) ?? ConsoleSettings()
