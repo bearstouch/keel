@@ -65,7 +65,9 @@ Keel's visual contract. The reference is the **Keel — Native calm** design can
 | --- | --- |
 | Background | `#151719` |
 | Output / command | `#DEE0E5` / `#FFFFFF` |
-| Prompt `›` | `#7C899C` |
+| Prompt (`127.0.0.1:6379[3]>`; the canvas abbreviates it as `›`) | `#7C899C` |
+| Inline argument hint | `#6B7689` |
+| Keel notices ("Not sent.", "Stopped.") | `#7C899C` |
 | `(nil)` | `#8C95A3` |
 | `(error)` | `#FFA4A4` |
 | Cursor | `#FF8A7E` |

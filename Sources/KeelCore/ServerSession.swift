@@ -80,9 +80,10 @@ public actor ServerSession {
     /// Sends on `role`'s connection, opening it first if needed. A command that `bindsDatabase` runs only when that
     /// connection is on `database` (a console's own `SELECT`, or a job id reused with another database, would otherwise
     /// aim it elsewhere); `selecting` marks a console `SELECT` / `RESET` that moves it there when the server says so.
-    public func send(_ arguments: [Data], mayWrite: Bool, role: ConnectionRole, database: Int, bindsDatabase: Bool = true, selecting: Int? = nil)
-        async throws(DataCommandError) -> RESPValue
-    {
+    /// `timeout` overrides the connection's command timeout (`RedisConnection.noTimeout` for a console's blocking command).
+    public func send(
+        _ arguments: [Data], mayWrite: Bool, role: ConnectionRole, database: Int, bindsDatabase: Bool = true, selecting: Int? = nil, timeout: Duration? = nil
+    ) async throws(DataCommandError) -> RESPValue {
         let connection: RedisConnection
         do throws(ConnectionFailure) { connection = try await self.connection(for: role, database: database) } catch { throw .connection(error) }
         guard connections[role] === connection else { throw .command(.notConnected) }
@@ -91,7 +92,7 @@ public actor ServerSession {
             // Unknown until the reply, so a command sent alongside can't run in a database it didn't name.
             databases[role] = nil
             let reply: RESPValue
-            do throws(RedisError) { reply = try await connection.send(arguments, mayWrite: mayWrite) } catch { throw .command(error) }
+            do throws(RedisError) { reply = try await connection.send(arguments, mayWrite: mayWrite, timeout: timeout) } catch { throw .command(error) }
             guard connections[role] === connection else { return reply }
             switch reply {
             case .simpleString(let text) where text == Data("OK".utf8) || text == Data("RESET".utf8): databases[role] = selecting
@@ -101,7 +102,16 @@ public actor ServerSession {
             return reply
         }
         if bindsDatabase, previous != database { throw .invalidRequest("This connection is on another database; run SELECT \(database) first.") }
-        do throws(RedisError) { return try await connection.send(arguments, mayWrite: mayWrite) } catch { throw .command(error) }
+        do throws(RedisError) { return try await connection.send(arguments, mayWrite: mayWrite, timeout: timeout) } catch { throw .command(error) }
+    }
+
+    /// Starts a streaming command on `role`'s connection, opening it first if needed (`RedisConnection.stream`). The
+    /// stream ends when the connection does: `close(role)` is Stop.
+    public func stream(_ arguments: [Data], role: ConnectionRole, database: Int) async throws(DataCommandError) -> AsyncStream<RESPValue> {
+        let connection: RedisConnection
+        do throws(ConnectionFailure) { connection = try await self.connection(for: role, database: database) } catch { throw .connection(error) }
+        guard connections[role] === connection else { throw .command(.notConnected) }
+        do throws(RedisError) { return try await connection.stream(arguments) } catch { throw .command(error) }
     }
 
     /// `role`'s ready connection on `database`, for work that must stay on one socket: `WATCH` lives on the connection

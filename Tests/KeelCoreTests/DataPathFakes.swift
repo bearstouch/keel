@@ -39,6 +39,9 @@ final class RecordingTransport: Transport, @unchecked Sendable {
         deliver(reply)
     }
 
+    /// Bytes the server sends on its own (MONITOR lines, pub/sub messages), not as an answer.
+    func inject(_ text: String) { deliver(Data(text.utf8)) }
+
     func receive() async throws(TransportError) -> Data {
         let result = await withCheckedContinuation { waiter in
             let ready: Result<Data, TransportError>? = lock.withLock {

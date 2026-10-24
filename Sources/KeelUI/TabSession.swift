@@ -14,6 +14,8 @@ public final class TabSession: ObservableObject, Identifiable {
     @Published public private(set) var server: ServerIdentity?
     /// The key browser, once connected.
     @Published public private(set) var browser: BrowserModel?
+    /// The console, made the first time the tab shows Console mode on this connection (`openConsole()`).
+    @Published public private(set) var console: ConsoleModel?
     /// Value edits not yet saved (KEEL-027's editors set it); closing the tab or its window asks first (MAC-06).
     @Published public var hasUnsavedEdits = false
     /// Whether the connected session refuses writes (FR-SF01): the profile was read-only when it connected, or was made
@@ -28,6 +30,7 @@ public final class TabSession: ObservableObject, Identifiable {
     private var productionNoticeShown = false
 
     private let connector: any SessionConnecting
+    private let histories: ConsoleHistoryBook
     private var connected: ConnectedServer?
     /// Bumped by every connect and disconnect, so a connect that lands after a newer one (or a disconnect) is closed.
     private var attempt = 0
@@ -39,7 +42,9 @@ public final class TabSession: ObservableObject, Identifiable {
     /// What the production strip and window title show changed (read-only locked, server read-only).
     var onChromeChange: (() -> Void)?
 
-    init(id: UUID, profileID: UUID, connector: any SessionConnecting) { self.id = id; self.profileID = profileID; self.connector = connector }
+    init(id: UUID, profileID: UUID, connector: any SessionConnecting, histories: ConsoleHistoryBook = ConsoleHistoryBook()) {
+        self.id = id; self.profileID = profileID; self.connector = connector; self.histories = histories
+    }
 
     /// Connects on `database` (Connect, Reconnect, opening from the sidebar, Reconnect on launch). Does nothing while
     /// connecting or connected; Reconnect disconnects first.
@@ -79,11 +84,12 @@ public final class TabSession: ObservableObject, Identifiable {
     /// Disconnect (⇧⌘D): closes every connection of the tab and its tunnel lease. The browser goes with it.
     public func disconnect() async {
         attempt += 1
-        let server = connected
-        connected = nil; browser = nil; self.server = nil; databaseChanges = nil; editChanges = nil; hasUnsavedEdits = false; failure = nil
+        let server = connected, console = console
+        connected = nil; browser = nil; self.console = nil; self.server = nil; databaseChanges = nil; editChanges = nil; hasUnsavedEdits = false; failure = nil
         writesBlocked = nil; serverReadOnly = false
         set(.disconnected)
         await server?.service.observeWrites(nil)
+        await console?.shutdown()
         await server?.close()
     }
 
@@ -94,6 +100,15 @@ public final class TabSession: ObservableObject, Identifiable {
         guard readOnly, writesBlocked == false, let connected else { return }
         writesBlocked = true; onChromeChange?()
         await connected.service.lockReadOnly()
+    }
+
+    /// The tab's console on this connection (FR-CO01): its own connection, starting on the browser's database. Made once;
+    /// it keeps its own database (`SELECT`) from then on.
+    public func openConsole() {
+        guard console == nil, let connected, status == .connected else { return }
+        let database = browser?.database ?? 0
+        let session = ConsoleSession(service: connected.service, profile: connected.safety, database: database)
+        console = ConsoleModel(console: session, profileID: profileID, histories: histories, prompt: ConsoleSession.prompt(address: session.address, database: database))
     }
 
     /// Hides the "Writing to PRODUCTION" banner; it doesn't come back for this tab.
