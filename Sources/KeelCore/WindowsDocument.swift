@@ -62,13 +62,24 @@ public struct WindowsDocument: PersistedDocument, Equatable {
     public static let maximumWindows = 64
     public static let maximumTabsPerWindow = 128
 
-    public var windows: [SavedWindow]
+    /// The welcome screen's recent connections (FR-AP08): profiles most recently opened in a tab, newest first. Profile
+    /// IDs only, never key names. Absent in files written before KEEL-050, so it decodes as empty.
+    public static let maximumRecents = 8
 
-    public init(windows: [SavedWindow] = []) { self.windows = windows }
+    public var windows: [SavedWindow]
+    public var recentProfileIDs: [UUID]
+
+    public init(windows: [SavedWindow] = [], recentProfileIDs: [UUID] = []) { self.windows = windows; self.recentProfileIDs = recentProfileIDs }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        windows = try container.decode([SavedWindow].self, forKey: .windows)
+        recentProfileIDs = try container.decodeIfPresent([UUID].self, forKey: .recentProfileIDs) ?? []
+    }
 
     /// What a launch restores: at most the limits above, tabs whose profile still exists, every window and tab ID once
     /// (the first wins) and a selection that names one of the window's tabs. Windows left empty are kept: an empty window is
-    /// a window the user had open.
+    /// a window the user had open. Recents keep existing profiles, each once, at most `maximumRecents`.
     public func restorable(profileIDs: Set<UUID>) -> WindowsDocument {
         var seen = Set<UUID>(), seenWindows = Set<UUID>()
         // A repeated window ID would be a second model window that no native window shows.
@@ -79,7 +90,9 @@ public struct WindowsDocument: PersistedDocument, Equatable {
             if !window.tabs.contains(where: { $0.id == window.selectedTabID }) { window.selectedTabID = window.tabs.first?.id }
             return window
         }
-        return WindowsDocument(windows: Array(windows))
+        var seenRecents = Set<UUID>()
+        let recents = recentProfileIDs.filter { profileIDs.contains($0) && seenRecents.insert($0).inserted }.prefix(Self.maximumRecents)
+        return WindowsDocument(windows: Array(windows), recentProfileIDs: Array(recents))
     }
 }
 

@@ -91,8 +91,8 @@ final class ConnectionSheetModelReviewTests: XCTestCase {
         var built: [ObjectIdentifier] = []
         let watch = presenter.$model.compactMap { $0?.id }.sink { built.append($0) }
         defer { watch.cancel() }
-        async let first: Void = presenter.present(.create(folderID: nil))
-        async let second: Void = presenter.present(.create(folderID: nil))
+        async let first = presenter.present(.create(folderID: nil))
+        async let second = presenter.present(.create(folderID: nil))
         _ = await (first, second)
         let shown = presenter.model
         XCTAssertNotNil(shown)

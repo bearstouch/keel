@@ -25,6 +25,19 @@ public final class ConnectionSheetPresenter: ObservableObject {
 
     public func newConnection(folderID: UUID? = nil) { Task { await present(.create(folderID: folderID)) } }
 
+    /// The welcome screen's Paste URL (FR-AP08): New Connection, filled from `text` when it is a `redis://` /
+    /// `rediss://` URL; otherwise the sheet opens empty and says why. The text is never kept beyond the fields.
+    public func newConnection(pastingURL text: String?) {
+        Task {
+            // A sheet already up (perhaps Edit Connection) is left as it is: the URL only fills a sheet opened for it.
+            guard await present(.create(folderID: nil)), let model else { return }
+            if let text, model.paste(text) || model.urlMessage != nil { return }
+            model.urlMessage = Self.noURLMessage
+        }
+    }
+
+    static let noURLMessage = "The clipboard doesn't hold a redis:// or rediss:// URL. Paste one here, or fill in the fields."
+
     /// Edit Connection is the same sheet, filled from the saved profile.
     public func edit(_ profileID: UUID) {
         Task {
@@ -33,8 +46,10 @@ public final class ConnectionSheetPresenter: ObservableObject {
         }
     }
 
-    func present(_ mode: ConnectionSheetModel.Mode) async {
-        guard model == nil, !presenting else { return }
+    /// False when another sheet is up or being prepared, and nothing was presented.
+    @discardableResult
+    func present(_ mode: ConnectionSheetModel.Mode) async -> Bool {
+        guard model == nil, !presenting else { return false }
         presenting = true
         defer { presenting = false }
         let labels = await store.labels
@@ -46,6 +61,7 @@ public final class ConnectionSheetPresenter: ObservableObject {
             self?.model = nil; self?.finished = nil
         }
         model = sheet
+        return true
     }
 }
 

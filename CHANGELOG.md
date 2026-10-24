@@ -224,6 +224,12 @@ and versions follow [Semantic Versioning](https://semver.org/).
   the console's RESP3/RESP2 protocol; default connect and command timeouts and `CLIENT SETNAME`. Changes are a draft
   until **Apply** (the theme previews live); **Cancel** or closing the window restores the exact prior settings. Applied
   settings are saved in `settings.json`, and a bad value in the file reads as its default (KEEL-049).
+- Welcome screen in a window without tabs: New Connection…, Paste URL (a `redis://` / `rediss://` URL on the clipboard
+  fills New Connection) and Import…, with up to five recent connections, kept in `windows.json` as profile IDs.
+  Help → **Remove Keel Data…** lists, after a confirmation removes and then quits: Keel's own files in the state folder
+  (the folder too when nothing else is in it), every item of the `Keel Connection`, `Keel TLS` and `Keel SSH Host`
+  Keychain services and the keyboard-shortcut preferences. SSH keys and configuration, known-hosts files and anything
+  else are never touched (KEEL-050).
 
 ### Removed
 

@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import KeelCore
+import KeelRelease
 import KeelSSH
 import KeelUI
 
@@ -48,6 +49,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     /// The Settings window's edits, kept until Apply or Cancel.
     private var settingsDraft: SettingsDraft?
     private var accessibilityObserver: NSObjectProtocol?
+    /// Help → Remove Keel Data… confirmed: removed as the last step of quitting, once nothing is left to save (MAC-22).
+    private var pendingRemoval: DataRemovalPlan?
 
     init(arguments: LaunchArguments, stateDirectory: URL) {
         self.arguments = arguments; self.stateDirectory = stateDirectory
@@ -112,11 +115,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     /// terminated (at most ~1 s).
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         terminating = true
-        Task { [tunnels, askpass, app, settings] in
+        Task { [tunnels, askpass, app, settings, pendingRemoval] in
             await app?.flush()
+            if pendingRemoval != nil { app?.stopSaving() }
             await settings.flush()
             await tunnels.shutdown()
             askpass?.stop()
+            // After the flushes, planned again: a file the last saves created (a first backup) goes too. The allow-list
+            // and the refusals are the same as for the confirmation.
+            if let pendingRemoval { Self.remove(Self.removalPlan(pendingRemoval.stateDirectory)) }
             NSApp.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater
@@ -422,6 +429,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         let helpItem = NSMenuItem(); menu.addItem(helpItem)
         let helpMenu = NSMenu(title: "Help")
         add("Export Diagnostics…", #selector(exportDiagnostics(_:)), "", to: helpMenu)
+        helpMenu.addItem(.separator())
+        add("Remove Keel Data…", #selector(removeKeelData(_:)), "", to: helpMenu)
         helpItem.submenu = helpMenu
         NSApp.mainMenu = menu
         NSApp.windowsMenu = windowMenu
@@ -473,6 +482,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 alert.runModal()
             }
         }
+    }
+
+    // MARK: - Data removal
+
+    /// Help → Remove Keel Data… (MAC-22): lists what would go, asks, then quits and removes it on the way out. Only the
+    /// state folder's own files, Keel's three Keychain services and its preference keys are in the plan.
+    @objc private func removeKeelData(_ sender: Any?) {
+        let plan = Self.removalPlan(stateDirectory)
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = plan.isEmpty ? "Keel has no data to remove." : "Remove Keel's data and quit?"
+        let untouched = "SSH keys, SSH configuration, known-hosts files and Redis servers are not touched. Client certificates you imported stay in your login keychain."
+        let shared = plan.keychainItems.isEmpty ? "" : "\n\nKeychain items are shared by every copy of Keel on this Mac."
+        alert.informativeText = (plan.summary.map { "• \($0)" } + ["", untouched]).joined(separator: "\n") + shared
+        if plan.isEmpty {
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+            return
+        }
+        // Cancel first: Return keeps the data.
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Remove and Quit").hasDestructiveAction = true
+        guard alert.runModal() == .alertSecondButtonReturn else { return }
+        pendingRemoval = plan
+        NSApp.terminate(sender)
+    }
+
+    private static func removalPlan(_ stateDirectory: URL) -> DataRemovalPlan {
+        DataRemovalPlanner.plan(
+            stateDirectory: stateDirectory, home: FileManager.default.homeDirectoryForCurrentUser, keychain: SystemKeychainInventory(),
+            storedPreferenceKeys: Set(UserDefaults.standard.dictionaryRepresentation().keys))
+    }
+
+    /// Runs the confirmed plan; whatever couldn't be removed is listed before the app quits.
+    private static func remove(_ plan: DataRemovalPlan) {
+        let result = DataRemovalPlanner.execute(plan, keychain: SystemKeychainInventory()) { UserDefaults.standard.removeObject(forKey: $0) }
+        guard !result.failures.isEmpty else { return }
+        let alert = NSAlert()
+        alert.messageText = "Some of Keel's data couldn't be removed."
+        alert.informativeText = result.failures.joined(separator: "\n")
+        alert.runModal()
     }
 
     // MARK: - Command palette

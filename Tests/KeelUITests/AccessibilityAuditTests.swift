@@ -28,6 +28,24 @@ final class AuditScreens {
     /// A first launch: no connections.
     func emptyWindow() -> ScreenHost { host(RootView()) }
 
+    /// A window without tabs over saved connections, one opened before: the welcome screen (FR-AP08).
+    func welcomeWindow() async throws -> ScreenHost {
+        let store = ProfileStore(directory: directory, secrets: MemorySecretStore())
+        _ = await store.load()
+        let recent = try await store.create(ConnectionSettings(name: "api-staging", label: .orange))
+        _ = try await store.create(ConnectionSettings(name: "local-dev"))
+        let app = AppModel(profiles: store, connector: FakeConnector(), persistence: Persistence(directory: directory, debounce: .zero))
+        await app.restore()
+        let window = try XCTUnwrap(app.windows.first)
+        _ = window.open(profileID: recent.id, database: 0)
+        for tab in window.tabs { window.close(tab.id) }
+        let sidebar = SidebarModel(store: store, tabs: window, copy: { _ in })
+        await sidebar.reload()
+        let screen = host(RootView(sidebar: sidebar))
+        screen.settle(0.3)
+        return screen
+    }
+
     /// The main window: sidebar with a folder and three connections (one production, one read-only), two tabs, the
     /// selected tab connected in `mode`.
     func mainWindow(mode: TabMode = .browser) async throws -> (ScreenHost, AppModel) {
@@ -220,6 +238,10 @@ final class AccessibilityAuditTests: XCTestCase {
         let empty = screens.emptyWindow()
         XCTAssertTrue(empty.unlabeledControls.isEmpty)
         assertSays(empty, RootView.accessibilityLabel, "Empty window")
+        let welcome = try await screens.welcomeWindow()
+        assertLabeled(welcome, "Welcome screen")
+        for text in ["New Connection…", "Paste URL", "Import…", "api-staging, Orange, 127.0.0.1:6379"] { assertSays(welcome, text, "Welcome screen") }
+        welcome.close()
         for mode in TabMode.allCases {
             let (window, _) = try await screens.mainWindow(mode: mode)
             assertLabeled(window, "Main window, \(mode.title)")

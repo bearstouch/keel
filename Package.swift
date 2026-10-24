@@ -23,13 +23,13 @@ let package = Package(
         .target(name: "KeelCore", dependencies: ["KeelRESP", "KeelSSH"], resources: [.copy("Resources/ServerDetection.json"), .copy("Resources/Commands")]),
         // Resources: Inter and JetBrains Mono, registered for the process at launch (MAC-19).
         .target(name: "KeelUI", dependencies: ["KeelCore", "KeelSSH"], resources: [.copy("Resources/Fonts")]),
-        .executableTarget(name: "KeelApp", dependencies: ["KeelUI", "KeelCore", "KeelSSH"]),
+        .executableTarget(name: "KeelApp", dependencies: ["KeelUI", "KeelCore", "KeelSSH", "KeelRelease"]),
         .target(name: "KeelRelease"),
         .testTarget(name: "KeelRESPTests", dependencies: ["KeelRESP"]),
         .testTarget(name: "KeelSSHTests", dependencies: ["KeelSSH", "KeelAskpass"]),
         .testTarget(name: "KeelCoreTests", dependencies: ["KeelCore", "KeelSSH"]),
         .testTarget(name: "KeelUITests", dependencies: ["KeelUI", "KeelCore", "KeelSSH", "KeelAskpass"]),
-        .testTarget(name: "KeelReleaseTests", dependencies: ["KeelRelease", "KeelCore"]),
+        .testTarget(name: "KeelReleaseTests", dependencies: ["KeelRelease", "KeelCore", "KeelSSH"]),
         // Container matrix (Redis/Valkey/Dragonfly/sshd); real cases run only with KEEL_INTEGRATION=1.
         .testTarget(name: "KeelIntegrationTests", dependencies: ["KeelCore", "KeelRESP", "KeelSSH"])
     ],

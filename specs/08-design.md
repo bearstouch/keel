@@ -244,4 +244,6 @@ Boards in the canvas (light row and matching dark row):
 | Tokens | `Tokens` | — | this page |
 | Sidebar component | `Sidebar` | — | FR-CN13 |
 
-Not yet drawn (follow the same components): welcome screen, string / list / set / zset / stream editors, new-key sheet, command palette, Settings panes, error states for each connection category.
+The welcome screen (FR-AP08) is built from these components without a board of its own: the 56 pt mark, Inter 28 semibold title, the accent New Connection… button beside Paste URL and Import…, then a `Recent` heading (Inter 12 semibold, `muted`) over 30 pt rows with the label dot, the name and the address in JetBrains Mono 12 `muted` (hover `soft`, focus the accent ring).
+
+Not yet drawn (follow the same components): string / list / set / zset / stream editors, new-key sheet, command palette, Settings panes, error states for each connection category.

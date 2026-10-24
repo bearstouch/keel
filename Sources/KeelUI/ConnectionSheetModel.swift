@@ -88,7 +88,7 @@ public final class ConnectionSheetModel: ObservableObject {
     // MARK: Feedback
 
     /// The URL paste result: what was ignored, or why the URL was refused (FR-CN08).
-    @Published public private(set) var urlMessage: String?
+    @Published public internal(set) var urlMessage: String?
     @Published public private(set) var testStatus: TestStatus = .idle
     @Published public private(set) var saveError: String?
     @Published public private(set) var isSaving = false

@@ -70,6 +70,7 @@ public final class ConnectionTabs: ObservableObject, Identifiable {
             tabs.append(tab)
         }
         selectedID = tab.id
+        app?.recordOpened(profileID)
         app?.windowChanged(self)
         app?.connectIfNeeded(tab.id)
         return tab

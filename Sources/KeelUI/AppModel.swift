@@ -9,6 +9,8 @@ import KeelCore
 @MainActor
 public final class AppModel: ObservableObject {
     @Published public private(set) var windows: [ConnectionTabs] = []
+    /// The welcome screen's recent connections (FR-AP08): profiles last opened in a tab, newest first; in `windows.json`.
+    @Published public private(set) var recentProfileIDs: [UUID] = []
     public private(set) var sessions: [UUID: TabSession] = [:]
     /// Window frames as the app last reported them (`setFrame`); saved, never published.
     private var frames: [UUID: SavedFrame] = [:]
@@ -59,7 +61,8 @@ public final class AppModel: ObservableObject {
         didRestore = true
         let document: WindowsDocument
         switch await persistence?.load() {
-        case .loaded(let saved)?: document = reopens ? saved : WindowsDocument()
+        // Recents survive "Reopen windows and tabs" off: they are the welcome screen's, not the windows'.
+        case .loaded(let saved)?: document = reopens ? saved : WindowsDocument(recentProfileIDs: saved.recentProfileIDs)
         // Missing: first launch. Recovery: KEEL-050 offers the choice; until then nothing is saved over the file.
         case .missing?, .recovery?, nil: document = WindowsDocument()
         }
@@ -76,6 +79,7 @@ public final class AppModel: ObservableObject {
             result.append((window, saved.frame))
         }
         windows += early
+        recentProfileIDs = restorable.recentProfileIDs
         if windows.isEmpty { result.append((newWindow(), nil)) }
         restored = writable
         save()
@@ -149,6 +153,14 @@ public final class AppModel: ObservableObject {
     public func closeAll(profileID: UUID) {
         for window in windows { for tab in window.tabs where tab.profileID == profileID { window.close(tab.id) } }
         recentKeys.forget(profileID: profileID)
+        if recentProfileIDs.contains(profileID) { recentProfileIDs.removeAll { $0 == profileID }; save() }
+    }
+
+    /// A tab opened (or was focused) for the profile: it moves to the front of the recents. The caller saves.
+    func recordOpened(_ profileID: UUID) {
+        recentProfileIDs.removeAll { $0 == profileID }
+        recentProfileIDs.insert(profileID, at: 0)
+        recentProfileIDs = Array(recentProfileIDs.prefix(WindowsDocument.maximumRecents))
     }
 
     /// The palette picked an open tab: its window comes to the front with the tab selected.
@@ -281,7 +293,7 @@ public final class AppModel: ObservableObject {
     func windowChanged(_ window: ConnectionTabs) { save() }
 
     /// What `windows.json` holds now.
-    public var document: WindowsDocument { WindowsDocument(windows: windows.map { $0.saved(frame: frames[$0.id]) }) }
+    public var document: WindowsDocument { WindowsDocument(windows: windows.map { $0.saved(frame: frames[$0.id]) }, recentProfileIDs: recentProfileIDs) }
 
     private func save() {
         guard restored, let persistence else { return }
@@ -297,4 +309,7 @@ public final class AppModel: ObservableObject {
         await persistence.scheduleSave(document, sequence: sequence)
         try? await persistence.flush()
     }
+
+    /// Remove Keel Data… on quit: after the last flush nothing more is written, so no debounced save brings `windows.json` back.
+    public func stopSaving() { restored = false }
 }
