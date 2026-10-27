@@ -27,7 +27,7 @@ OUTPUTS="AppIcon.iconset AppIcon.icns AppIcon.icon export"
 
 die() { echo "generate-app-icon: $*" >&2; exit 1; }
 
-# The palette block for one look, from specs/design/icon/Icon.dc.html: bgTop bgBottom shine edgeColor edgeOpacity
+# The palette block for one look, from docs/design/icon/Icon.dc.html: bgTop bgBottom shine edgeColor edgeOpacity
 # markTop markBottom shadow shadowOpacity.
 palette_values() {
     case "$1" in

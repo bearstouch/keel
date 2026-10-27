@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="Keel app icon">
   <!--
-    Keel app icon, concept A "Layered keel" (specs/08-design.md#app-icon, DS-07 – DS-10). The geometry is copied from
-    specs/design/icon/Icon.dc.html: a 1024 grid with the 824 squircle at 100,100, corner radius 186.
+    Keel app icon, concept A "Layered keel" (docs/design/index.md#app-icon, DS-07 – DS-10). The geometry is copied from
+    docs/design/icon/Icon.dc.html: a 1024 grid with the 824 squircle at 100,100, corner radius 186.
     This file is the single source of every icon size and appearance. scripts/generate-app-icon.sh rewrites the
     palette block (Default, Dark, Tinted, Light) and the form block (full mark above 48 px, small form at 48 px and
     below, mark only for the Icon Composer layer); everything outside the two blocks is shared. As committed it renders

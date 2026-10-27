@@ -16,7 +16,7 @@ public enum MultiKeyDelete {
         /// The task was cancelled between batches.
         case cancelled
 
-        /// The shared error code (`specs/02-architecture.md#errors`); a server's text is never part of it.
+        /// The shared error code (`docs/architecture.md#errors`); a server's text is never part of it.
         public var code: String {
             switch self {
             case .command(let error): return error.code

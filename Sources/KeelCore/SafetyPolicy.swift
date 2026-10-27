@@ -87,7 +87,7 @@ public enum SafetyVerdict: Sendable, Equatable {
 
     public var isAllowed: Bool { if case .allow = self { return true } else { return false } }
 
-    /// The shared error code (`specs/02-architecture.md#errors`); nil when allowed.
+    /// The shared error code (`docs/architecture.md#errors`); nil when allowed.
     public var code: String? {
         switch self {
         case .allow: return nil

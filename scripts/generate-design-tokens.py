@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the design-token fixture (Tests/Fixtures/Design/tokens.json) from specs/08-design.md.
+"""Generate the design-token fixture (Tests/Fixtures/Design/tokens.json) from docs/design/index.md.
 
 The page is the design contract (DS-06); `ThemeTokensTests` compares `KeelTheme` with this fixture, so a value
 changed on one side only fails the tests. Run it after editing the Color tables:
@@ -19,7 +19,7 @@ import sys
 
 FORMAT_VERSION = 1
 ROOT = os.path.join(os.path.dirname(__file__), "..")
-PAGE = os.path.join(ROOT, "specs", "08-design.md")
+PAGE = os.path.join(ROOT, "docs", "design", "index.md")
 OUTPUT = os.path.join(ROOT, "Tests", "Fixtures", "Design", "tokens.json")
 
 COLOR = re.compile(r"#[0-9A-Fa-f]{6}\b|rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*[0-9.]+\s*\)")
@@ -98,7 +98,7 @@ def build(text):
             labels.update(two_themes([row]))
     return {
         "version": FORMAT_VERSION,
-        "generatedFrom": "specs/08-design.md",
+        "generatedFrom": "docs/design/index.md",
         "light": palette(tables["Light"]),
         "dark": palette(tables["Dark"]),
         "increaseContrast": contrast,

@@ -6,3 +6,4 @@ dist/
 *.xcuserstate
 xcuserdata/
 __pycache__/
+/site/

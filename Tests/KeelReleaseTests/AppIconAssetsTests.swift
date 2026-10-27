@@ -55,7 +55,7 @@ final class AppIconAssetsTests: XCTestCase {
         }
     }
 
-    /// The middle of each look's mark gradient (specs/design/icon/Icon.dc.html).
+    /// The middle of each look's mark gradient (docs/design/icon/Icon.dc.html).
     private let markColor: [String: [Double]] = [
         "default": [254, 243, 242], "dark": [240, 90, 76], "tinted": [222, 222, 225], "light": [200, 48, 38]
     ]

@@ -42,7 +42,7 @@ public enum RedisError: Error, Equatable, Sendable {
     /// A reply arrived with no command waiting for it; the stream can't be trusted any more.
     case unexpectedReply
 
-    /// The shared error code (`specs/02-architecture.md#errors`).
+    /// The shared error code (`docs/architecture.md#errors`).
     public var code: String {
         switch self {
         case .notConnected: return "NOT_CONNECTED"
