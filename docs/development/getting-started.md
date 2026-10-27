@@ -7,7 +7,7 @@ line.
 
 | Tool | Version | Used for |
 | --- | --- | --- |
-| Xcode | 26 or later (Swift 6.2+; CI uses 27.1 / Swift 6.4) | Build, test, `swift format` |
+| Xcode | 26 (Swift 6.2) | Build, test, `swift format` |
 | macOS | 14 or later | Running the app and tests |
 | Python 3 | System | Generators, integration matrix, benchmarks |
 | Docker (or Colima) | Any recent | Container integration matrix only |

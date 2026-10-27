@@ -25,7 +25,7 @@ Status: **v1 in release qualification.** All planned v1 features are implemented
 
 ## Toolchain and commands
 
-Requires Xcode 26 or later / Swift 6.2+ (CI builds with Xcode 27.1 / Swift 6.4; Swift 6 language mode, strict concurrency), macOS 14+. The app is a Swift
+Requires Xcode 26 / Swift 6.2 (Swift 6 language mode, strict concurrency), macOS 14+. The app is a Swift
 package (`Package.swift`); there is no `.xcodeproj`.
 
 ```sh
@@ -48,7 +48,7 @@ scripts/package-release.sh [--no-layout]       # Universal 2 app, DMG, Sparkle a
 
 There is no SwiftLint/SwiftFormat binary; use the toolchain's `swift format` with the repo `.swift-format`
 (copied from Trellis: 4-space indent, 220 columns, semicolons and multi-variable `let` allowed).
-Always run format + lint + build + test before committing. CI (`.github/workflows/ci.yml`, the `xcode-27` image) runs the same three steps
+Always run format + lint + build + test before committing. CI (`.github/workflows/ci.yml`, `macos-26`) runs the same three steps
 and fails on any warning in `Sources/`. Unknown `--` launch flags exit with status 64; an unusable state folder
 (a file, a symlink or another user's folder) exits with 73.
 

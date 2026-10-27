@@ -28,7 +28,7 @@ Contributor documentation lives in [`docs/`](docs/index.md) and builds into a si
 
 ## Building
 
-Requires Xcode 26 or later (Swift 6.2+; CI uses Xcode 27.1 / Swift 6.4) on macOS 14 or later.
+Requires Xcode 26 (Swift 6.2) on macOS 14 or later.
 
 ```sh
 swift build                                   # warning-free build
