@@ -96,7 +96,7 @@ Targets are measured on the reference machines (Apple silicon M1 8 GB and an Int
 
 | ID | Requirement | Acceptance check |
 | --- | --- | --- |
-| NFR-QA01 | Swift 6 language mode, strict concurrency, warning-free build; `swift format lint --strict` prints nothing. | CI on `macos-26`. |
+| NFR-QA01 | Swift 6 language mode, strict concurrency, warning-free build; `swift format lint --strict` prints nothing. | CI on the `xcode-27` image (Xcode 27.1). |
 | NFR-QA02 | XCTest coverage of observable behavior and failure safety per area; RESP codec, URL parser, safety policy and command catalog have exhaustive table tests. | |
 | NFR-QA03 | Integration matrix in CI against Redis 6.0, 6.2, 7.4, 8.x, Valkey 7.2, 8.x and 9.x and Dragonfly 1.x containers, including TLS (custom CA, client cert), ACL users with restricted permissions, and an sshd tunnel. | CI job `integration` runs `scripts/integration-matrix.py`: images pinned by digest in `Tests/Fixtures/Integration/matrix.json`, ports published on loopback only, `KEEL_INTEGRATION_REQUIRED=1` so a missing fixture fails; a Redis 5 container is refused with `UNSUPPORTED_SERVER`. |
 | NFR-QA04 | Golden tests for console formatting against redis-cli 7.4 output. | |
