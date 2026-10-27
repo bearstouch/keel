@@ -131,6 +131,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     /// Keel → Check for Updates…: one check now, shown even when nothing is new; installing still asks first.
     @objc private func checkForUpdates(_ sender: Any?) { updates?.checkForUpdates(sender) }
+    /// The standard panel, with the version from `AppVersion` (SwiftPM builds have no bundle plist).
+    @objc private func showAbout(_ sender: Any?) {
+        let font = NSFont.systemFont(ofSize: 12)
+        // The standard Copyright option is plain text, so the linked copyright line lives in the credits.
+        let credits = NSMutableAttributedString(string: "A native Redis client for macOS.\n\n© 2026 ", attributes: [.font: font])
+        credits.append(NSAttributedString(string: "Bearstouch", attributes: [.font: font, .link: URL(string: "https://bearstouch.com")!]))
+        credits.append(NSAttributedString(string: ". All rights reserved.", attributes: [.font: font]))
+        let centered = NSMutableParagraphStyle(); centered.alignment = .center
+        credits.addAttribute(.paragraphStyle, value: centered, range: NSRange(location: 0, length: credits.length))
+        var options: [NSApplication.AboutPanelOptionKey: Any] = [
+            .applicationName: "Keel", .applicationVersion: AppVersion.current, .version: "",
+            NSApplication.AboutPanelOptionKey(rawValue: "Copyright"): "", .credits: credits
+        ]
+        if let icon = NSApp.applicationIconImage { options[.applicationIcon] = icon }
+        NSApp.orderFrontStandardAboutPanel(options: options)
+        NSApp.activate(ignoringOtherApps: true)
+    }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
@@ -368,6 +385,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         let menu = NSMenu()
         let appItem = NSMenuItem(); menu.addItem(appItem)
         let appMenu = NSMenu(title: "Keel")
+        add("About Keel", #selector(showAbout(_:)), "", to: appMenu)
+        appMenu.addItem(.separator())
         // Builds without an updater have no item (FR-AP07).
         if updates != nil {
             add("Check for Updates…", #selector(checkForUpdates(_:)), "", to: appMenu)

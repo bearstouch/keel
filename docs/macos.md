@@ -10,7 +10,7 @@ Keel is a macOS-only application.
 
 ## Native behavior
 
-- **MAC-04 (P0):** integrates with the menu bar (menus built from current shortcut bindings), Settings (⌘,), the Dock, standard hide/minimize/full screen, the Window menu, standard open/save panels, system appearance, notifications (finished bulk jobs, only when the app is in the background), and Services where meaningful (copy key name).
+- **MAC-04 (P0):** integrates with the menu bar (menus built from current shortcut bindings), the standard About Keel panel (version, © Bearstouch with a link to bearstouch.com), Settings (⌘,), the Dock, standard hide/minimize/full screen, the Window menu, standard open/save panels, system appearance, notifications (finished bulk jobs, only when the app is in the background), and Services where meaningful (copy key name).
 - **MAC-05 (P0):** multiple native windows, each with Keel's own tab bar. macOS automatic window tabbing is disabled; every tab belongs to Keel's model. Window frames restore constrained to the available displays.
 - **MAC-06 (P0):** closing a window with unsaved value edits asks once; closing a window with a running bulk job asks whether to cancel it. Quitting with running bulk jobs offers **Cancel Jobs and Quit** / **Don't Quit**; there's no background continuation after quit.
 - **MAC-07 (P0):** Retina and non-Retina, display changes, full screen, Stage Manager and Split View; small windows keep minimum sizes for the key list and editor and collapse the sidebar instead of overlapping.
