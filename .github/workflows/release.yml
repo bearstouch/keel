@@ -39,9 +39,15 @@ jobs:
           # The write token stays out of .git/config while the tests and benchmarks run; publishing uses GH_TOKEN.
           persist-credentials: false
 
-      - name: Select Xcode 26
+      - name: Select Xcode 26 with Swift 6.2
         run: |
-          xcode=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)
+          # Swift 6.2 is the project's toolchain: Swift 6.3 (Xcode 26.6) builds corrupt the task allocator at run time
+          # ("freed pointer was not the last allocation"), so pick the newest Xcode 26 that still ships Swift 6.2.
+          xcode=""
+          for candidate in $(ls -d /Applications/Xcode_26*.app | sort -rV); do
+            if "$candidate/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift" --version 2>&1 | grep -q 'Swift version 6\.2'; then xcode=$candidate; break; fi
+          done
+          if [ -z "$xcode" ]; then echo "::error::No Xcode 26 with Swift 6.2 on this runner"; ls -d /Applications/Xcode_26*.app; exit 1; fi
           sudo xcode-select -s "$xcode"
           swift --version
 
