@@ -1,10 +1,16 @@
 # Keel
 
-A calm, native Redis client for macOS by Bearstouch. Keel browses millions of keys with SCAN only, edits every core
-type, has a redis-cli-style console and a server overview, keeps production safe with read-only connections and
-typed confirmations.
+A calm, native client for Redis, Valkey and Dragonfly on macOS by Bearstouch. Keel browses millions of keys with
+SCAN only, edits every core type, has a redis-cli-style console and a server overview, keeps production safe with
+read-only connections and typed confirmations.
 
-Supports Redis 6.0+, Valkey and Dragonfly on macOS 14 or later.
+| Server | Versions | Support |
+| --- | --- | --- |
+| Redis | 6.0+ | Full |
+| Valkey | 7.2 – 9.x | Full, first-class |
+| Dragonfly | 1.x | Common command set; capability probes cover differences |
+
+Requires macOS 14 or later. See [Integrations](docs/integrations.md) for details.
 
 > **Status:** v1 in release qualification; see [Project status](docs/project/status.md).
 
