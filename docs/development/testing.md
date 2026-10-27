@@ -88,7 +88,9 @@ python3 scripts/bench-browser.py --update-baseline                         # rec
 It runs the `KeelCoreTests` performance tests, `KeelIntegrationTests.BrowserBenchmarkTests` against a throwaway server
 it seeds, and launches the app with 200 saved profiles to time the first sidebar render (`KEEL_LAUNCH_METRICS`). The
 benchmark tests run only with `KEEL_BENCH=1`. The run fails on a missed NFR target or a regression of more than 20%
-against `release/bench-baseline.json`. Evidence goes to `.build/bench/evidence.json`, and the release evidence includes
+against `release/bench-baseline.json`. The baseline is the recording Mac's numbers, so the release workflow runs with
+`--no-regression-gate`: on a CI runner regressions are reported in the evidence but only targets and tests fail it.
+Evidence goes to `.build/bench/evidence.json`, and the release evidence includes
 it.
 
 ## Continuous integration
