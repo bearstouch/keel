@@ -80,7 +80,7 @@ public actor TunnelManager {
         environment: [String: String] = ProcessInfo.processInfo.environment, askpass: AskpassBroker? = nil,
         makeRuntime: @escaping @Sendable () throws(RuntimeDirectoryError) -> RuntimeDirectory = { () throws(RuntimeDirectoryError) in try RuntimeDirectory.create() },
         probe: @escaping @Sendable (String) -> Bool = UnixSocketProbe.accepts,
-        sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+        sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.suspendingSleep(for: $0) }
     ) {
         self.launcher = launcher; self.options = options; self.makeRuntime = makeRuntime; self.probe = probe; self.sleep = sleep; self.askpass = askpass
         // An inherited askpass setup would let ssh run a program Keel didn't choose; `askpass` supplies Keel's own.

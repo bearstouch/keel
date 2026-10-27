@@ -103,7 +103,7 @@ public actor PromptRelay {
     private var withdrawn: Set<UUID> = []
 
     /// `timeout` stays below the helper's 120 s receive timeout, so the helper always hears the outcome.
-    public init(timeout: Duration = PromptRelay.defaultTimeout, sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) {
+    public init(timeout: Duration = PromptRelay.defaultTimeout, sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.suspendingSleep(for: $0) }) {
         self.timeout = timeout; self.sleep = sleep
     }
 

@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import KeelCore
+import KeelRESP
 
 /// The refresh button's menu (FR-SI03): off by default, or every 2, 5, 10 or 30 seconds.
 public enum InfoRefreshInterval: Int, CaseIterable, Sendable, Identifiable {
@@ -46,7 +47,7 @@ public final class InfoModel: ObservableObject {
 
     public init(
         service: DataCommandService, context: DataContext, now: @escaping @Sendable () -> Date = { Date() },
-        sleep: @escaping Sleep = { try await Task.sleep(for: $0) }
+        sleep: @escaping Sleep = { try await Task.suspendingSleep(for: $0) }
     ) {
         self.service = service; self.context = context; self.now = now; self.sleep = sleep
         observer = NotificationCenter.default.addObserver(forName: KeyListCommands.refreshNotification, object: nil, queue: .main) { [weak self] note in

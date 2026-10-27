@@ -58,7 +58,7 @@ public actor RowMetadataLoader {
 
     public init(
         index: KeyIndex, now: @escaping @Sendable () -> Duration = RowMetadataLoader.monotonicClock(),
-        sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+        sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.suspendingSleep(for: $0) }
     ) {
         self.index = index; self.now = now; self.sleep = sleep
     }

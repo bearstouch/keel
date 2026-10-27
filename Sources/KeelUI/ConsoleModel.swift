@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import KeelCore
+import KeelRESP
 
 /// Console history per profile, in memory for the app's lifetime (FR-CO04): every console of a profile shares it, so it
 /// survives switching and closing tabs, never a relaunch.
@@ -208,7 +209,7 @@ public final class ConsoleModel: ObservableObject {
         draining?.cancel()
         draining = Task { [weak self, drainInterval] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: drainInterval)
+                try? await Task.suspendingSleep(for: drainInterval)
                 guard let self else { return }
                 let drained = await self.console.drainStream()
                 if drained.dropped > 0 {
