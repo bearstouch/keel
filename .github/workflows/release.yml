@@ -1,6 +1,6 @@
 name: Release
 
-# MAC-08 – MAC-11, KEEL-052. Push a tag matching release/manifest.json (v0.1.0) to test, benchmark, build, sign, notarize
+# MAC-08 – MAC-11, KEEL-052. Push a tag matching release/manifest.json (v0.9.0) to test, benchmark, build, sign, notarize
 # and publish a GitHub release; a manual run builds the same artifacts without publishing (and without the benchmark,
 # so it can only be a pre-release). scripts/package-release.sh records every check in release-evidence.json and fails
 # on any failed one; a build with a skipped check (ad-hoc, unnotarized, no EdDSA key) is published only as a pre-release.

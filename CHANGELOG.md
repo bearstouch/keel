@@ -5,6 +5,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.9.0] - Unreleased
+
 ### Added
 
 - Swift package scaffold with the Keel targets, an empty Keel window, launch arguments `--state-directory`
@@ -244,6 +246,7 @@ and versions follow [Semantic Versioning](https://semver.org/).
   **Check for updates automatically** turns off, installs only after confirmation, EdDSA-signed appcast and archives
   over HTTPS, no system profile. Builds without a feed (`swift run`, development builds, `--fixture`) have no updater.
   Remove Keel Data… also removes Sparkle's preferences (KEEL-052).
+- Keel → About Keel: the standard About panel with the app icon, version and © Bearstouch (linked to bearstouch.com).
 
 ### Fixed
 
