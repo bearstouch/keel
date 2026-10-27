@@ -54,13 +54,16 @@ jobs:
           fi
 
       - name: Test
+        # A crashing test process otherwise prints only the runtime's message; the backtracer prints its stack.
+        env:
+          SWIFT_BACKTRACE: enable=yes,interactive=no,sanitize=no,threads=all
         run: swift test
 
-      # A test process that crashes prints only the runtime's message; its crash report has the stack.
       - name: Crash reports
         if: failure()
         run: |
-          for f in $(ls -t ~/Library/Logs/DiagnosticReports/xctest*.ips 2>/dev/null | head -2); do echo "== $f"; cat "$f"; done
+          sleep 20
+          for f in $(ls -t ~/Library/Logs/DiagnosticReports/*.ips /Library/Logs/DiagnosticReports/*.ips 2>/dev/null | grep -i xctest | head -2); do echo "== $f"; cat "$f"; done
 
   # NFR-QA03 / KEEL-048: KeelIntegrationTests against the pinned container matrix (Tests/Fixtures/Integration/matrix.json).
   # Apple-silicon runners can't run a Linux VM (no nested virtualization), so this job uses the Intel image with Colima.
