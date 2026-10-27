@@ -148,7 +148,8 @@ def start_tls(matrix, manifest):
     context.load_cert_chain(os.path.join(folder, "client.pem"), os.path.join(folder, "client.key"))
     for name, port in ports.items():
         wait_until(lambda: ping(port, context), name)
-    return ports
+    # Environment values must be strings.
+    return {name: str(port) for name, port in ports.items()}
 
 
 def start_sshd(matrix, manifest):
