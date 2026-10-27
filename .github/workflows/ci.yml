@@ -26,23 +26,17 @@ jobs:
       # Actions are pinned to commit SHAs (NFR-SC07); Dependabot keeps them current.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Select Xcode 26 with Swift 6.2
+      - name: Select Xcode 26
         run: |
-          # Swift 6.2 is the project's toolchain: Swift 6.3 (Xcode 26.6) builds corrupt the task allocator at run time
-          # ("freed pointer was not the last allocation"), so pick the newest Xcode 26 that still ships Swift 6.2.
-          xcode=""
-          for candidate in $(ls -d /Applications/Xcode_26*.app | sort -rV); do
-            if "$candidate/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift" --version 2>&1 | grep -q 'Swift version 6\.2'; then xcode=$candidate; break; fi
-          done
-          if [ -z "$xcode" ]; then echo "::error::No Xcode 26 with Swift 6.2 on this runner"; ls -d /Applications/Xcode_26*.app; exit 1; fi
+          xcode=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)
           sudo xcode-select -s "$xcode"
           swift --version
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .build
-          key: spm-${{ runner.os }}-swift6.2-${{ hashFiles('Package.swift', 'Package.resolved') }}-${{ github.sha }}
-          restore-keys: spm-${{ runner.os }}-swift6.2-${{ hashFiles('Package.swift', 'Package.resolved') }}-
+          key: spm-${{ runner.os }}-${{ hashFiles('Package.swift', 'Package.resolved') }}-${{ github.sha }}
+          restore-keys: spm-${{ runner.os }}-${{ hashFiles('Package.swift', 'Package.resolved') }}-
 
       - name: Lint
         run: |
@@ -82,15 +76,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Select Xcode 26 with Swift 6.2
+      - name: Select Xcode 26
         run: |
-          # Swift 6.2 is the project's toolchain: Swift 6.3 (Xcode 26.6) builds corrupt the task allocator at run time
-          # ("freed pointer was not the last allocation"), so pick the newest Xcode 26 that still ships Swift 6.2.
-          xcode=""
-          for candidate in $(ls -d /Applications/Xcode_26*.app | sort -rV); do
-            if "$candidate/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift" --version 2>&1 | grep -q 'Swift version 6\.2'; then xcode=$candidate; break; fi
-          done
-          if [ -z "$xcode" ]; then echo "::error::No Xcode 26 with Swift 6.2 on this runner"; ls -d /Applications/Xcode_26*.app; exit 1; fi
+          xcode=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)
           sudo xcode-select -s "$xcode"
           swift --version
 
