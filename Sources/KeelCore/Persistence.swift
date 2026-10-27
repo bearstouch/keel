@@ -1,6 +1,5 @@
 import Darwin
 import Foundation
-import KeelRESP
 
 /// Keel's durable state files (02 Architecture → Persistence). Each lives directly in the state folder.
 public enum PersistedFile: String, CaseIterable, Sendable {
@@ -151,7 +150,7 @@ public actor Persistence<Document: PersistedDocument> {
 
     /// `sleep` drives the debounce and `beforeReplace` runs between a temporary's fsync and its rename; tests inject both.
     public init(
-        directory: URL, debounce: Duration = .milliseconds(300), sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.suspendingSleep(for: $0) },
+        directory: URL, debounce: Duration = .milliseconds(300), sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
         beforeReplace: @escaping @Sendable (URL) throws -> Void = { _ in }
     ) {
         self.directory = directory; self.debounce = debounce; self.sleep = sleep; self.beforeReplace = beforeReplace
@@ -249,7 +248,9 @@ public actor Persistence<Document: PersistedDocument> {
         debounceTask?.cancel()
         // The task inherits this actor's isolation, so the flush runs on it after the sleep.
         debounceTask = Task {
-            do { try await sleep(debounce) } catch { return }
+            // A zero debounce (tests) writes on the task's first turn: `Task.sleep(for: .zero)` aborts the macOS 26.6
+            // concurrency runtime ("freed pointer was not the last allocation").
+            if debounce > .zero { do { try await sleep(debounce) } catch { return } }
             self.flushScheduled(token)
         }
     }

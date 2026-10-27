@@ -60,7 +60,7 @@ public actor RedisConnection {
     public static let noTimeout = Duration.seconds(Int64.max)
 
     /// `sleep` drives the connect and command timeouts; tests inject a manual one.
-    public init(transport: any Transport, options: Options = Options(), sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.suspendingSleep(for: $0) }) {
+    public init(transport: any Transport, options: Options = Options(), sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) {
         self.transport = transport; self.options = options; self.sleep = sleep
         parser = RESPParser(limits: options.limits)
         (pushes, pushSink) = AsyncStream.makeStream(of: RESPValue.self, bufferingPolicy: .bufferingNewest(256))

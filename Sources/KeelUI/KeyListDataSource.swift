@@ -1,6 +1,5 @@
 import AppKit
 import KeelCore
-import KeelRESP
 
 /// A tree row. NSOutlineView tracks rows by object identity, so each folder keeps one item per child, created only
 /// when the outline asks for that row: expanding a folder of 500,000 keys allocates the child list, not 500,000 items.
@@ -141,7 +140,7 @@ public final class KeyListDataSource: NSObject, ObservableObject {
             NotificationCenter.default.addObserver(self, selector: #selector(visibleRowsMoved), name: NSView.boundsDidChangeNotification, object: scrollView.contentView)
             // Holds the list weakly: once it is gone, the loop ends at its next tick.
             countdown = Task { [weak self] in
-                while (try? await Task.suspendingSleep(for: .seconds(1))) != nil {
+                while (try? await Task.sleep(for: .seconds(1))) != nil {
                     guard let self else { return }
                     self.tickCountdowns()
                 }
