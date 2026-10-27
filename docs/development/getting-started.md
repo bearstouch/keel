@@ -7,7 +7,7 @@ line.
 
 | Tool | Version | Used for |
 | --- | --- | --- |
-| Xcode | 26 (Swift 6.2) | Build, test, `swift format` |
+| Xcode | 26 (Swift 6.2); CI and releases pin 26.0.1, see [Known gaps](../project/status.md#known-gaps) | Build, test, `swift format` |
 | macOS | 14 or later | Running the app and tests |
 | Python 3 | System | Generators, integration matrix, benchmarks |
 | Docker (or Colima) | Any recent | Container integration matrix only |

@@ -26,7 +26,8 @@ Status: **v1 in release qualification.** All planned v1 features are implemented
 ## Toolchain and commands
 
 Requires Xcode 26 / Swift 6.2 (Swift 6 language mode, strict concurrency), macOS 14+. The app is a Swift
-package (`Package.swift`); there is no `.xcodeproj`.
+package (`Package.swift`); there is no `.xcodeproj`. CI and releases pin Xcode 26.0.1: builds from Xcode 26.3 and later abort in the
+concurrency runtime (`docs/project/status.md` → Known gaps).
 
 ```sh
 swift build                                    # build (must be warning-free)

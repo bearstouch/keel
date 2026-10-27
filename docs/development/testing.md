@@ -97,7 +97,7 @@ it.
 
 | Job | Runner | Steps |
 | --- | --- | --- |
-| `build-test` | `macos-26` | `swift format lint --strict` (must print nothing), `swift build` (fails on any warning in `Sources/`), `swift test` |
+| `build-test` | `macos-26` (Xcode 26.0.1) | `swift format lint --strict` (must print nothing), `swift build` (fails on any warning in `Sources/`), `swift test` |
 | `integration` | `macos-15-intel` with Colima | `scripts/integration-matrix.py` |
 
 Actions are pinned to commit SHAs. `release.yml` builds, tests, benchmarks and packages tagged releases

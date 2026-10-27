@@ -26,17 +26,18 @@ jobs:
       # Actions are pinned to commit SHAs (NFR-SC07); Dependabot keeps them current.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Select Xcode 26
+      # Pinned: test runs built by Xcode 26.3 and later (Swift 6.2.4+) abort in the concurrency runtime ("freed pointer
+      # was not the last allocation"); the same suite passes when built by Xcode 26.0.1 on the same runner.
+      - name: Select Xcode 26.0.1
         run: |
-          xcode=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)
-          sudo xcode-select -s "$xcode"
+          sudo xcode-select -s /Applications/Xcode_26.0.1.app
           swift --version
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .build
-          key: spm-${{ runner.os }}-${{ hashFiles('Package.swift', 'Package.resolved') }}-${{ github.sha }}
-          restore-keys: spm-${{ runner.os }}-${{ hashFiles('Package.swift', 'Package.resolved') }}-
+          key: spm-${{ runner.os }}-xcode26.0.1-${{ hashFiles('Package.swift', 'Package.resolved') }}-${{ github.sha }}
+          restore-keys: spm-${{ runner.os }}-xcode26.0.1-${{ hashFiles('Package.swift', 'Package.resolved') }}-
 
       - name: Lint
         run: |
@@ -65,10 +66,11 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Select Xcode 26
+      # Pinned: test runs built by Xcode 26.3 and later (Swift 6.2.4+) abort in the concurrency runtime ("freed pointer
+      # was not the last allocation"); the same suite passes when built by Xcode 26.0.1 on the same runner.
+      - name: Select Xcode 26.0.1
         run: |
-          xcode=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)
-          sudo xcode-select -s "$xcode"
+          sudo xcode-select -s /Applications/Xcode_26.0.1.app
           swift --version
 
       - name: Start Docker (Colima)

@@ -39,10 +39,11 @@ jobs:
           # The write token stays out of .git/config while the tests and benchmarks run; publishing uses GH_TOKEN.
           persist-credentials: false
 
-      - name: Select Xcode 26
+      # Pinned: test runs built by Xcode 26.3 and later (Swift 6.2.4+) abort in the concurrency runtime ("freed pointer
+      # was not the last allocation"); the same suite passes when built by Xcode 26.0.1 on the same runner.
+      - name: Select Xcode 26.0.1
         run: |
-          xcode=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)
-          sudo xcode-select -s "$xcode"
+          sudo xcode-select -s /Applications/Xcode_26.0.1.app
           swift --version
 
       - name: Read version

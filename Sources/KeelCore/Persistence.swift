@@ -248,9 +248,7 @@ public actor Persistence<Document: PersistedDocument> {
         debounceTask?.cancel()
         // The task inherits this actor's isolation, so the flush runs on it after the sleep.
         debounceTask = Task {
-            // A zero debounce (tests) writes on the task's first turn: `Task.sleep(for: .zero)` aborts the macOS 26.6
-            // concurrency runtime ("freed pointer was not the last allocation").
-            if debounce > .zero { do { try await sleep(debounce) } catch { return } }
+            do { try await sleep(debounce) } catch { return }
             self.flushScheduled(token)
         }
     }
