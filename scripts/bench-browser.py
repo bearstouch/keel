@@ -20,6 +20,8 @@ NFR target, baseline and change, the checks still pending by hand, and the verdi
 metric misses its NFR target, a benchmark test fails, or a metric regressed by more than --threshold (20%) against
 release/bench-baseline.json for this architecture. --update-baseline records this run as the new baseline. Gate on
 the default median of 3 runs: a single run (--quick, --runs 1) can swing more than 20% on a busy machine.
+--no-regression-gate still reports regressions but fails only on targets and tests: the baseline is one Mac's numbers,
+so another machine of the same architecture (a CI runner) can't be held to it.
 
     python3 scripts/bench-browser.py --redis-server /opt/homebrew/bin/redis-server
     python3 scripts/bench-browser.py --quick --skip-launch          # 1M keys only, one run, container server
@@ -368,7 +370,7 @@ def machine():
     }
 
 
-def evaluate(samples, units, arch, baseline, threshold):
+def evaluate(samples, units, arch, baseline, threshold, gate=True):
     metrics, failures = {}, []
     for name in sorted(samples):
         values, unit = samples[name], units[name]
@@ -382,7 +384,7 @@ def evaluate(samples, units, arch, baseline, threshold):
                          "baseline": base, "change": change, "regression": regression}
         if within is False:
             failures.append(f"{name}: {value:.4g} {unit} misses the {nfr} target {target:.4g} {unit}")
-        if regression:
+        if regression and gate:
             failures.append(f"{name}: {value:.4g} {unit} is {change:+.0%} against the baseline {base:.4g} {unit}")
     return metrics, failures
 
@@ -414,6 +416,7 @@ def main():
     parser.add_argument("--skip-live", action="store_true")
     parser.add_argument("--skip-launch", action="store_true", help="no app launch (headless CI)")
     parser.add_argument("--threshold", type=float, default=0.20, help="regression that fails the job (default 0.20)")
+    parser.add_argument("--no-regression-gate", action="store_true", help="report regressions against the baseline without failing")
     parser.add_argument("--baseline", default=BASELINE)
     parser.add_argument("--update-baseline", action="store_true", help="record this run as this architecture's baseline")
     parser.add_argument("--out", default=OUT)
@@ -500,7 +503,7 @@ def main():
     except FileNotFoundError:
         baselines = {"schema": 1, "machines": {}}
     baseline = (baselines.get("machines", {}).get(arch) or {}).get("metrics", {})
-    metrics, failures = evaluate(samples, units, arch, baseline, options.threshold)
+    metrics, failures = evaluate(samples, units, arch, baseline, options.threshold, gate=not options.no_regression_gate)
     groups = groups_run(options, sizes)
     missing = missing_metrics(samples, baseline, groups)
     failures = test_failures + failures + [f"{name}: not measured in this run (it has an NFR target or a baseline)" for name in missing]
@@ -523,6 +526,7 @@ def main():
         "runs": runs,
         "launch_samples": launch_samples,
         "threshold": options.threshold,
+        "regression_gate": not options.no_regression_gate,
         "baseline": os.path.relpath(options.baseline, ROOT) if baseline else None,
         "metrics": metrics,
         "pending": pending,
@@ -565,7 +569,10 @@ def main():
     if failures:
         print("FAILED:\n  " + "\n  ".join(failures), file=sys.stderr)
         sys.exit(1)
-    print("All benchmarks within their targets and the regression threshold.")
+    if options.no_regression_gate:
+        print("All benchmarks within their targets (regressions against the baseline reported, not gated).")
+    else:
+        print("All benchmarks within their targets and the regression threshold.")
 
 
 if __name__ == "__main__":

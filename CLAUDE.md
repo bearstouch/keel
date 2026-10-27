@@ -43,7 +43,7 @@ python3 -I scripts/generate-command-catalog.py --redis DIR VER --valkey DIR VER 
 python3 -I scripts/generate-design-tokens.py [--check]   # design-token fixture (Tests/Fixtures/Design) from docs/design/index.md
 scripts/generate-app-icon.sh [--check | --compile DIR]   # app icon assets (release/icon) from keel-icon.svg; needs rsvg-convert, --compile only actool
 python3 -I scripts/capture-console-goldens.py --redis-server PATH --redis-cli PATH   # console goldens (Tests/Fixtures/Console)
-python3 scripts/bench-browser.py [--quick] [--redis-server PATH] [--skip-launch] [--update-baseline]   # 1M/10M-key benchmarks; evidence in .build/bench/, fails on a missed NFR target or a >20% regression vs release/bench-baseline.json
+python3 scripts/bench-browser.py [--quick] [--redis-server PATH] [--skip-launch] [--update-baseline] [--no-regression-gate]   # 1M/10M-key benchmarks; evidence in .build/bench/, fails on a missed NFR target or a >20% regression vs release/bench-baseline.json (the release workflow reports regressions without gating)
 scripts/package-release.sh [--no-layout]       # Universal 2 app, DMG, Sparkle archive, appcast, SHA256SUMS.txt, dist/release-evidence.json; ad-hoc unless KEEL_SIGN_IDENTITY / KEEL_NOTARY_PROFILE; EdDSA via KEEL_SPARKLE_KEY_FILE or KEEL_SPARKLE_ACCOUNT; exits 1 on any failed check
 ```
 

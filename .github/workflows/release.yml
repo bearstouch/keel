@@ -63,7 +63,9 @@ jobs:
         if: github.ref_type == 'tag'
         run: |
           brew install redis
-          python3 scripts/bench-browser.py --redis-server "$(brew --prefix)/bin/redis-server"
+          # NFR targets gate the release; the baseline is the recording Mac's numbers, which a slower runner can't match,
+          # so regressions against it are reported in the evidence but don't fail the job.
+          python3 scripts/bench-browser.py --redis-server "$(brew --prefix)/bin/redis-server" --no-regression-gate
 
       - name: Import signing certificate and keys
         id: signing
