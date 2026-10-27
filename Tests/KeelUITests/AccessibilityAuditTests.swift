@@ -17,16 +17,17 @@ final class AuditScreens {
 
     func closeAll() { hosts.forEach { $0.close() }; hosts = [] }
 
-    private func host<Content: View>(_ content: Content, size: CGSize = CGSize(width: 1180, height: 760)) -> ScreenHost {
+    private func host<Content: View>(_ content: Content, size: CGSize = CGSize(width: 1180, height: 760)) async -> ScreenHost {
         let host = ScreenHost(content.font(Tokens.interface(13)), size: size)
         hosts.append(host)
+        await host.settle()
         return host
     }
 
     // MARK: - Windows
 
     /// A first launch: no connections.
-    func emptyWindow() -> ScreenHost { host(RootView()) }
+    func emptyWindow() async -> ScreenHost { await host(RootView()) }
 
     /// A window without tabs over saved connections, one opened before: the welcome screen (FR-AP08).
     func welcomeWindow() async throws -> ScreenHost {
@@ -41,8 +42,8 @@ final class AuditScreens {
         for tab in window.tabs { window.close(tab.id) }
         let sidebar = SidebarModel(store: store, tabs: window, copy: { _ in })
         await sidebar.reload()
-        let screen = host(RootView(sidebar: sidebar))
-        screen.settle(0.3)
+        let screen = await host(RootView(sidebar: sidebar))
+        await screen.settle(0.3)
         return screen
     }
 
@@ -68,8 +69,8 @@ final class AuditScreens {
         app.connectIfNeeded(tab.id)
         for _ in 0..<200 where app.session(tab.id)?.status != .connected { try await Task.sleep(for: .milliseconds(5)) }
         window.setMode(mode)
-        let screen = host(RootView(sidebar: sidebar, palette: palette))
-        screen.settle(0.3)
+        let screen = await host(RootView(sidebar: sidebar, palette: palette))
+        await screen.settle(0.3)
         return (screen, app)
     }
 
@@ -81,19 +82,19 @@ final class AuditScreens {
         let filter = KeyFilterModel(list: list) { _ in }
         let model = BrowserModel(list: list, filter: filter, database: 0, databaseCount: 16)
         await model.start()
-        let screen = host(
+        let screen = await host(
             VStack(spacing: 0) {
                 DatabasePicker(model: model); BrowserPane(model: model) { _ in }
             }.frame(width: 380, height: 700), size: CGSize(width: 380, height: 700))
-        screen.settle(0.3)
+        await screen.settle(0.3)
         await list.fetchVisibleContent()
-        screen.settle()
+        await screen.settle()
         return screen
     }
 
     func newKeySheet() async -> ScreenHost {
         let model = BrowserModel(list: BrowserKeyspace([0: []]).list(readOnly: false), database: 0)
-        return host(NewKeySheet(browser: model), size: CGSize(width: 520, height: 480))
+        return await host(NewKeySheet(browser: model), size: CGSize(width: 520, height: 480))
     }
 
     func bulkDeleteSheet() async throws -> ScreenHost {
@@ -107,13 +108,13 @@ final class AuditScreens {
         await browser.requestBulkDelete()
         let model = try XCTUnwrap(browser.bulkDelete)
         await model.loadSample()
-        return host(BulkDeleteSheet(model: model) {}, size: CGSize(width: 560, height: 560))
+        return await host(BulkDeleteSheet(model: model) {}, size: CGSize(width: 560, height: 560))
     }
 
-    func typedConfirmationSheet() -> ScreenHost {
+    func typedConfirmationSheet() async -> ScreenHost {
         let profile = SafetyProfile(name: "payments-prod", readOnly: false, production: true, server: "10.0.4.12:6379")
         let model = TypedConfirmationModel(TypedConfirmation(operation: .flushAll, profile: profile, database: 0)) { nil }
-        return host(TypedConfirmationSheet(model: model) {}, size: CGSize(width: 520, height: 420))
+        return await host(TypedConfirmationSheet(model: model) {}, size: CGSize(width: 520, height: 420))
     }
 
     // MARK: - Editors
@@ -141,21 +142,21 @@ final class AuditScreens {
                 session.select(row.id); session.viewer.edit("changed")
             }
         }
-        let screen = host(EditorShell(session: session).frame(width: 760, height: 700), size: CGSize(width: 760, height: 700))
-        screen.settle(0.3)
+        let screen = await host(EditorShell(session: session).frame(width: 760, height: 700), size: CGSize(width: 760, height: 700))
+        await screen.settle(0.3)
         return (screen, session)
     }
 
     func renameSheet() async -> ScreenHost {
         let session = TransactionalKeyspace(["greeting": "hello"]).session("greeting")
         await session.load()
-        return host(RenameKeySheet(session: session), size: CGSize(width: 520, height: 320))
+        return await host(RenameKeySheet(session: session), size: CGSize(width: 520, height: 320))
     }
 
     func ttlSheet() async -> ScreenHost {
         let session = TransactionalKeyspace(["greeting": "hello"]).session("greeting")
         await session.load()
-        return host(SetTTLSheet(session: session), size: CGSize(width: 520, height: 360))
+        return await host(SetTTLSheet(session: session), size: CGSize(width: 520, height: 360))
     }
 
     // MARK: - Console, Info
@@ -164,8 +165,8 @@ final class AuditScreens {
         let text = try String(contentsOf: AuditScreens.fixtures.appendingPathComponent("INFO/full/redis-7.2.txt"), encoding: .utf8)
         let model = InfoServer(text: text).model(sleeper: ManualSleeper())
         await model.refresh()
-        let screen = host(InfoPane(model: model).frame(width: 1000, height: 760), size: CGSize(width: 1000, height: 760))
-        screen.settle(0.3)
+        let screen = await host(InfoPane(model: model).frame(width: 1000, height: 760), size: CGSize(width: 1000, height: 760))
+        await screen.settle(0.3)
         return screen
     }
 
@@ -175,39 +176,39 @@ final class AuditScreens {
         let store = ProfileStore(directory: directory, secrets: MemorySecretStore())
         _ = await store.load()
         let model = ConnectionSheetModel(mode: .create(folderID: nil), tester: FakeConnectionTester(), store: store)
-        return host(ConnectionSheet(model: model), size: CGSize(width: 620, height: 760))
+        return await host(ConnectionSheet(model: model), size: CGSize(width: 620, height: 760))
     }
 
-    func sshPrompt(_ text: String) -> ScreenHost {
+    func sshPrompt(_ text: String) async -> ScreenHost {
         let prompt = SSHPrompt(owner: UUID(), destination: "bastion", text: text, askpass: AskpassPrompt.classify(text, kind: nil))
-        return host(SSHPromptSheet(prompt: prompt) { _ in }, size: CGSize(width: 560, height: 420))
+        return await host(SSHPromptSheet(prompt: prompt) { _ in }, size: CGSize(width: 560, height: 420))
     }
 
-    func commandPalette() -> ScreenHost {
+    func commandPalette() async -> ScreenHost {
         let model = CommandPaletteModel {
             ["Browser", "Console", "Info"].map { title in PaletteEntry(PaletteItem(id: "command:\(title)", kind: .action, title: title, subtitle: "View")) {} }
         }
         model.toggle()
-        return host(CommandPaletteOverlay(model: model).frame(width: 900, height: 600), size: CGSize(width: 900, height: 600))
+        return await host(CommandPaletteOverlay(model: model).frame(width: 900, height: 600), size: CGSize(width: 900, height: 600))
     }
 
-    func keyboardSettings() -> ScreenHost {
+    func keyboardSettings() async -> ScreenHost {
         let bindings = ShortcutBindings(defaults: UserDefaults(suiteName: "keel-audit-\(UUID().uuidString)")!)
-        return host(KeyboardSettingsView(model: KeyboardSettingsModel(bindings: bindings), bindings: bindings), size: CGSize(width: 640, height: 560))
+        return await host(KeyboardSettingsView(model: KeyboardSettingsModel(bindings: bindings), bindings: bindings), size: CGSize(width: 640, height: 560))
     }
 
     /// The Settings window on `pane` (FR-AP09).
-    func settings(_ pane: SettingsDraft.Pane) -> ScreenHost {
+    func settings(_ pane: SettingsDraft.Pane) async -> ScreenHost {
         let bindings = ShortcutBindings(defaults: UserDefaults(suiteName: "keel-audit-\(UUID().uuidString)")!)
         let draft = SettingsDraft(settings: SettingsModel(persistence: nil, applyAppearance: { _ in }))
         draft.pane = pane
-        return host(SettingsView(draft: draft, keyboard: KeyboardSettingsModel(bindings: bindings)), size: CGSize(width: 640, height: 560))
+        return await host(SettingsView(draft: draft, keyboard: KeyboardSettingsModel(bindings: bindings)), size: CGSize(width: 640, height: 560))
     }
 
     static let fixtures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Fixtures")
 }
 
-/// AC1 (NFR-AX01, DS-04): every control on every screen has a name VoiceOver reads, and status is words, never only
+/// AC1 (NFR-AX01, DS-04), one test per group of screens: every control on every screen has a name VoiceOver reads, and status is words, never only
 /// a color.
 @MainActor
 final class AccessibilityAuditTests: XCTestCase {
@@ -234,23 +235,31 @@ final class AccessibilityAuditTests: XCTestCase {
         XCTAssertFalse(screen.nodes(saying: text).isEmpty, "\(why): nothing says “\(text)”", file: file, line: line)
     }
 
-    func testEveryControlHasLabel() async throws {
-        let empty = screens.emptyWindow()
+    func testEmptyAndWelcomeWindowsAreLabeled() async throws {
+        let empty = await screens.emptyWindow()
         XCTAssertTrue(empty.unlabeledControls.isEmpty)
         assertSays(empty, RootView.accessibilityLabel, "Empty window")
         let welcome = try await screens.welcomeWindow()
         assertLabeled(welcome, "Welcome screen")
         for text in ["New Connection…", "Paste URL", "Import…", "api-staging, Orange, 127.0.0.1:6379"] { assertSays(welcome, text, "Welcome screen") }
-        welcome.close()
+    }
+
+    func testMainWindowIsLabeledInEveryMode() async throws {
         for mode in TabMode.allCases {
             let (window, _) = try await screens.mainWindow(mode: mode)
             assertLabeled(window, "Main window, \(mode.title)")
             window.close()
         }
+    }
+
+    func testBrowserScreensAreLabeled() async throws {
         assertLabeled(await screens.keyList(), "Key list")
         assertLabeled(await screens.newKeySheet(), "New key sheet")
         assertLabeled(try await screens.bulkDeleteSheet(), "Bulk delete sheet")
-        assertLabeled(screens.typedConfirmationSheet(), "Typed confirmation sheet")
+        assertLabeled(await screens.typedConfirmationSheet(), "Typed confirmation sheet")
+    }
+
+    func testEditorsAreLabeled() async throws {
         for type in [KeyType.string, .hash, .list, .set, .zset, .stream] {
             let (editor, _) = await screens.editor(type, edited: true)
             assertLabeled(editor, "\(type) editor")
@@ -263,19 +272,25 @@ final class AccessibilityAuditTests: XCTestCase {
         assertLabeled(partial, "Partially loaded string")
         assertLabeled(await screens.renameSheet(), "Rename sheet")
         assertLabeled(await screens.ttlSheet(), "Set TTL sheet")
+    }
+
+    func testInfoAndSheetsAreLabeled() async throws {
         assertLabeled(try await screens.info(), "Info")
         assertLabeled(await screens.connectionSheet(), "Connection sheet")
-        assertLabeled(screens.sshPrompt("app@bastion's password: "), "SSH password prompt")
+        assertLabeled(await screens.sshPrompt("app@bastion's password: "), "SSH password prompt")
         assertLabeled(
-            screens.sshPrompt("The authenticity of host 'bastion (10.0.0.5)' can't be established.\nED25519 key fingerprint is SHA256:abc.\nAre you sure you want to continue connecting (yes/no/[fingerprint])? "),
+            await screens.sshPrompt("The authenticity of host 'bastion (10.0.0.5)' can't be established.\nED25519 key fingerprint is SHA256:abc.\nAre you sure you want to continue connecting (yes/no/[fingerprint])? "),
             "SSH host key prompt")
-        assertLabeled(screens.commandPalette(), "Command palette")
-        assertLabeled(screens.keyboardSettings(), "Keyboard settings")
-        for pane in SettingsDraft.Pane.allCases { assertLabeled(screens.settings(pane), "\(pane.title) settings") }
+        assertLabeled(await screens.commandPalette(), "Command palette")
+    }
+
+    func testSettingsAreLabeled() async {
+        assertLabeled(await screens.keyboardSettings(), "Keyboard settings")
+        for pane in SettingsDraft.Pane.allCases { assertLabeled(await screens.settings(pane), "\(pane.title) settings") }
     }
 
     /// The audit itself fails on what it is meant to catch, so a passing run means something.
-    func testAuditCatchesUnlabeledControls() {
+    func testAuditCatchesUnlabeledControls() async {
         let screen = ScreenHost(
             VStack {
                 Button {
@@ -286,6 +301,7 @@ final class AccessibilityAuditTests: XCTestCase {
                 Button("Named") {}
             }, size: CGSize(width: 300, height: 200))
         defer { screen.close() }
+        await screen.settle()
         XCTAssertEqual(screen.unlabeledControls.map(\.role), [.button, .textField])
     }
 
@@ -340,58 +356,61 @@ final class KeyboardNavigationTests: XCTestCase {
     }
 
     /// Tab from the window's start visits `expected` in order, then wraps to the first stop.
-    private func assertTabOrder(_ screen: ScreenHost, _ expected: [String], _ name: String, file: StaticString = #filePath, line: UInt = #line) {
-        let stops = screen.tabStops(limit: expected.count + 1)
+    private func assertTabOrder(_ screen: ScreenHost, _ expected: [String], _ name: String, file: StaticString = #filePath, line: UInt = #line) async {
+        let stops = await screen.tabStops(limit: expected.count + 1)
         XCTAssertEqual(stops, expected + [expected[0]], "\(name)", file: file, line: line)
     }
 
     func testTabOrderPerScreen() async throws {
         let (window, _) = try await screens.mainWindow()
-        assertTabOrder(window, ["Connections", "Filter keys by pattern", "Keys"], "Main window: sidebar, filter, key list")
+        await assertTabOrder(window, ["Connections", "Filter keys by pattern", "Keys"], "Main window: sidebar, filter, key list")
         window.close()
 
         let (hash, _) = await screens.editor(.hash)
-        assertTabOrder(hash, ["Filter loaded fields", "Fields"], "Hash editor: filter, then the table")
+        await assertTabOrder(hash, ["Filter loaded fields", "Fields"], "Hash editor: filter, then the table")
         hash.close()
         for (type, table) in [(KeyType.list, "Items"), (.set, "Members"), (.zset, "Members"), (.stream, "Entries")] {
             let (editor, _) = await screens.editor(type)
-            XCTAssertTrue(editor.tabStops(limit: 3).contains(table), "\(type) editor: Tab reaches the table")
+            let stops = await editor.tabStops(limit: 3)
+            XCTAssertTrue(stops.contains(table), "\(type) editor: Tab reaches the table")
             editor.close()
         }
 
-        assertTabOrder(
+        await assertTabOrder(
             await screens.connectionSheet(), ["New Connection", "Connection URL", "Name", "Host", "Port", "Username", "Password, saved in Keychain"],
             "Connection sheet: the form (⌘V target), then its fields top to bottom")
-        assertTabOrder(screens.typedConfirmationSheet(), ["Type payments-prod to confirm."], "Typed confirmation: the one field")
-        XCTAssertEqual(screens.commandPalette().tabStops(limit: 2).count, 2)
+        await assertTabOrder(await screens.typedConfirmationSheet(), ["Type payments-prod to confirm."], "Typed confirmation: the one field")
+        let paletteStops = await screens.commandPalette().tabStops(limit: 2)
+        XCTAssertEqual(paletteStops.count, 2)
     }
 
     /// The value text view keeps Tab as a character (values may hold tabs); ⌃Tab leaves it, as in every Mac text view.
     func testControlTabLeavesTheValueEditor() async {
         let (editor, _) = await screens.editor(.hash, edited: true)
-        let stops = editor.tabStops(limit: 4)
+        let stops = await editor.tabStops(limit: 4)
         XCTAssertEqual(stops, ["Filter loaded fields", "Fields", "Value as Text", "Value as Text"], "Tab stays in the value")
-        editor.pressTab(.control)
+        await editor.pressTab(.control)
         XCTAssertEqual(editor.focusedName, "Filter loaded fields", "⌃Tab moves on, around the loop")
-        editor.pressTab()
-        editor.pressTab()
+        await editor.pressTab()
+        await editor.pressTab()
         XCTAssertEqual(editor.focusedName, "Value as Text")
-        editor.pressTab([.control, .shift])
+        await editor.pressTab([.control, .shift])
         XCTAssertNotEqual(editor.focusedName, "Value as Text", "⌃⇧Tab leaves it too")
     }
 
     /// ↑/↓ on a focused editor table select rows; the arrows never wrap.
     func testArrowsMoveTheSelectionInAFocusedTable() async {
         let (editor, session) = await screens.editor(.hash)
-        XCTAssertEqual(editor.tabStops(limit: 2).last, "Fields")
+        let stops = await editor.tabStops(limit: 2)
+        XCTAssertEqual(stops.last, "Fields")
         XCTAssertNil(session.selectedRow)
-        editor.pressDown()
+        await editor.pressDown()
         XCTAssertEqual(session.selectedRow, Data("city".utf8), "↓ selects the first row")
-        editor.pressDown()
+        await editor.pressDown()
         XCTAssertEqual(session.selectedRow, Data("name".utf8))
-        editor.pressDown()
+        await editor.pressDown()
         XCTAssertEqual(session.selectedRow, Data("name".utf8), "stays on the last row")
-        editor.pressUp()
+        await editor.pressUp()
         XCTAssertEqual(session.selectedRow, Data("city".utf8))
         XCTAssertEqual(session.viewer.title, "city", "the selected field opens in the viewer")
     }
@@ -406,10 +425,12 @@ final class KeyboardNavigationTests: XCTestCase {
         await sidebar.reload()
         let screen = ScreenHost(SidebarView(model: sidebar).frame(height: 500), size: CGSize(width: 260, height: 500))
         defer { screen.close() }
-        XCTAssertEqual(screen.tabStops(limit: 1), ["Connections"])
-        screen.pressDown()
+        await screen.settle()
+        let stops = await screen.tabStops(limit: 1)
+        XCTAssertEqual(stops, ["Connections"])
+        await screen.pressDown()
         XCTAssertEqual(sidebar.selectedProfileID, profile.id)
-        screen.press(keyCode: 34, characters: "i", modifiers: .command)
+        await screen.press(keyCode: 34, characters: "i", modifiers: .command)
         // The sheet is prepared in a task on this actor: yield to it rather than spin the run loop.
         for _ in 0..<200 where presenter.model == nil { try await Task.sleep(for: .milliseconds(5)) }
         if case .edit(let editing)? = presenter.model?.mode { XCTAssertEqual(editing.id, profile.id) } else { XCTFail("not the Edit sheet") }

@@ -1,23 +1,34 @@
 # Keel
 
-A calm, native Redis client for macOS by Bearstouch. Keel browses millions of keys with SCAN only, edits every core
-type, has a redis-cli-style console and a server overview, keeps production safe with read-only connections and
-typed confirmations.
+A calm, native client for Redis, Valkey and Dragonfly on macOS by Bearstouch. Keel browses millions of keys with
+SCAN only, edits every core type, has a redis-cli-style console and a server overview, keeps production safe with
+read-only connections and typed confirmations.
 
-Supports Redis 6.0+, Valkey and Dragonfly on macOS 14 or later.
+| Server | Versions | Support |
+| --- | --- | --- |
+| Redis | 6.0+ | Full |
+| Valkey | 7.2 – 9.x | Full, first-class |
+| Dragonfly | 1.x | Common command set; capability probes cover differences |
 
-> **Status:** early development. The package scaffold is in place; features are being built story by story.
+Requires macOS 14 or later. See [Integrations](docs/integrations.md) for details.
+
+> **Status:** v1 in release qualification; see [Project status](docs/project/status.md).
 
 ## Documentation
 
-- [Specifications](specs/README.md): the behavior contract (overview, architecture, requirements,
-  integrations, macOS support, design).
-- [Stories and plan](specs/stories/README.md): implementation stories, sprint plan and definition of done.
-- [CLAUDE.md](CLAUDE.md): contributor and agent guidance.
+Contributor documentation lives in [`docs/`](docs/index.md) and builds into a site with MkDocs
+(`pip install mkdocs-material && mkdocs serve`):
+
+- [Product overview](docs/overview.md) and [Architecture](docs/architecture.md)
+- [Requirements](docs/requirements/index.md): the behavior contract, with stable requirement IDs
+- [Integrations](docs/integrations.md), [macOS support](docs/macos.md) and [Design](docs/design/index.md)
+- [API reference](docs/api/index.md) for each module
+- [Development](docs/development/getting-started.md): rules, testing, change workflow and releasing
+- [CLAUDE.md](CLAUDE.md): agent guidance
 
 ## Building
 
-Requires Xcode 26 (Swift 6.2) on macOS 14 or later.
+Requires Xcode 26 (Swift 6.2) on macOS 14 or later; CI and releases build with Xcode 26.0.1.
 
 ```sh
 swift build                                   # warning-free build

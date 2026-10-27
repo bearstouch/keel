@@ -39,8 +39,6 @@ public struct SidebarView: View {
                 }
                 .padding(.horizontal, 10).padding(.bottom, 12)
             }
-            // Focused with nothing selected: ↓ selects the first row; until then the list shows the focus.
-            .focusRing(focused && model.selectedProfileID == nil, cornerRadius: 0)
             .contextMenu {
                 Button("New Connection…") { model.newConnection() }; Button("New Folder…") { ask(.newFolder) }
             }

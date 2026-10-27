@@ -194,7 +194,7 @@ public struct DataContext: Sendable, Equatable {
     }
 }
 
-/// Why a command didn't run or didn't complete. `code` is the shared error code (`specs/02-architecture.md#errors`).
+/// Why a command didn't run or didn't complete. `code` is the shared error code (`docs/architecture.md#errors`).
 public enum DataCommandError: Error, Equatable, Sendable {
     /// The safety policy refused it; nothing was sent.
     case refused(SafetyVerdict)

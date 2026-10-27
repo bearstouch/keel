@@ -9,23 +9,25 @@ millions of keys, editors for every core type, a redis-cli-style console, an INF
 safety (read-only connections, typed confirmations, bulk delete in batches). It supports Redis 6.0+, Valkey and Dragonfly.
 It is a completely independent app: code is vendored from Trellis at build time, nothing is shared at run time.
 
-Status: **early development.** The package scaffold ([KEEL-001](specs/stories/KEEL-001-package-scaffold-toolchain-and-ci.md))
-is in place: every target builds, the app opens an empty Keel window, and feature modules hold scaffold markers
-(`<Module>Module.swift`) that the first real type in each module replaces. Continue with the next story in sprint order.
+Status: **v1 in release qualification.** All planned v1 features are implemented; the checks still pending
+(manual reviews, hardware, the container matrix in CI) are listed in `docs/project/status.md`.
 
-- Behavior contract: `specs/` — overview, architecture, functional and non-functional requirements,
-  integrations, macOS support and design. The specs win over assumptions; if a page is ambiguous, resolve it in
+- Documentation: `docs/` (MkDocs, nav in `mkdocs.yml`) — overview, architecture, requirements, integrations,
+  macOS support, design, API reference per module, development guides and project status.
+- Behavior contract: `docs/requirements/` (functional and non-functional), `docs/integrations.md`,
+  `docs/macos.md` and `docs/design/index.md`. The docs win over assumptions; if a page is ambiguous, resolve it in
   the page — never invent conflicting behavior. Requirement IDs (`FR-`, `NFR-`, `INT-`, `MAC-`, `DS-`)
   are stable: never renumber or reuse them.
-- Design contract: `specs/08-design.md` plus the saved canvas sources in `specs/design/` (`canvas/` app
+- Design contract: `docs/design/index.md` plus the saved canvas sources in `docs/design/` (`canvas/` app
   screens, `icon/` the Layered keel app icon). UI work is reviewed against them in light and dark.
-- Plan: `specs/stories/README.md` (epics, sprints, definition of done). Work stories in sprint order; one story
-  file per change set, its acceptance boxes checked only when observed.
+- Workflow and definition of done: `docs/development/workflow.md`. Pending manual checks and known gaps live in
+  `docs/project/status.md`; add to it when a check can't be observed yet, remove an item only once observed.
 
 ## Toolchain and commands
 
 Requires Xcode 26 / Swift 6.2 (Swift 6 language mode, strict concurrency), macOS 14+. The app is a Swift
-package (`Package.swift`); there is no `.xcodeproj`. Scripts marked *(later)* arrive with the story named beside them.
+package (`Package.swift`); there is no `.xcodeproj`. CI and releases pin Xcode 26.0.1: builds from Xcode 26.3 and later abort in the
+concurrency runtime (`docs/project/status.md` → Known gaps).
 
 ```sh
 swift build                                    # build (must be warning-free)
@@ -38,7 +40,7 @@ swift run Keel --fixture                       # fresh temporary state folder
 swift run Keel --state-directory /abs/path     # separate dev state directory
 python3 -I scripts/integration-matrix.py [--servers redis-7.4,valkey-9.x] [--filter ServerMatrixTests]   # container matrix (Docker); evidence in .build/integration/
 python3 -I scripts/generate-command-catalog.py --redis DIR VER --valkey DIR VER --check DIR VER   # bundled command catalog from src/commands sources
-python3 -I scripts/generate-design-tokens.py [--check]   # design-token fixture (Tests/Fixtures/Design) from specs/08-design.md
+python3 -I scripts/generate-design-tokens.py [--check]   # design-token fixture (Tests/Fixtures/Design) from docs/design/index.md
 scripts/generate-app-icon.sh [--check | --compile DIR]   # app icon assets (release/icon) from keel-icon.svg; needs rsvg-convert, --compile only actool
 python3 -I scripts/capture-console-goldens.py --redis-server PATH --redis-cli PATH   # console goldens (Tests/Fixtures/Console)
 python3 scripts/bench-browser.py [--quick] [--redis-server PATH] [--skip-launch] [--update-baseline]   # 1M/10M-key benchmarks; evidence in .build/bench/, fails on a missed NFR target or a >20% regression vs release/bench-baseline.json
@@ -103,16 +105,15 @@ Trellis Keychain service, state path, `TRELLIS_` variable, helper name or port 7
 - `public` APIs across module boundaries; `Sendable`/`Equatable` value types in Core.
 - `@MainActor` for UI-facing classes; actors for stores, sessions, connections, persistence and job runners.
 - Error codes are SCREAMING_SNAKE strings shared across modules (`READ_ONLY`, `CONFIRMATION_REQUIRED`, `OUTCOME_UNKNOWN`;
-  see `specs/02-architecture.md#errors`).
-- UI follows `specs/08-design.md`: only its tokens; Inter for interface text, JetBrains Mono for keys, values and
+  see `docs/architecture.md#errors`).
+- UI follows `docs/design/index.md`: only its tokens; Inter for interface text, JetBrains Mono for keys, values and
   the console; Redis red is the accent and never means "warning"; production is the maroon strip with text.
   "Show less, reveal on demand": one toolbar row, one metadata line, secondary actions in `⋯`.
 - Accessibility in every view: labels, roles, selected state, focus visible, text never color-only.
 
 ## Tests
 
-- XCTest, one class per area, descriptive names; the test names listed in each story are the minimum.
-  Review-driven extras go in `*ReviewTests.swift`.
+- XCTest, one class per area, descriptive names. Review-driven extras go in `*ReviewTests.swift`.
 - Assert observable behavior and failure safety (previous state retained on error; blocked commands send nothing).
 - Protocol code is tested against in-memory fake servers first; `KeelIntegrationTests` run pinned containers
   (Redis 6.0/6.2/7.4/8.x, Valkey 7.2/8.x/9.x, Dragonfly, TLS and ACL fixtures, sshd). Never test against a user's servers.
@@ -120,18 +121,19 @@ Trellis Keychain service, state path, `TRELLIS_` variable, helper name or port 7
 
 ## Change workflow
 
-1. Pick the next story from `specs/stories/README.md`; read its spec links. For behavior changes or new features,
-   update the spec page first or alongside the code, adding new requirement IDs with acceptance checks.
-2. Implement with the story's unit tests (observable behavior + failure safety).
+1. Find the requirements the change touches in `docs/`. For behavior changes or new features, update the page
+   first or alongside the code, adding new requirement IDs with acceptance checks.
+2. Implement with unit tests (observable behavior + failure safety).
 3. Format, lint, build, test — all clean.
 4. Launch an independent review agent (fresh eyes: correctness, acceptance gaps, security, data loss, races,
    leaks, test gaps). It fixes crucial issues, then formats, lints, builds and tests again.
-5. Record what was verified and what remains pending; check acceptance boxes in the story only when observed.
-   Update `README.md` / `CHANGELOG.md` if user-visible; refresh `specs/design/` if the design changed.
+5. Record what was verified and what remains pending (`docs/project/status.md`). Update `README.md` /
+   `CHANGELOG.md` if user-visible; refresh `docs/design/` if the design changed; update `docs/api/` when public
+   APIs change.
 6. Commit on `master` with Conventional Commits: `feat(<scope>): …` / `fix(<scope>): …` / `docs(<scope>): …`,
    using a module or area as scope.
 
-Honesty rules: acceptance checkboxes stay unchecked unless actually observed. Manual checks that cannot be
+Honesty rules: acceptance checks count only when actually observed. Manual checks that cannot be
 performed here (VoiceOver, notarization on a clean Mac, Intel hardware, managed cloud Redis) are recorded as
 **pending**, never as passed. Document blockers instead of faking results.
 
@@ -143,7 +145,7 @@ performed here (VoiceOver, notarization on a clean Mac, Intel hardware, managed 
 - Bundle IDs: `com.bearstouch.keel` (installed) and `com.bearstouch.keel.dev` (development builds); separate
   state and instance locks, so both can run at once.
 - Minimum server is Redis 6.0; older servers are refused with `UNSUPPORTED_SERVER`. Cluster and KeyDB support are
-  later versions — don't add partial support without updating the specs.
+  later versions — don't add partial support without updating the requirements in `docs/`.
 - Valkey (7.2 – 9.x) is first-class and release-blocking (INT-01, FR-CN20): never depend on a Redis-only command
   (7.4+/8.x) without a capability probe, and keep the Valkey cases in `KeelIntegrationTests` green.
 - macOS 15+ shows the Local Network prompt for LAN servers; keep `NSLocalNetworkUsageDescription` in `Info.plist`

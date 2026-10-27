@@ -44,7 +44,7 @@ public enum CapabilityStatus: Sendable, Equatable {
     case unavailable(serverError: String?)
 
     public var isAvailable: Bool { self == .available }
-    /// The shared error code for a feature the server lacks (`specs/02-architecture.md#errors`).
+    /// The shared error code for a feature the server lacks (`docs/architecture.md#errors`).
     public static let unavailableCode = "UNSUPPORTED"
 }
 

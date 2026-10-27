@@ -20,6 +20,8 @@ struct AXNode {
     let path: [String]
     /// Roles of the enclosing elements, outermost first.
     let ancestors: [NSAccessibility.Role]
+    /// Everything else the element reports, read only for unnamed controls: what a failure needs to say why.
+    var details = ""
 
     /// What VoiceOver announces as the element's name. A placeholder is not a name: it disappears once text is typed.
     var name: String? {
@@ -29,7 +31,9 @@ struct AXNode {
     /// Everything the element says: its name and its value.
     var spoken: String { [name, value].compactMap { $0 }.joined(separator: " ") }
 
-    var description: String { "\(role?.rawValue ?? "?") in \(path.isEmpty ? "the window" : path.joined(separator: " › "))" }
+    var description: String {
+        "\(role?.rawValue ?? "?") in \(path.isEmpty ? "the window" : path.joined(separator: " › "))\(details.isEmpty ? "" : " [\(details)]")"
+    }
 
     /// Roles a user operates: each needs a name (NFR-AX01).
     static let controlRoles: Set<NSAccessibility.Role> = [
@@ -62,13 +66,14 @@ final class ScreenHost {
         window.makeKeyAndOrderFront(nil)
         // SwiftUI builds its accessibility nodes only for an assistive client; this attribute is how VoiceOver asks.
         NSApp.perform(NSSelectorFromString("accessibilitySetEnhancedUserInterfaceAttribute:"), with: NSNumber(value: true))
-        settle()
     }
 
-    /// Lets SwiftUI lay out, run `.task`/`.onAppear` work and publish model changes.
-    func settle(_ seconds: TimeInterval = 0.15) {
+    /// Lets SwiftUI lay out, run `.task`/`.onAppear` work and publish model changes. It suspends rather than spin the
+    /// run loop: a nested `RunLoop.run` inside a task runs other main-actor jobs within it, which aborts the concurrency
+    /// runtime ("freed pointer was not the last allocation") on newer toolchains.
+    func settle(_ seconds: TimeInterval = 0.15) async {
         host.layoutSubtreeIfNeeded()
-        RunLoop.main.run(until: Date().addingTimeInterval(seconds))
+        try? await Task.sleep(for: .seconds(seconds))
         host.layoutSubtreeIfNeeded()
     }
 
@@ -93,34 +98,35 @@ final class ScreenHost {
 
     /// Where Tab goes, pressed `limit` times from the window's start: each stop named as VoiceOver names the focused
     /// element. Stops repeat once the loop wraps around.
-    func tabStops(limit: Int = 12) -> [String] {
+    func tabStops(limit: Int = 12) async -> [String] {
         window.makeFirstResponder(nil)
-        return (0..<limit).map { _ in
-            pressTab()
-            return focusedName
-        }
+        var stops: [String] = []
+        for _ in 0..<limit { await pressTab(); stops.append(focusedName) }
+        return stops
     }
 
     /// Sends a key press to the window as the keyboard would.
-    func press(keyCode: UInt16, characters: String, modifiers: NSEvent.ModifierFlags = []) {
+    func press(keyCode: UInt16, characters: String, modifiers: NSEvent.ModifierFlags = []) async {
         for type in [NSEvent.EventType.keyDown, .keyUp] {
             let event = NSEvent.keyEvent(
                 with: type, location: .zero, modifierFlags: modifiers, timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
                 context: nil, characters: characters, charactersIgnoringModifiers: characters, isARepeat: false, keyCode: keyCode)
             event.map(window.sendEvent)
         }
-        settle(0.05)
+        await settle(0.05)
     }
 
-    func pressTab(_ modifiers: NSEvent.ModifierFlags = []) { press(keyCode: 48, characters: "\t", modifiers: modifiers) }
-    func pressDown() { press(keyCode: 125, characters: String(UnicodeScalar(NSDownArrowFunctionKey)!)) }
-    func pressUp() { press(keyCode: 126, characters: String(UnicodeScalar(NSUpArrowFunctionKey)!)) }
+    func pressTab(_ modifiers: NSEvent.ModifierFlags = []) async { await press(keyCode: 48, characters: "\t", modifiers: modifiers) }
+    func pressDown() async { await press(keyCode: 125, characters: String(UnicodeScalar(NSDownArrowFunctionKey)!)) }
+    func pressUp() async { await press(keyCode: 126, characters: String(UnicodeScalar(NSUpArrowFunctionKey)!)) }
 
     /// The focused element as VoiceOver names it. SwiftUI's focusable views are key-view proxies without a name or a
     /// focused node of their own, so a responder is named by the outermost named element over the same frame; else by a
     /// node that reports focus, else by its own name.
     var focusedName: String {
-        guard var responder: Any = window.firstResponder, !(responder is NSWindow) else { return "(window)" }
+        guard var responder: Any = window.firstResponder, !(responder is NSWindow) else {
+            return "(window; key \(window.isKeyWindow), main \(window.isMainWindow), app active \(NSApp.isActive), \(NSApp.activationPolicy().rawValue))"
+        }
         if let editor = responder as? NSTextView, editor.isFieldEditor, let field = editor.delegate as? NSTextField { responder = field }
         let all = nodes
         if let view = responder as? NSView, let screen = view.window?.convertToScreen(view.convert(view.bounds, to: nil)),
@@ -167,6 +173,29 @@ final class ScreenHost {
         .titleUIElement: NSSelectorFromString("accessibilityTitleUIElement")
     ]
 
+    /// Class, subrole, role description, identifier, help, value, frame and first children of an element.
+    private static func details(of element: Any, parent: String?) -> String {
+        func text(_ value: Any?) -> String? {
+            guard let value else { return nil }
+            let string = "\(value)"
+            return string.isEmpty ? nil : string
+        }
+        var parts = ["class \(type(of: element))"]
+        let names: [(String, NSAccessibility.Attribute)] = [
+            ("subrole", .subrole), ("roleDescription", .roleDescription), ("identifier", .identifier), ("help", .help), ("value", .value),
+            ("description", .description), ("title", .title)
+        ]
+        for (label, name) in names { if let value = text(attribute(name, of: element)) { parts.append("\(label) \(value)") } }
+        if let frame = frame(of: element) { parts.append("frame \(Int(frame.width))×\(Int(frame.height))") }
+        let children = (attribute(.children, of: element) as? [Any] ?? []).prefix(4).map { child in
+            [attribute(.role, of: child), attribute(.description, of: child), attribute(.title, of: child), attribute(.value, of: child)]
+                .compactMap(text).joined(separator: " ")
+        }
+        if !children.isEmpty { parts.append("children \(children)") }
+        if let parent { parts.append("inside \"\(parent)\"") }
+        return parts.joined(separator: "; ")
+    }
+
     private static func walk(_ element: Any, path: [String], ancestors: [NSAccessibility.Role] = [], depth: Int, into found: inout [AXNode]) {
         guard depth < 60 else { return }
         func string(_ name: NSAccessibility.Attribute) -> String? { attribute(name, of: element) as? String }
@@ -176,7 +205,9 @@ final class ScreenHost {
             placeholder: string(.placeholderValue), value: string(.value), hasTitleElement: attribute(.titleUIElement, of: element) != nil,
             selected: flag(.selected) ?? false, enabled: flag(.enabled) ?? true,
             focused: flag(.focused) ?? false, frame: frame(of: element), path: path, ancestors: ancestors)
-        found.append(node)
+        var described = node
+        if node.isControl && node.name == nil { described.details = details(of: element, parent: path.last) }
+        found.append(described)
         let inner = node.name.map { path + [$0] } ?? path
         let roles = ancestors + [node.role ?? .unknown]
         for child in attribute(.children, of: element) as? [Any] ?? [] { walk(child, path: inner, ancestors: roles, depth: depth + 1, into: &found) }

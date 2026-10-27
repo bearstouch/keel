@@ -105,7 +105,7 @@ public enum RESPError: Error, Equatable, Sendable {
     case protocolError(RESPViolation)
     case limitExceeded(RESPLimit)
 
-    /// The shared error code (`specs/02-architecture.md#errors`).
+    /// The shared error code (`docs/architecture.md#errors`).
     public var code: String {
         switch self {
         case .protocolError: return "PROTOCOL_ERROR"

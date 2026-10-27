@@ -1,7 +1,7 @@
 # TrellisShared provenance
 
-Source code copied from Trellis (Bearstouch) into Keel at build time ([02 Architecture → Reuse from Trellis](../../specs/02-architecture.md#reuse-from-trellis),
-[INT-07](../../specs/06-integrations.md#trellis)). This is source reuse only: Keel never reads Trellis's state, settings
+Source code copied from Trellis (Bearstouch) into Keel at build time ([Architecture → Reuse from Trellis](../../docs/architecture.md#reuse-from-trellis),
+[INT-07](../../docs/integrations.md#trellis)). This is source reuse only: Keel never reads Trellis's state, settings
 or Keychain items at run time and never calls the Trellis CLI.
 
 | | |

@@ -1,0 +1,72 @@
+site_name: Keel
+site_description: Native Redis client for macOS by Bearstouch — contributor documentation
+repo_url: https://github.com/bearstouch/keel
+edit_uri: edit/master/docs/
+docs_dir: docs
+strict: true
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.indexes
+    - content.code.copy
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: red
+      accent: red
+      toggle: { icon: material/brightness-7, name: Switch to dark mode }
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: red
+      accent: red
+      toggle: { icon: material/brightness-4, name: Switch to light mode }
+
+markdown_extensions:
+  - tables
+  - toc: { permalink: true }
+  - admonition
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+# The saved design canvas boards need the canvas runtime to render; they ship as plain files.
+exclude_docs: |
+  design/canvas/*.html
+  design/icon/*.html
+
+nav:
+  - Home: index.md
+  - Product overview: overview.md
+  - Architecture: architecture.md
+  - Requirements:
+      - requirements/index.md
+      - Functional: requirements/functional.md
+      - Non-functional: requirements/non-functional.md
+  - Integrations: integrations.md
+  - macOS support: macos.md
+  - Design:
+      - design/index.md
+      - Design sources: design/sources.md
+  - API reference:
+      - api/index.md
+      - KeelRESP: api/resp.md
+      - KeelSSH: api/ssh.md
+      - KeelCore: api/core.md
+      - KeelUI: api/ui.md
+      - KeelRelease and KeelApp: api/release.md
+  - Development:
+      - Getting started: development/getting-started.md
+      - Development rules: development/rules.md
+      - Testing: development/testing.md
+      - Change workflow: development/workflow.md
+      - Releasing: development/releasing.md
+  - Project status: project/status.md
+
+validation:
+  links:
+    anchors: warn

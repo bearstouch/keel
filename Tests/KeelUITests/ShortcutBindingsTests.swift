@@ -144,6 +144,6 @@ final class ShortcutBindingsTests: XCTestCase {
 
     private static var specURL: URL {
         URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("specs/03-functional-requirements.md")
+            .appendingPathComponent("docs/requirements/functional.md")
     }
 }

@@ -1,8 +1,8 @@
 # Releasing Keel
 
 Release decisions live in [`manifest.json`](manifest.json) and the app's [`Info.plist`](Info.plist); `KeelReleaseTests`
-check both. The rules are [MAC-08 – MAC-11](../specs/07-macos-support.md#distribution-signing-and-updates) and
-[INT-11](../specs/06-integrations.md#updates).
+check both. The rules are [MAC-08 – MAC-11](../docs/macos.md#distribution-signing-and-updates) and
+[INT-11](../docs/integrations.md#updates).
 
 | File | What it is |
 | --- | --- |
