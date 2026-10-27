@@ -208,7 +208,7 @@ final class AuditScreens {
     static let fixtures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Fixtures")
 }
 
-/// AC1 (NFR-AX01, DS-04): every control on every screen has a name VoiceOver reads, and status is words, never only
+/// AC1 (NFR-AX01, DS-04), one test per group of screens: every control on every screen has a name VoiceOver reads, and status is words, never only
 /// a color.
 @MainActor
 final class AccessibilityAuditTests: XCTestCase {
@@ -235,23 +235,31 @@ final class AccessibilityAuditTests: XCTestCase {
         XCTAssertFalse(screen.nodes(saying: text).isEmpty, "\(why): nothing says “\(text)”", file: file, line: line)
     }
 
-    func testEveryControlHasLabel() async throws {
+    func testEmptyAndWelcomeWindowsAreLabeled() async throws {
         let empty = await screens.emptyWindow()
         XCTAssertTrue(empty.unlabeledControls.isEmpty)
         assertSays(empty, RootView.accessibilityLabel, "Empty window")
         let welcome = try await screens.welcomeWindow()
         assertLabeled(welcome, "Welcome screen")
         for text in ["New Connection…", "Paste URL", "Import…", "api-staging, Orange, 127.0.0.1:6379"] { assertSays(welcome, text, "Welcome screen") }
-        welcome.close()
+    }
+
+    func testMainWindowIsLabeledInEveryMode() async throws {
         for mode in TabMode.allCases {
             let (window, _) = try await screens.mainWindow(mode: mode)
             assertLabeled(window, "Main window, \(mode.title)")
             window.close()
         }
+    }
+
+    func testBrowserScreensAreLabeled() async throws {
         assertLabeled(await screens.keyList(), "Key list")
         assertLabeled(await screens.newKeySheet(), "New key sheet")
         assertLabeled(try await screens.bulkDeleteSheet(), "Bulk delete sheet")
         assertLabeled(await screens.typedConfirmationSheet(), "Typed confirmation sheet")
+    }
+
+    func testEditorsAreLabeled() async throws {
         for type in [KeyType.string, .hash, .list, .set, .zset, .stream] {
             let (editor, _) = await screens.editor(type, edited: true)
             assertLabeled(editor, "\(type) editor")
@@ -264,6 +272,9 @@ final class AccessibilityAuditTests: XCTestCase {
         assertLabeled(partial, "Partially loaded string")
         assertLabeled(await screens.renameSheet(), "Rename sheet")
         assertLabeled(await screens.ttlSheet(), "Set TTL sheet")
+    }
+
+    func testInfoAndSheetsAreLabeled() async throws {
         assertLabeled(try await screens.info(), "Info")
         assertLabeled(await screens.connectionSheet(), "Connection sheet")
         assertLabeled(await screens.sshPrompt("app@bastion's password: "), "SSH password prompt")
@@ -271,6 +282,9 @@ final class AccessibilityAuditTests: XCTestCase {
             await screens.sshPrompt("The authenticity of host 'bastion (10.0.0.5)' can't be established.\nED25519 key fingerprint is SHA256:abc.\nAre you sure you want to continue connecting (yes/no/[fingerprint])? "),
             "SSH host key prompt")
         assertLabeled(await screens.commandPalette(), "Command palette")
+    }
+
+    func testSettingsAreLabeled() async {
         assertLabeled(await screens.keyboardSettings(), "Keyboard settings")
         for pane in SettingsDraft.Pane.allCases { assertLabeled(await screens.settings(pane), "\(pane.title) settings") }
     }

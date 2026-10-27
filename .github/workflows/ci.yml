@@ -56,6 +56,12 @@ jobs:
       - name: Test
         run: swift test
 
+      # A test process that crashes prints only the runtime's message; its crash report has the stack.
+      - name: Crash reports
+        if: failure()
+        run: |
+          for f in $(ls -t ~/Library/Logs/DiagnosticReports/xctest*.ips 2>/dev/null | head -2); do echo "== $f"; cat "$f"; done
+
   # NFR-QA03 / KEEL-048: KeelIntegrationTests against the pinned container matrix (Tests/Fixtures/Integration/matrix.json).
   # Apple-silicon runners can't run a Linux VM (no nested virtualization), so this job uses the Intel image with Colima.
   integration:
