@@ -141,7 +141,7 @@ File → **Export Connections…** writes one JSON object (`Keel Connections.jso
 `format` (`"keel-profiles"`), `schemaVersion` (integer, currently 1), `folders` (`id`, `name`, in display order) and
 `profiles` (`id`, optional `folderID`, `settings` — exactly the editor's `ConnectionSettings`, in display order).
 Nothing else: no password, passphrase, client identity, `hasPassword`, `hasTLSSecret`, revisions or collapse
-state. IDs are kept, so a re-import recognises the records it already holds. A saved-SSH-host tunnel keeps the host's
+state. IDs are kept in the file, so a re-import recognises the records it already holds. A saved-SSH-host tunnel keeps the host's
 ID; on another Mac it resolves only if that host exists there. Export is refused while `connections.json` awaits
 recovery or is read-only, so an empty or backup view never overwrites a good export.
 
@@ -157,7 +157,12 @@ three named), and — only when there are collisions — the policy: **Skip exis
 record), **Replace existing** (saved settings, folder and folder name take the file's values; a changed connection or
 weakened transport removes the saved password, as an edit does; the TLS identity stays) or **Keep both** (the
 imported profile is added with a new ID as "<name> (imported)"; folders are shared, never duplicated). New folders go
-after the saved ones, new profiles at the end of their folder, in file order. Import is one store commit: Keychain
+after the saved ones, new profiles at the end of their folder, in file order. An added profile always gets a **new
+ID** and records the file's ID as `importedFrom` in `connections.json`: the `Keel Connection` / `Keel TLS` items are
+keyed by profile ID and shared by every Keel copy on the Mac (installed, development, `--state-directory`,
+`--fixture`), so keeping the file's ID would let deleting or editing the import remove or overwrite the source copy's
+secrets. A record collides with a saved profile of its ID or one imported under it, so re-importing the same file still
+matches; folders keep their IDs (no secret is keyed by them). Import is one store commit: Keychain
 removals are staged and undone if the metadata write fails, so a failure leaves every profile, folder and Keychain
 item as it was and the sheet stays open with the reason. An import that changes nothing (Skip on a re-import)
 writes nothing and keeps the store revision.

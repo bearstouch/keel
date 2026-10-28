@@ -2,7 +2,8 @@ import Foundation
 
 /// A profiles-and-folders export file (FR-CN14, INT-12): versioned JSON with only the editor's settings. No secret
 /// and no secret flag (`hasPassword`, `hasTLSSecret`) is ever part of it; revisions are store-local and stay out too.
-/// IDs are kept, so a re-import recognises the records it already has.
+/// IDs are kept, so a re-import recognises the records it already has; an imported profile is saved under a new ID
+/// and remembers the file's (`ConnectionProfile.importedFrom`).
 public struct ProfileExport: Equatable, Sendable {
     public static let format = "keel-profiles"
     public static let currentVersion = 1
@@ -50,6 +51,11 @@ public struct ProfileExport: Equatable, Sendable {
             }
         }
         return self
+    }
+
+    /// The saved profile an imported record with `id` collides with: the one with that ID, else one imported under it.
+    static func match(_ id: UUID, in profiles: [ConnectionProfile]) -> Int? {
+        profiles.firstIndex { $0.id == id } ?? profiles.firstIndex { $0.importedFrom == id }
     }
 
     // MARK: File format
@@ -148,10 +154,10 @@ extension ProfileStore {
     public func export() -> ProfileExport { ProfileExport(document) }
 
     public func previewImport(_ export: ProfileExport) -> ProfileImportPreview {
-        let profiles = Dictionary(uniqueKeysWithValues: document.profiles.map { ($0.id, $0.settings.name) })
+        let profiles = document.profiles
         let folders = Dictionary(uniqueKeysWithValues: document.folders.map { ($0.id, $0.name) })
         return ProfileImportPreview(
-            profileCount: export.profiles.count, folderCount: export.folders.count, conflictingProfiles: export.profiles.compactMap { profiles[$0.id] },
+            profileCount: export.profiles.count, folderCount: export.folders.count, conflictingProfiles: export.profiles.compactMap { ProfileExport.match($0.id, in: profiles).map { profiles[$0].settings.name } },
             conflictingFolders: export.folders.compactMap { folders[$0.id] })
     }
 }

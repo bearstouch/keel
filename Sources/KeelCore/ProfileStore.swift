@@ -296,7 +296,9 @@ public actor ProfileStore {
     // MARK: Import (FR-CN14)
 
     /// Applies an export in one commit, so a failure anywhere leaves every profile, folder and Keychain item as it
-    /// was. Records are matched by ID; `policy` decides what a match does. New folders go after the saved ones and
+    /// was. Records are matched by ID (a profile also by the ID it was imported under); `policy` decides what a match
+    /// does. An added profile always gets a new ID: the file's ID may be a profile of another Keel copy (installed,
+    /// development, another state folder), and the Keychain items keyed by it are shared by all of them. New folders go after the saved ones and
     /// new profiles at the end of their folder, in file order. An import that changes nothing writes nothing.
     public func importProfiles(_ export: ProfileExport, policy: ProfileImportPolicy) async throws(ProfileStoreError) -> ProfileImportResult {
         await acquire(); defer { release() }
@@ -314,8 +316,9 @@ public actor ProfileStore {
             if policy == .replace, next.folders[index].name != folder.name { next.folders[index].name = folder.name; next.folders[index].revision = next.revision; result.foldersRenamed += 1 }
         }
         for imported in export.profiles {
-            guard let index = next.profiles.firstIndex(where: { $0.id == imported.id }) else {
-                place(ConnectionProfile(id: imported.id, settings: imported.settings, folderID: imported.folderID, revision: next.revision)); result.added += 1; continue
+            guard let index = ProfileExport.match(imported.id, in: next.profiles) else {
+                place(ConnectionProfile(id: makeID(), settings: imported.settings, folderID: imported.folderID, revision: next.revision, importedFrom: imported.id))
+                result.added += 1; continue
             }
             switch policy {
             case .skip: result.skipped += 1

@@ -419,7 +419,8 @@ through the data path (`Result<InfoReport, KeyIndexError>`). `InfoOverview(repor
   `ProfileStoreError.invalid(ProfileField)`; limits `nameLimit = 128`, `databaseRange = 0...65_535`,
   `timeoutRange = 100...600_000` ms. `connectionKey` (host, port, username, TLS server name, tunnel) defines "same
   server"; `weakensTransport(from:)` detects a TLS/tunnel downgrade.
-- `ConnectionProfile`: `id`, `settings`, `folderID`, `revision`, `connectionRevision`, `hasPassword`, `hasTLSSecret`.
+- `ConnectionProfile`: `id`, `settings`, `folderID`, `revision`, `connectionRevision`, `hasPassword`, `hasTLSSecret`,
+  `importedFrom` (optional: the export-file ID an imported profile was added under; collisions match it too).
 - `ProfileFolder`, `ProfileLabel` (`LabelColor`, name ≤ 40, `treatAsProduction`), `ConnectionsDocument`
   (`connections.json`, `currentVersion = 1`).
 

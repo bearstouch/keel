@@ -183,10 +183,17 @@ public struct ConnectionProfile: Codable, Equatable, Identifiable, Sendable {
     public var connectionRevision: UInt64
     public var hasPassword: Bool
     public var hasTLSSecret: Bool
+    /// The export-file ID this profile was imported under (FR-CN14). Imports get a fresh `id`, because the Keychain
+    /// items keyed by it are shared by every Keel copy; this keeps a re-import of the same file recognising it.
+    /// Optional, so older files load.
+    public var importedFrom: UUID?
 
-    public init(id: UUID, settings: ConnectionSettings, folderID: UUID? = nil, revision: UInt64, connectionRevision: UInt64? = nil, hasPassword: Bool = false, hasTLSSecret: Bool = false) {
+    public init(
+        id: UUID, settings: ConnectionSettings, folderID: UUID? = nil, revision: UInt64, connectionRevision: UInt64? = nil, hasPassword: Bool = false, hasTLSSecret: Bool = false,
+        importedFrom: UUID? = nil
+    ) {
         self.id = id; self.settings = settings; self.folderID = folderID; self.revision = revision
-        self.connectionRevision = connectionRevision ?? revision; self.hasPassword = hasPassword; self.hasTLSSecret = hasTLSSecret
+        self.connectionRevision = connectionRevision ?? revision; self.hasPassword = hasPassword; self.hasTLSSecret = hasTLSSecret; self.importedFrom = importedFrom
     }
 }
 
