@@ -375,6 +375,12 @@ struct TabContent: View {
     let connect: () -> Void
 
     var body: some View {
+        // One identity per tab: the console and key list are model-owned AppKit views, so a tab switch that keeps the
+        // status and mode must still disappear one tab's views (sheets, `.task`, responders) and appear the other's.
+        Group { content }.id(session.id)
+    }
+
+    @ViewBuilder private var content: some View {
         switch session.status {
         case .connected:
             switch tab.mode {
@@ -383,8 +389,7 @@ struct TabContent: View {
             case .console:
                 if let console = session.console { ConsolePane(console: console, session: session) } else { Color(nsColor: ConsoleTheme.background).onAppear { session.openConsole() } }
             case .info:
-                // One identity per tab: switching between two tabs in Info mode must disappear one model and appear the other.
-                Group { if let info = session.info { InfoPane(model: info) } else { Tokens.bg.onAppear { session.openInfo(browse: browse) } } }.id(session.id)
+                if let info = session.info { InfoPane(model: info) } else { Tokens.bg.onAppear { session.openInfo(browse: browse) } }
             }
         case .connecting:
             VStack(spacing: 10) {

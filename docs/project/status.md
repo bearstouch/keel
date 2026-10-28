@@ -44,6 +44,9 @@ needs a person, hardware or an environment that wasn't available.
 
 - Malformed connection URLs show an inline error and change nothing.
 - Closing a tab with unsaved edits asks first.
+- Switching between two connected tabs in Console mode, and moving one to another window, keeps keyboard focus in
+  the selected tab's console and its typed-confirmation sheets bound to that tab (the view swap is tested in
+  `TabContentIdentityReviewTests`).
 - A key such as `\xff\x00a` displays escaped and can be opened, renamed and deleted.
 - Capability probe results are cached per session and drive editor fallbacks (for example `ZRANGEBYSCORE` on 6.0).
 - The CA-change prompt shows both fingerprints on screen (the core flow is tested in `KnownCATests`).

@@ -190,13 +190,43 @@ final class KeyListRowView: NSTableRowView {
     override var interiorBackgroundStyle: NSView.BackgroundStyle { .normal }
 }
 
+/// Holds a model-owned view (a tab's key list or console) as its only subview. The models keep their views for the
+/// tab's life, so a representable that SwiftUI reuses for another tab's model must swap the view rather than keep
+/// showing the first tab's; and a tab moved to another window takes its view along without the old window's
+/// container removing it later.
+final class ModelViewContainer: NSView {
+    private(set) weak var hosted: NSView?
+
+    /// Shows `view` filling the container; false when it already does.
+    @discardableResult func show(_ view: NSView) -> Bool {
+        guard hosted !== view || view.superview !== self else { return false }
+        release()
+        view.frame = bounds; view.autoresizingMask = [.width, .height]
+        addSubview(view)  // Takes it from any other window's container.
+        hosted = view
+        return true
+    }
+
+    /// Lets the hosted view go, unless another container has taken it since.
+    func release() {
+        if let hosted, hosted.superview === self { hosted.removeFromSuperview() }
+        hosted = nil
+    }
+}
+
 /// Hosts the data source's scroll view in SwiftUI; the data source swaps its document view on ⇧⌘T.
 struct KeyListHost: NSViewRepresentable {
     let dataSource: KeyListDataSource
 
-    func makeNSView(context: Context) -> NSScrollView { dataSource.scrollView }
+    func makeNSView(context: Context) -> ModelViewContainer {
+        let container = ModelViewContainer()
+        container.show(dataSource.scrollView)
+        return container
+    }
 
-    func updateNSView(_ view: NSScrollView, context: Context) {}
+    func updateNSView(_ container: ModelViewContainer, context: Context) { container.show(dataSource.scrollView) }
+
+    static func dismantleNSView(_ container: ModelViewContainer, coordinator: ()) { container.release() }
 }
 
 /// The key list with the filter field above it and its one-line footer ("250,000 of 1.2M keys loaded · Load more").
