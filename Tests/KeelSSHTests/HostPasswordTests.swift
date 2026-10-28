@@ -6,16 +6,20 @@ final class MemoryHostSecrets: HostSecretStore, @unchecked Sendable {
     private let lock = NSLock()
     private var values: [UUID: Data] = [:]
     var failStores = false
+    /// A locked or denied Keychain: reads throw.
+    var failReads = false
+    var stores = 0
     var reads = 0
     subscript(id: UUID) -> Data? { lock.withLock { values[id] } }
     func store(_ password: Data, hostID: UUID) throws {
         try lock.withLock {
             if failStores { throw HostSecretError.unavailable(errSecAuthFailed) }
-            values[hostID] = password
+            stores += 1; values[hostID] = password
         }
     }
     func read(hostID: UUID) throws -> Data? {
-        lock.withLock {
+        try lock.withLock {
+            if failReads { throw HostSecretError.unavailable(errSecInteractionNotAllowed) }
             reads += 1; return values[hostID]
         }
     }
@@ -111,6 +115,41 @@ final class HostPasswordTests: XCTestCase {
             XCTFail("Write failure ignored")
         } catch { XCTAssertEqual(error, .io(EIO)) }
         XCTAssertEqual(secrets[host.id], secret, "The previous password is restored")
+        let hosts = await library.hosts
+        XCTAssertEqual(hosts, [saved])
+    }
+
+    /// An unreadable previous password (Keychain locked or denied) would leave a failed commit nothing to restore, so
+    /// the save stops before anything is written.
+    func testUnreadablePreviousPasswordAbortsTheSave() async throws {
+        let (library, storage, secrets, host) = try await library()
+        let saved = try await library.setPassword(id: host.id, .save(secret, requiresUserPresence: false), expectedRevision: host.revision)
+        let (stores, writes) = (secrets.stores, storage.writeCount)
+        secrets.failReads = true
+        storage.failWrites = true
+        do {
+            _ = try await library.setPassword(id: host.id, .save(Data("new".utf8), requiresUserPresence: false), expectedRevision: saved.revision)
+            XCTFail("Unreadable previous password ignored")
+        } catch { XCTAssertEqual(error, .secretStore) }
+        XCTAssertEqual(secrets.stores, stores, "Nothing reached the Keychain")
+        XCTAssertEqual(secrets[host.id], secret)
+        XCTAssertEqual(storage.writeCount, writes)
+        let hosts = await library.hosts
+        XCTAssertEqual(hosts, [saved], "The connection revision is unchanged")
+    }
+
+    /// Metadata says a password is saved but its item is gone: a failed commit removes the new one again instead of
+    /// leaving it bound to the old connection revision.
+    func testMetadataWriteFailureWithMissingItemLeavesNoPassword() async throws {
+        let (library, storage, secrets, host) = try await library()
+        let saved = try await library.setPassword(id: host.id, .save(secret, requiresUserPresence: false), expectedRevision: host.revision)
+        secrets.remove(hostID: host.id)
+        storage.failWrites = true
+        do {
+            _ = try await library.setPassword(id: host.id, .save(Data("new".utf8), requiresUserPresence: false), expectedRevision: saved.revision)
+            XCTFail("Write failure ignored")
+        } catch { XCTAssertEqual(error, .io(EIO)) }
+        XCTAssertNil(secrets[host.id])
         let hosts = await library.hosts
         XCTAssertEqual(hosts, [saved])
     }

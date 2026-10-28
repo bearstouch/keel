@@ -9,7 +9,7 @@ public enum HostLibraryError: Error, Equatable, Sendable {
     /// The stored file is unreadable or newer; it is preserved, not overwritten.
     case readOnly
     case io(Int32)
-    /// The Keychain refused the password; host metadata was left unchanged.
+    /// The Keychain refused the password, or the saved one it replaces couldn't be read; nothing was changed.
     case secretStore
     /// Touch ID or the Mac password was declined; nothing changed.
     case notAuthorized
@@ -289,7 +289,9 @@ public actor HostLibrary {
             guard (try? HostPassword.validated(String(decoding: password, as: UTF8.self))) == password else {
                 throw .invalid(HostValidationError(fields: [.password: "Use up to \(HostPassword.byteLimit) bytes without line breaks."]))
             }
-            if current.savedPassword != nil { previous = try? secrets.read(hostID: id) }
+            // The old value must be known before it is replaced, or a failed commit couldn't put it back: a locked or
+            // denied Keychain aborts the save with nothing written.
+            if current.savedPassword != nil { do { previous = try secrets.read(hostID: id) } catch { throw .secretStore } }
             do { try secrets.store(password, hostID: id) } catch { throw .secretStore }
             // A new or different password changes how the host authenticates; approvals bind to it.
             host.savedPassword = SavedPasswordPolicy(requiresUserPresence: requiresUserPresence); host.connectionRevision = host.revision
@@ -306,9 +308,8 @@ public actor HostLibrary {
         do {
             try commit(next)
         } catch {
-            if case .save = change {
-                if let previous { try? secrets.store(previous, hostID: id) } else if current.savedPassword == nil { secrets.remove(hostID: id) }
-            }
+            // No previous value (none saved, or a saved one already missing from the Keychain) means no item before.
+            if case .save = change { if let previous { try? secrets.store(previous, hostID: id) } else { secrets.remove(hostID: id) } }
             throw error
         }
         if change == .remove { secrets.remove(hostID: id) }
