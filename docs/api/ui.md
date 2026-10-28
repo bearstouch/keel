@@ -173,7 +173,11 @@ public nonisolated static func accessibilityLabel(name: String, labelName: Strin
   KeelCore `ConnectionSettings` (throws `ProfileStoreError`); `invalidField` / `canSave` drive the Save button;
   `test()` runs a `ConnectionTesting`; turning read-only off on a production label asks first
   (`confirmingWritableProduction`). Saving goes through the `ProfileSaving` protocol (`ProfileStore` conforms);
-  connection-affecting edits flag `savedPasswordWillBeRemoved`. The finished state is `outcome`.
+  connection-affecting edits flag `savedPasswordWillBeRemoved`. The finished state is `outcome`. With a
+  `TLSIdentityImporting` (`TLSIdentityImporter` conforms) the TLS row imports a client certificate:
+  `importIdentity(from:)`, `identityPassphrasePrompt` / `submitIdentityPassphrase()` / `cancelIdentityPassphrase()`,
+  `removeIdentity()`, `clientIdentity` / `clientIdentitySubject`, `loadIdentitySubject()`; Save passes the import to
+  the store, Cancel discards it.
 - `ConnectionSheetPresenter` (`@MainActor`): builds one model at a time (`newConnection(folderID:)`,
   `newConnection(pastingURL:)`, `edit(_:)`) and exposes `model` for the `.connectionSheet(_:)` view modifier.
 - `ConnectionSheet` (`public struct View`): the sheet itself; `SheetTextField`, `FieldStyle` and `SheetButtonStyle`

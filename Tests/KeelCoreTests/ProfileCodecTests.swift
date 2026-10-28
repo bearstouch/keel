@@ -13,7 +13,7 @@ final class ProfileCodecTests: XCTestCase {
         var settings = ConnectionSettings(name: "payments-prod", label: .red, host: "redis.internal", username: "app", tls: TLSSettings(serverName: "redis.internal", caFile: "/etc/ca.pem"))
         settings.tunnel = .inline(destination: "bastion", user: "ops", port: 2222, identityFile: "/Users/me/.ssh/id_ed25519")
         let profile = try await store.create(settings, password: Data(password.utf8))
-        _ = try await store.setTLSSecret(profile.id, Data(tlsPassphrase.utf8), expectedRevision: profile.revision)
+        _ = try await store.update(profile.id, settings, identity: .set(.fake(passphrase: tlsPassphrase)), expectedRevision: profile.revision)
         let copy = try await store.duplicate(profile.id)
         var renamed = copy.settings; renamed.name = "copy"
         _ = try await store.update(copy.id, renamed, password: .set(Data("second-Secret-55".utf8)), expectedRevision: copy.revision)

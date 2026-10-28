@@ -275,8 +275,10 @@ final class HostEditorModelTests: XCTestCase {
 
 /// A profile store the host tests never reach.
 private struct NoStore: ProfileSaving {
-    func create(_ settings: ConnectionSettings, folderID: UUID?, password: Data?) async throws(ProfileStoreError) -> ConnectionProfile { throw .readOnly }
-    func update(_ id: UUID, _ settings: ConnectionSettings, password: PasswordChange, expectedRevision: UInt64) async throws(ProfileStoreError) -> ConnectionProfile {
+    func create(_ settings: ConnectionSettings, folderID: UUID?, password: Data?, identity: ImportedTLSIdentity?) async throws(ProfileStoreError) -> ConnectionProfile {
+        throw .readOnly
+    }
+    func update(_ id: UUID, _ settings: ConnectionSettings, password: PasswordChange, identity: TLSIdentityChange, expectedRevision: UInt64) async throws(ProfileStoreError) -> ConnectionProfile {
         throw .readOnly
     }
     func password(profileID: UUID, connectionRevision: UInt64) async throws(ProfileStoreError) -> Data? { nil }

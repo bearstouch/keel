@@ -13,14 +13,17 @@ public final class ConnectionSheetPresenter: ObservableObject {
     /// Keel's saved SSH hosts; nil leaves the tunnel section without the saved-host option.
     private let hostLibrary: HostLibrary?
     private let discover: HostPickerModel.Discover
+    /// Client-certificate import for the TLS row; nil hides it.
+    private let identities: (any TLSIdentityImporting)?
     private var finished: AnyCancellable?
     /// Set while a sheet is being prepared, so a second ⌘N during the awaits can't build (and orphan) another one.
     private var presenting = false
 
     public init(
-        store: ProfileStore, tester: any ConnectionTesting, hostLibrary: HostLibrary? = nil, discover: @escaping HostPickerModel.Discover = HostPickerModel.discoverUserConfig
+        store: ProfileStore, tester: any ConnectionTesting, hostLibrary: HostLibrary? = nil, discover: @escaping HostPickerModel.Discover = HostPickerModel.discoverUserConfig,
+        identities: (any TLSIdentityImporting)? = nil
     ) {
-        self.store = store; self.tester = tester; self.hostLibrary = hostLibrary; self.discover = discover
+        self.store = store; self.tester = tester; self.hostLibrary = hostLibrary; self.discover = discover; self.identities = identities
     }
 
     public func newConnection(folderID: UUID? = nil) { Task { await present(.create(folderID: folderID)) } }
@@ -56,7 +59,7 @@ public final class ConnectionSheetPresenter: ObservableObject {
         // Fresh per sheet: ~/.ssh/config and hosts.json are read again each time the sheet opens.
         let hosts = hostLibrary.map { HostPickerModel(library: $0, discover: discover) }
         await hosts?.reload()
-        let sheet = ConnectionSheetModel(mode: mode, labels: labels, hosts: hosts, tester: tester, store: store)
+        let sheet = ConnectionSheetModel(mode: mode, labels: labels, hosts: hosts, tester: tester, store: store, identities: identities)
         finished = sheet.$outcome.compactMap { $0 }.sink { [weak self] _ in
             self?.model = nil; self?.finished = nil
         }

@@ -5,12 +5,24 @@ import KeelSSH
 
 /// Where the New Connection sheet saves: `ProfileStore` in the app, a fake in tests.
 public protocol ProfileSaving: Sendable {
-    func create(_ settings: ConnectionSettings, folderID: UUID?, password: Data?) async throws(ProfileStoreError) -> ConnectionProfile
-    func update(_ id: UUID, _ settings: ConnectionSettings, password: PasswordChange, expectedRevision: UInt64) async throws(ProfileStoreError) -> ConnectionProfile
+    func create(_ settings: ConnectionSettings, folderID: UUID?, password: Data?, identity: ImportedTLSIdentity?) async throws(ProfileStoreError) -> ConnectionProfile
+    func update(_ id: UUID, _ settings: ConnectionSettings, password: PasswordChange, identity: TLSIdentityChange, expectedRevision: UInt64) async throws(ProfileStoreError)
+        -> ConnectionProfile
     func password(profileID: UUID, connectionRevision: UInt64) async throws(ProfileStoreError) -> Data?
 }
 
 extension ProfileStore: ProfileSaving {}
+
+/// Client-certificate import for the TLS row (FR-CN03, INT-05): `TLSIdentityImporter` in the app, a fake in tests.
+/// Every call may touch the Keychain, so the sheet makes them off the main actor.
+public protocol TLSIdentityImporting: Sendable {
+    func importPKCS12(_ data: Data, passphrase: String) throws(TLSIdentityImportError) -> ImportedTLSIdentity
+    func importPEM(certificate: Data, privateKey: Data, passphrase: String?) throws(TLSIdentityImportError) -> ImportedTLSIdentity
+    func discard(_ identity: ImportedTLSIdentity)
+    func subject(profileID: UUID) -> String?
+}
+
+extension TLSIdentityImporter: TLSIdentityImporting {}
 
 /// The New / Edit Connection sheet's state (FR-CN19, FR-CN08, FR-CN10). Fields are plain text until Save or Test turns
 /// them into `ConnectionSettings`, so a half-typed port never corrupts anything. Only `save()` writes: the password
@@ -42,6 +54,20 @@ public final class ConnectionSheetModel: ObservableObject {
     public enum Outcome: Equatable {
         case saved(ConnectionProfile)
         case cancelled
+    }
+
+    /// The TLS row's client certificate (FR-CN03).
+    public enum ClientIdentity: Equatable {
+        case none
+        /// The profile's saved identity; `subject` is nil until it loads, or when it left the Keychain.
+        case saved(subject: String?)
+        /// Imported in this sheet: saved with the profile on Save, discarded on Cancel.
+        case imported(ImportedTLSIdentity)
+    }
+
+    /// What the passphrase prompt asks for.
+    public enum IdentityPassphrasePrompt: Equatable, Sendable {
+        case pkcs12, privateKey
     }
 
     public let mode: Mode
@@ -82,6 +108,14 @@ public final class ConnectionSheetModel: ObservableObject {
     @Published public var reconnectOnLaunch = false
     /// Edit only: Save removes the saved password.
     @Published public var removeSavedPassword = false
+    @Published public private(set) var clientIdentity: ClientIdentity = .none
+    /// Set while an import waits for a passphrase: a `.p12` always asks, a PEM key when it is encrypted.
+    @Published public private(set) var identityPassphrasePrompt: IdentityPassphrasePrompt?
+    /// Never persisted or logged; cleared after each attempt.
+    @Published public var identityPassphrase = ""
+    /// Why the last import failed, in words.
+    @Published public private(set) var identityMessage: String?
+    @Published public private(set) var isImportingIdentity = false
 
     @Published public var expanded: Set<Section> = []
 
@@ -102,6 +136,12 @@ public final class ConnectionSheetModel: ObservableObject {
 
     private let tester: any ConnectionTesting
     private let store: any ProfileSaving
+    /// nil (tests, previews) hides the client-certificate import.
+    private let identities: (any TLSIdentityImporting)?
+    /// The files of an import waiting for its passphrase; dropped once it finishes or is cancelled.
+    private var pendingIdentityFiles: IdentityFiles?
+    /// Discards run in order, off the main actor.
+    private var identityWork: Task<Void, Never>?
     private var testTask: Task<Void, Never>?
     /// The URL field's previous text, to tell a paste from typing.
     private var lastURLText = ""
@@ -111,9 +151,15 @@ public final class ConnectionSheetModel: ObservableObject {
     /// Bumped by every host choice, so an alias import that finishes late never overrides a later choice.
     private(set) var hostChoice = 0
 
-    public init(mode: Mode, labels: [ProfileLabel] = ProfileLabel.defaults, hosts: HostPickerModel? = nil, tester: any ConnectionTesting, store: any ProfileSaving) {
-        self.mode = mode; self.labels = labels; self.hosts = hosts; self.tester = tester; self.store = store
-        if case .edit(let profile) = mode { load(profile.settings) }
+    public init(
+        mode: Mode, labels: [ProfileLabel] = ProfileLabel.defaults, hosts: HostPickerModel? = nil, tester: any ConnectionTesting, store: any ProfileSaving,
+        identities: (any TLSIdentityImporting)? = nil
+    ) {
+        self.mode = mode; self.labels = labels; self.hosts = hosts; self.tester = tester; self.store = store; self.identities = identities
+        if case .edit(let profile) = mode {
+            load(profile.settings)
+            if profile.hasTLSSecret { clientIdentity = .saved(subject: nil) }
+        }
         // The collapsed tunnel row names the chosen host, so the sheet redraws when the host list changes.
         hostChanges = hosts?.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
     }
@@ -335,6 +381,145 @@ public final class ConnectionSheetModel: ObservableObject {
         return true
     }
 
+    // MARK: Client certificate (FR-CN03, INT-05)
+
+    public var canImportIdentity: Bool { identities != nil }
+    public var hasClientIdentity: Bool { clientIdentity != .none }
+
+    /// The row's text: the certificate's subject, or why there is none to show.
+    public var clientIdentitySubject: String? {
+        switch clientIdentity {
+        case .none: nil
+        case .saved(let subject): subject ?? "Saved in Keychain"
+        case .imported(let identity): identity.summary
+        }
+    }
+
+    /// Reads the saved identity's subject from the Keychain, off the main actor.
+    public func loadIdentitySubject() async {
+        guard case .saved(nil) = clientIdentity, case .edit(let profile) = mode, let identities else { return }
+        let subject = await Task.detached(priority: .userInitiated) { identities.subject(profileID: profile.id) }.value
+        if case .saved = clientIdentity { clientIdentity = .saved(subject: subject ?? "Not found in the Keychain") }
+    }
+
+    /// The files the open panel returned: one `.p12`/`.pfx`, one PEM holding the certificate and its key, or a
+    /// certificate and a key file. They are read off the main actor; a `.p12` then asks for its passphrase.
+    public func importIdentity(from urls: [URL]) async {
+        guard identities != nil, !isImportingIdentity, outcome == nil else { return }
+        identityMessage = nil
+        isImportingIdentity = true
+        let read = await Task.detached(priority: .userInitiated) { Self.identityFiles(urls) }.value
+        isImportingIdentity = false
+        switch read {
+        case .failure(let problem): identityMessage = problem.message
+        case .success(let files):
+            pendingIdentityFiles = files
+            if case .pkcs12 = files { identityPassphrase = ""; identityPassphrasePrompt = .pkcs12 } else { await runImport(passphrase: nil) }
+        }
+    }
+
+    /// The passphrase prompt's Import.
+    public func submitIdentityPassphrase() async {
+        let passphrase = identityPassphrase
+        identityPassphrase = ""
+        await runImport(passphrase: passphrase)
+    }
+
+    public func cancelIdentityPassphrase() {
+        pendingIdentityFiles = nil; identityPassphrasePrompt = nil; identityPassphrase = ""
+    }
+
+    /// The row's Remove: Save removes the saved identity; one imported in this sheet is discarded now.
+    public func removeIdentity() {
+        if case .imported(let identity) = clientIdentity { discard(identity) }
+        clientIdentity = .none; identityMessage = nil
+    }
+
+    /// Awaits the discards started so far; for tests.
+    public func waitForIdentityWork() async { await identityWork?.value }
+
+    private func runImport(passphrase: String?) async {
+        guard let identities, let files = pendingIdentityFiles, !isImportingIdentity else { return }
+        isImportingIdentity = true; identityMessage = nil
+        let result = await Task.detached(priority: .userInitiated) { () -> Result<ImportedTLSIdentity, TLSIdentityImportError> in
+            do throws(TLSIdentityImportError) {
+                switch files {
+                case .pkcs12(let data): return .success(try identities.importPKCS12(data, passphrase: passphrase ?? ""))
+                case .pem(let certificate, let key): return .success(try identities.importPEM(certificate: certificate, privateKey: key, passphrase: passphrase))
+                }
+            } catch { return .failure(error) }
+        }.value
+        isImportingIdentity = false
+        switch result {
+        case .success(var identity):
+            cancelIdentityPassphrase()
+            // Closed while the import ran: nothing will save it.
+            guard outcome == nil else { discard(identity); return }
+            if case .imported(let previous) = clientIdentity {
+                // The same identity again still belongs to the earlier import, which may have added it.
+                if previous.reference == identity.reference { identity.isNew = identity.isNew || previous.isNew } else { discard(previous) }
+            }
+            clientIdentity = .imported(identity)
+        case .failure(.passphraseRequired):
+            identityPassphrasePrompt = .privateKey
+        case .failure(.wrongPassphrase):
+            // The prompt stays up for another try.
+            identityPassphrasePrompt = identityPassphrasePrompt ?? .privateKey; identityMessage = TLSIdentityImportError.wrongPassphrase.message
+        case .failure(let error):
+            cancelIdentityPassphrase(); identityMessage = error.message
+        }
+    }
+
+    private func discard(_ identity: ImportedTLSIdentity) {
+        guard let identities else { return }
+        let previous = identityWork
+        identityWork = Task.detached(priority: .utility) {
+            await previous?.value
+            identities.discard(identity)
+        }
+    }
+
+    /// What the store does with the identity on Save.
+    private var identityChange: TLSIdentityChange {
+        switch clientIdentity {
+        case .imported(let identity): .set(identity)
+        case .saved: .keep
+        case .none: if case .edit(let profile) = mode, profile.hasTLSSecret { .remove } else { .keep }
+        }
+    }
+
+    enum IdentityFiles: Sendable {
+        case pkcs12(Data)
+        case pem(certificate: Data, key: Data)
+    }
+
+    struct IdentityFileProblem: Error, Equatable {
+        let message: String
+    }
+
+    /// At most this much is read from each file; certificates and keys are a few KiB.
+    nonisolated static let identityFileByteLimit = 1_048_576
+
+    nonisolated static func identityFiles(_ urls: [URL]) -> Result<IdentityFiles, IdentityFileProblem> {
+        let choose = IdentityFileProblem(message: "Choose a .p12 file, or a certificate and its private key.")
+        guard (1...2).contains(urls.count) else { return .failure(choose) }
+        var contents: [Data] = []
+        for url in urls {
+            let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+            guard values?.isRegularFile == true, let size = values?.fileSize, size <= identityFileByteLimit, let data = try? Data(contentsOf: url), data.count <= identityFileByteLimit else {
+                return .failure(IdentityFileProblem(message: "“\(url.lastPathComponent)” couldn't be read, or is larger than 1 MB."))
+            }
+            contents.append(data)
+        }
+        let pkcs12 = urls.map { ["p12", "pfx"].contains($0.pathExtension.lowercased()) }
+        if pkcs12.contains(true) { return urls.count == 1 ? .success(.pkcs12(contents[0])) : .failure(choose) }
+        // One file holds both; of two, the certificate is the one with a CERTIFICATE block.
+        guard contents.count == 2 else { return .success(.pem(certificate: contents[0], key: contents[0])) }
+        let marker = Data("-----BEGIN CERTIFICATE-----".utf8)
+        let certificate = contents.firstIndex { $0.range(of: marker) != nil } ?? (urls[0].pathExtension.lowercased() == "key" ? 1 : 0)
+        return .success(.pem(certificate: contents[certificate], key: contents[1 - certificate]))
+    }
+
     // MARK: Save and Cancel
 
     /// Creates or updates the profile; the password goes to the Keychain only here, through the store.
@@ -352,11 +537,15 @@ public final class ConnectionSheetModel: ObservableObject {
         do throws(ProfileStoreError) {
             let profile: ConnectionProfile
             switch mode {
-            case .create(let folderID): profile = try await store.create(settings, folderID: folderID, password: typed)
+            case .create(let folderID):
+                let identity: ImportedTLSIdentity? = if case .set(let identity) = identityChange { identity } else { nil }
+                profile = try await store.create(settings, folderID: folderID, password: typed, identity: identity)
             case .edit(let current):
                 let change: PasswordChange = typed.map { .set($0) } ?? (removeSavedPassword ? .remove : .keep)
-                profile = try await store.update(current.id, settings, password: change, expectedRevision: current.revision)
+                profile = try await store.update(current.id, settings, password: change, identity: identityChange, expectedRevision: current.revision)
             }
+            // The store owns the imported identity now; finishing must not discard it.
+            if case .imported(let identity) = clientIdentity { clientIdentity = .saved(subject: identity.summary) }
             finish(.saved(profile))
             return profile
         } catch {
@@ -365,12 +554,14 @@ public final class ConnectionSheetModel: ObservableObject {
     }
 
     /// Discards every change: a running test is cancelled and the typed or pasted password is wiped. Nothing was
-    /// written, so nothing has to be undone.
+    /// saved; a client identity imported in this sheet leaves the Keychain again.
     public func cancel() { finish(.cancelled) }
 
     private func finish(_ result: Outcome) {
         testTask?.cancel(); testTask = nil
         password = ""; urlText = ""; lastURLText = ""
+        if case .imported(let identity) = clientIdentity { discard(identity); clientIdentity = .none }
+        cancelIdentityPassphrase()
         outcome = result
     }
 
@@ -418,6 +609,22 @@ public final class ConnectionSheetModel: ObservableObject {
     private static func optional(_ text: String) -> String? {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
+extension TLSIdentityImportError {
+    /// One line under the client-certificate row.
+    var message: String {
+        switch self {
+        case .wrongPassphrase: "The passphrase is wrong."
+        case .passphraseRequired: "The private key is encrypted; enter its passphrase."
+        case .unreadableCertificate: "The certificate couldn't be read. Choose a PEM or DER certificate, or a .p12."
+        case .unreadableKey: "The private key couldn't be read. Choose a PEM private key, or a .p12."
+        case .unsupportedKey(let text): text
+        case .keyDoesNotMatchCertificate: "The private key doesn't belong to this certificate."
+        case .noIdentity: "The .p12 holds no private key."
+        case .keychain(let status): "The Keychain refused the certificate (\(status)); nothing was imported."
+        }
     }
 }
 

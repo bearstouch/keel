@@ -452,9 +452,8 @@ public func load() async -> LoadOutcome                                   // .re
 public func recover(_ choice: RecoveryChoice) async throws(ProfileStoreError)
 public func changes() -> AsyncStream<ConnectionsDocument>
 public func password(profileID: UUID, connectionRevision: UInt64) async throws(ProfileStoreError) -> Data?
-public func create(_ settings: ConnectionSettings, folderID: UUID? = nil, password: Data? = nil) async throws(ProfileStoreError) -> ConnectionProfile
-public func update(_ id: UUID, _ settings: ConnectionSettings, password: PasswordChange = .keep, expectedRevision: UInt64) async throws(ProfileStoreError) -> ConnectionProfile
-public func setTLSSecret(_ id: UUID, _ value: Data?, expectedRevision: UInt64) async throws(ProfileStoreError) -> ConnectionProfile
+public func create(_ settings: ConnectionSettings, folderID: UUID? = nil, password: Data? = nil, identity: ImportedTLSIdentity? = nil) async throws(ProfileStoreError) -> ConnectionProfile
+public func update(_ id: UUID, _ settings: ConnectionSettings, password: PasswordChange = .keep, identity: TLSIdentityChange = .keep, expectedRevision: UInt64) async throws(ProfileStoreError) -> ConnectionProfile
 public func duplicate(_:) / delete(_:expectedRevision:) / move(_:toFolder:position:expectedRevision:)
 public func createFolder(named:) / renameFolder / setFolderCollapsed / moveFolder / deleteFolder
 public func renameLabel(_:to:) / setTreatAsProduction(_:_:)
@@ -463,7 +462,9 @@ public func importProfiles(_ export: ProfileExport, policy: ProfileImportPolicy)
 ```
 
 `passwordByteLimit = 4096`. `ProfileStoreError`: `invalid`, `notFound`, `conflict(expected:actual:)`, `readOnly`,
-`persistence`, `secretStore`, `invalidImport`. `PasswordChange`: `keep`, `set(Data)`, `remove`.
+`persistence`, `secretStore`, `invalidImport`. `PasswordChange`: `keep`, `set(Data)`, `remove`. `TLSIdentityChange`: `keep`,
+`set(ImportedTLSIdentity)`, `remove`; `removeTLSIdentity` (init, the app passes `TLSIdentityImporter.removeIdentity`)
+deletes a replaced identity Keel added once no profile uses it.
 
 ### `SecretStore` (protocol) / `KeychainSecretStore`
 
@@ -512,7 +513,7 @@ unreadable original is preserved as `<name>.corrupt.<uuid>.json` before `startEm
 | `InstanceLock` | final class | MAC-17: `init(directory:)` takes an exclusive `flock` on `instance.lock` (0600, `O_NOFOLLOW`) and records the PID; `Failure.held(path:owner:)` when another process holds it, `.unusable(path:errno:)` for a link, folder or foreign file; `release()` or deinit drops it |
 | `StateLocation` | enum | `resolve(arguments:identity:applicationSupport:temporary:)` picks `--state-directory`, a fresh fixture folder, or `Application Support/<bundle id>`; `prepare(_:)` creates it 0700 and refuses a file, symlink or foreign-owned folder (`Failure`) |
 | `KnownCAStore` | actor | Owner of `known-ca.json` (FR-CN04): `check(profile:caFile:)` returns `CATrust.trusted(anchors:)` or `.changed(CAChange)`; only `accept(_:)` or `anchors(profile:caFile:confirm:)` turns a change into anchors; `forget(profile:)`. `CAFile.read` caps at 4 MiB. `CAFingerprint` is SHA-256 hex |
-| `TLSIdentityImporter` | struct | Imports a client identity from PKCS#12 or PEM cert + key (PKCS#8 incl. PBES2, PKCS#1, SEC1; `PrivateKeyDecoder`, `DER` internal) into the login Keychain, service `Keel TLS`; `clientIdentity(profileID:)`, `passphrase(profileID:)`. Errors: `TLSIdentityImportError` |
+| `TLSIdentityImporter` | struct | Imports a client identity from PKCS#12 or PEM cert + key (PKCS#8 incl. PBES2, PKCS#1, SEC1; `PrivateKeyDecoder`, `DER` internal) into the login Keychain: `importPKCS12(_:passphrase:)` / `importPEM(certificate:privateKey:passphrase:)` return an `ImportedTLSIdentity` (`reference`, `summary`, `isNew`) that `ProfileStore` saves; `discard(_:)`, `removeIdentity(reference:)`, `clientIdentity(profileID:)`, `passphrase(profileID:)`, `subject(profileID:)` read `Keel TLS`, which only `ProfileStore` writes. Errors: `TLSIdentityImportError` |
 | `TLSIdentityKeychain` / `SystemTLSIdentityKeychain` | protocol / struct | Keychain calls for identity import; never touches the system keychain or trust settings |
 | `ProfileExport` | struct | `keel-profiles` export format v1 (folders + settings, never secrets); `validated()`, `encoded()`, `decode(_:)`; `ProfileImportPolicy`, `ProfileImportPreview`, `ProfileImportResult`, `ProfileImportError` |
 | `RedisURL` | struct | Parses and prints `redis://` / `rediss://` URLs (`isCandidate`, `init(parsing:)`, `init(settings:)`, `string`, `applied(to:)`); unknown query parameters are reported, not applied |

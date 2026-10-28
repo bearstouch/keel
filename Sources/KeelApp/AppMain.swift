@@ -65,7 +65,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         let hosts = HostLibrary(storage: HostFileStorage(directory: stateDirectory), secrets: KeychainHostSecretStore())
         sshHosts = hosts
         // A password saved through a saved SSH host binds to where that host connects (FR-CN21).
-        profiles = ProfileStore(directory: stateDirectory, resolveSavedHost: { id in await hosts.hosts.first { $0.id == id } })
+        profiles = ProfileStore(
+            directory: stateDirectory, resolveSavedHost: { id in await hosts.hosts.first { $0.id == id } },
+            removeTLSIdentity: { TLSIdentityImporter().removeIdentity(reference: $0) })
         knownCA = KnownCAStore(directory: stateDirectory)
         settings = SettingsModel(persistence: Persistence(directory: stateDirectory))
     }
@@ -100,7 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         // Test and connect read the applied settings (Advanced, Console) when they start, so an Apply reaches the next one.
         let snapshot = settings.snapshot
         let tester = ConnectionTester(tunnels: tunnels, resolveSavedHost: resolveSavedHost, savedHostPassword: savedHostPassword, advanced: { snapshot.current.advanced })
-        connections = ConnectionSheetPresenter(store: profiles, tester: tester, hostLibrary: sshHosts)
+        connections = ConnectionSheetPresenter(store: profiles, tester: tester, hostLibrary: sshHosts, identities: TLSIdentityImporter())
         transfer = ProfileTransferModel(store: profiles)
         let connector = ProfileSessionConnector(
             profiles: profiles, knownCA: knownCA, tunnels: tunnels, resolveSavedHost: resolveSavedHost, savedHostPassword: savedHostPassword,

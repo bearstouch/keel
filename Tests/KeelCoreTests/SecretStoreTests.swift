@@ -42,7 +42,8 @@ final class SecretStoreTests: XCTestCase {
     func testRollbackOfCreateDeleteAndTLS() async throws {
         let store = await fixture.store()
         let kept = try await store.create(.sample("kept"), password: old)
-        _ = try await store.setTLSSecret(kept.id, Data("tls".utf8), expectedRevision: kept.revision)
+        _ = try await store.update(kept.id, kept.settings, identity: .set(.fake()), expectedRevision: kept.revision)
+        let tlsItem = try XCTUnwrap(fixture.secrets.item(.tls, kept.id))
         let fetched = await store.profile(kept.id)
         let tls = try XCTUnwrap(fetched)
         XCTAssertTrue(tls.hasTLSSecret)
@@ -54,10 +55,10 @@ final class SecretStoreTests: XCTestCase {
         // A delete whose metadata fails restores both items.
         do { try await store.delete(kept.id); XCTFail("The write must fail") } catch {}
         XCTAssertEqual(fixture.secrets.item(.password, kept.id), old)
-        XCTAssertEqual(fixture.secrets.item(.tls, kept.id), Data("tls".utf8))
+        XCTAssertEqual(fixture.secrets.item(.tls, kept.id), tlsItem)
         // Replacing the TLS item restores the previous one.
-        do { _ = try await store.setTLSSecret(kept.id, Data("other".utf8), expectedRevision: tls.revision); XCTFail("The write must fail") } catch {}
-        XCTAssertEqual(fixture.secrets.item(.tls, kept.id), Data("tls".utf8))
+        do { _ = try await store.update(kept.id, kept.settings, identity: .set(.fake("other")), expectedRevision: tls.revision); XCTFail("The write must fail") } catch {}
+        XCTAssertEqual(fixture.secrets.item(.tls, kept.id), tlsItem)
         let profiles = await store.profiles
         XCTAssertEqual(profiles, [tls])
     }
@@ -172,7 +173,7 @@ final class SecretStoreTests: XCTestCase {
     func testDeletingAProfileRemovesItsKeychainItems() async throws {
         let store = await fixture.store()
         let profile = try await store.create(.sample(), password: old)
-        _ = try await store.setTLSSecret(profile.id, Data("tls".utf8), expectedRevision: profile.revision)
+        _ = try await store.update(profile.id, profile.settings, identity: .set(.fake()), expectedRevision: profile.revision)
         let other = try await store.create(.sample("other"), password: new)
         try await store.delete(profile.id)
         XCTAssertNil(fixture.secrets.item(.password, profile.id))

@@ -56,6 +56,10 @@ needs a person, hardware or an environment that wasn't available.
   tunnel still runs as Keel's own foreground ssh and ends with its last tab; with a `LocalForward` for the bastion,
   connecting shows the `TUNNEL_FAILED` config-forwards message (the `ssh -G` check is tested against the real
   `/usr/bin/ssh` in `SSHTunnelArgumentsTests`, the refusal in `TunnelManagerTests`).
+- Client certificate import (FR-CN03): a real `.p12` and a PEM pair imported from the TLS row land in the login
+  Keychain, the subject shows, a client-cert-required server accepts the saved profile, and re-import or Remove
+  deletes the old identity (seen in Keychain Access). The store and sheet flows are tested with fakes
+  (`TLSIdentityStoreTests`, `ClientIdentityImportTests`); the TLS row's look is part of the New Connection review.
 - Re-pointing a saved SSH host (FR-CN21) shows the warning in Edit SSH Host, and the next connect of a profile using it
   sends no `AUTH` with the old password (seen on the server's `MONITOR` or ACL log). The binding is tested in
   `SavedHostBindingTests`.
@@ -92,6 +96,8 @@ needs a person, hardware or an environment that wasn't available.
 
 ## Known gaps
 
+- **Test Connection and a new client certificate.** Test uses the profile's saved identity; one just imported (or
+  removed) in the sheet applies from Save on.
 - **Large node expansion.** `NSOutlineView.expandItem` takes about 0.3 s for a node with 500,000 children (its own
   per-child bookkeeping; Keel's callbacks take about 40 ms), so FR-KB04's 200 ms expand check is not met yet.
 - **Xcode 26.3 and later aren't used.** Test runs built by Xcode 26.3 (Swift 6.2.4) and 26.6 (Swift 6.3.3) abort on
