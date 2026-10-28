@@ -66,6 +66,8 @@ public func moveTab(_ tabID: UUID, to target: ConnectionTabs, at index: Int? = n
 public func moveTabToNewWindow(_ tabID: UUID) -> ConnectionTabs?
 public func requestClose(_ tabID: UUID, discardingEdits: Bool = false) -> CloseRequest   // .closed | .needsConfirmation
 public func session(_ tabID: UUID) -> TabSession?
+public func tabs(ofProfile profileID: UUID) -> [(window: Int, tab: ConnectionTab)]   // window: 1-based position
+public func hasUnsavedEdits(_ tabID: UUID) -> Bool
 public func connectIfNeeded(_ tabID: UUID)
 public func reconnect(_ tabID: UUID) async
 public func disconnect(profileID: UUID) async
@@ -153,7 +155,10 @@ public func newConnection(); public func pasteURL(); public func importConnectio
 `SidebarModel` (`@MainActor`) follows `ProfileStore` changes and presents profiles grouped by folder (`groups`,
 `visibleRows`), with statuses taken from the window's tabs. It handles open (optionally new tab), keyboard selection,
 rename, duplicate, delete, folder CRUD, drag-and-drop reordering (`DragItem` payloads) and Copy URL (pasteboard
-writer injected). It also derives `windowTitle` and `productionStrip` text. `SidebarView` is the SwiftUI list,
+writer injected). Delete is two-step like closing a tab: `deleteConfirmation(_:)` lists the open tabs that will close
+(`"db0 in window 1"`, marked "(unsaved changes)") for the alert's `message`; `delete(_:discardingEdits:)` returns
+`.needsDiscardConfirmation(unsavedTabs:)` and removes nothing while any of them has unsaved edits, `.deleted` or
+`.failed` otherwise. It also derives `windowTitle` and `productionStrip` text. `SidebarView` is the SwiftUI list,
 including the `KeelMark` drawn from the icon geometry.
 
 ```swift

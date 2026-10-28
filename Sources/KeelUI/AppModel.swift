@@ -149,7 +149,8 @@ public final class AppModel: ObservableObject {
         target.insert(tab, at: index)
     }
 
-    /// A deleted profile's tabs close in every window (FR-CN01).
+    /// A deleted profile's tabs close in every window (FR-CN01). Unsaved edits were asked about before the delete
+    /// (`SidebarModel.delete(_:discardingEdits:)`), so they close without asking again.
     public func closeAll(profileID: UUID) {
         for window in windows { for tab in window.tabs where tab.profileID == profileID { window.close(tab.id) } }
         recentKeys.forget(profileID: profileID)
@@ -195,7 +196,7 @@ public final class AppModel: ObservableObject {
     @discardableResult
     public func requestClose(_ tabID: UUID, discardingEdits: Bool = false) -> CloseRequest {
         guard let window = window(containing: tabID) else { return .closed }
-        if !discardingEdits, sessions[tabID]?.hasUnsavedEdits == true {
+        if !discardingEdits, hasUnsavedEdits(tabID) {
             // The tab bar asks; its Close Tab comes back here with `discardingEdits`.
             window.confirmingCloseTabID = tabID
             return .needsConfirmation
@@ -205,9 +206,17 @@ public final class AppModel: ObservableObject {
         return .closed
     }
 
+    /// A profile's open tabs in every window, with the window's 1-based position, for the delete confirmation (FR-CN01).
+    public func tabs(ofProfile profileID: UUID) -> [(window: Int, tab: ConnectionTab)] {
+        windows.enumerated().flatMap { index, window in window.tabs.filter { $0.profileID == profileID }.map { (index + 1, $0) } }
+    }
+
+    /// Whether the tab has unsaved edits: closing it asks first (MAC-06).
+    public func hasUnsavedEdits(_ tabID: UUID) -> Bool { sessions[tabID]?.hasUnsavedEdits == true }
+
     /// Tabs of a window with unsaved edits, for its close confirmation (MAC-06 asks once per window).
     public func unsavedTabs(in windowID: UUID) -> [ConnectionTab] {
-        window(windowID)?.tabs.filter { sessions[$0.id]?.hasUnsavedEdits == true } ?? []
+        window(windowID)?.tabs.filter { hasUnsavedEdits($0.id) } ?? []
     }
 
     public func session(_ tabID: UUID) -> TabSession? { sessions[tabID] }

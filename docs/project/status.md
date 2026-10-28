@@ -71,6 +71,8 @@ needs a person, hardware or an environment that wasn't available.
   `SavedHostBindingTests`.
 - A real sshd keyboard-interactive (PAM) prompt shows "Asked by the SSH server" with a text field, and one that says
   "yes/no" is never shown as a host key (classification is unit-tested in `AskpassReviewTests`).
+- Deleting a profile from the sidebar with its tabs open in two windows shows them in the confirmation, and with an
+  unsaved edit asks the second question (model flow tested in `SidebarModelReviewTests`; the alerts' look is pending).
 - Closing a tab while a real bastion's host-key sheet is up closes the sheet, ends that ssh and adds nothing to
   `known_hosts` (the cancellation is tested with fakes in `TunnelAskpassTests` and `WindowModelTests`).
 - Keel and Trellis run at the same time without sharing state.
