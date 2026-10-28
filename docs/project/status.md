@@ -56,6 +56,9 @@ needs a person, hardware or an environment that wasn't available.
   tunnel still runs as Keel's own foreground ssh and ends with its last tab; with a `LocalForward` for the bastion,
   connecting shows the `TUNNEL_FAILED` config-forwards message (the `ssh -G` check is tested against the real
   `/usr/bin/ssh` in `SSHTunnelArgumentsTests`, the refusal in `TunnelManagerTests`).
+- Re-pointing a saved SSH host (FR-CN21) shows the warning in Edit SSH Host, and the next connect of a profile using it
+  sends no `AUTH` with the old password (seen on the server's `MONITOR` or ACL log). The binding is tested in
+  `SavedHostBindingTests`.
 - Keel and Trellis run at the same time without sharing state.
 - MAC-17: a second `swift run Keel` (or `open -n` of the built app) brings the running instance's windows forward and
   exits 75, while the installed and development builds still run side by side. The lock itself is tested in

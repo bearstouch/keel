@@ -244,6 +244,33 @@ final class HostEditorModelTests: XCTestCase {
         XCTAssertEqual(editor.password, "")
         XCTAssertEqual(editor.finished, .some(SavedHost?.none))
     }
+
+    /// FR-CN21: Edit SSH Host warns before re-pointing, and the re-pointed host never gets a connection's Redis password.
+    func testRePointingAHostDropsTheRedisPasswordOfItsConnections() async throws {
+        let library = HostLibrary(storage: MemoryHostFile())
+        let ops = try await library.create(HostDraft(name: "ops", destination: "bastion-a"))
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("keel-hosts-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let secrets = MemorySecretStore()
+        let store = ProfileStore(directory: directory, secrets: secrets, resolveSavedHost: { id in await library.hosts.first { $0.id == id } })
+        _ = await store.load()
+        let profile = try await store.create(ConnectionSettings(name: "via ops", tunnel: .savedHost(id: ops.id)), password: Data("redis".utf8))
+
+        let rename = HostEditorModel(mode: .edit(ops), library: library)
+        rename.name = "Ops bastion"
+        XCTAssertFalse(rename.connectionChanged, "a rename connects to the same machine")
+        let renamed = try await saved(rename)
+        let kept = try await store.password(profileID: profile.id, connectionRevision: profile.connectionRevision)
+        XCTAssertEqual(kept, Data("redis".utf8))
+
+        let repoint = HostEditorModel(mode: .edit(renamed), library: library)
+        repoint.destination = "bastion-b"
+        XCTAssertTrue(repoint.connectionChanged, "the editor warns before Save")
+        _ = try await saved(repoint)
+        let after = try await store.password(profileID: profile.id, connectionRevision: profile.connectionRevision)
+        XCTAssertNil(after)
+        XCTAssertNil(secrets.item(.password, profile.id))
+    }
 }
 
 /// A profile store the host tests never reach.

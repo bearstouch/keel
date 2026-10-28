@@ -429,7 +429,9 @@ through the data path (`Result<InfoReport, KeyIndexError>`). `InfoOverview(repor
   `timeoutRange = 100...600_000` ms. `connectionKey` (host, port, username, TLS server name, tunnel) defines "same
   server"; `weakensTransport(from:)` detects a TLS/tunnel downgrade.
 - `ConnectionProfile`: `id`, `settings`, `folderID`, `revision`, `connectionRevision`, `hasPassword`, `hasTLSSecret`,
-  `importedFrom` (optional: the export-file ID an imported profile was added under; collisions match it too).
+  `importedFrom` (optional: the export-file ID an imported profile was added under; collisions match it too),
+  `savedHostBinding` (`SavedHostBinding`: the saved SSH host's destination, user, port and identity file the password
+  was saved through, FR-CN21).
 - `ProfileFolder`, `ProfileLabel` (`LabelColor`, name ≤ 40, `treatAsProduction`), `ConnectionsDocument`
   (`connections.json`, `currentVersion = 1`).
 
@@ -438,11 +440,14 @@ through the data path (`Result<InfoReport, KeyIndexError>`). `InfoOverview(repor
 Single owner of `connections.json` and the profiles' Keychain items. Every mutation validates, writes the Keychain,
 then the metadata; a failed metadata write restores the previous Keychain values. Mutations are serialized; editors pass
 `expectedRevision` and get `.conflict` when stale. A change to the connection key advances `connectionRevision` and
-removes the saved password.
+removes the saved password. `resolveSavedHost` (the app passes `HostLibrary`'s hosts) binds a password saved through a
+saved SSH host to where the host connects: `password(profileID:connectionRevision:)` returns nil once the host is gone
+or re-pointed, and removes the stale password; a password set for a host that can't be resolved is `.invalid(.tunnel)`.
 
 ```swift
-public init(persistence: Persistence<ConnectionsDocument>, secrets: any SecretStore, makeID: @escaping @Sendable () -> UUID = { UUID() })
-public init(directory: URL, secrets: any SecretStore = KeychainSecretStore())
+public init(persistence: Persistence<ConnectionsDocument>, secrets: any SecretStore, makeID: @escaping @Sendable () -> UUID = { UUID() },
+            resolveSavedHost: @escaping @Sendable (UUID) async -> SavedHost? = { _ in nil })
+public init(directory: URL, secrets: any SecretStore = KeychainSecretStore(), resolveSavedHost: @escaping @Sendable (UUID) async -> SavedHost? = { _ in nil })
 public func load() async -> LoadOutcome                                   // .ready | .recovery(reason:backupAvailable:)
 public func recover(_ choice: RecoveryChoice) async throws(ProfileStoreError)
 public func changes() -> AsyncStream<ConnectionsDocument>

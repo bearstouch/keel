@@ -134,6 +134,15 @@ public final class HostEditorModel: ObservableObject, Identifiable {
     public var title: String { current == nil ? "Add SSH Host" : "Edit SSH Host" }
     public var hasSavedPassword: Bool { current?.savedPassword != nil }
 
+    /// Edit only: the fields as typed would connect elsewhere (destination, user, port or identity file). Saving then
+    /// drops the host's SSH password, and the connections that use the host lose their saved Redis password (FR-CN21).
+    public var connectionChanged: Bool {
+        guard let current else { return false }
+        func optional(_ text: String) -> String? { let value = text.trimmingCharacters(in: .whitespacesAndNewlines); return value.isEmpty ? nil : value }
+        return optional(destination) != current.destination || optional(user) != current.user || optional(port).flatMap { Int($0) } != current.port
+            || optional(identityFile) != current.identityFile
+    }
+
     /// Saves the metadata, then the password change. Each step commits on its own; a failure keeps the sheet open with
     /// what is already saved, so Save can be pressed again. A new host whose password the Keychain refused is removed.
     @discardableResult public func save() async -> SavedHost? {

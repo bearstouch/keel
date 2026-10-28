@@ -237,6 +237,8 @@ Each file is a flat JSON object with an integer `schemaVersion` beside the docum
 
 All generic passwords use *when unlocked, this device only*. The Keychain is written before metadata; a failed metadata write restores the previous Keychain value. Changing a profile's host, port, username, TLS server name or tunnel, turning TLS off or turning **Skip verification** on removes its saved password (connection-revision binding, as in Trellis FR-H09). Turning TLS on or verification back on keeps it.
 
+A profile tunneled through a saved SSH host also records the host's destination, user, port and identity file (`SavedHostBinding`) when its password is saved (FR-CN21). Re-pointing the host changes none of the profile's own settings, so the password lookup compares the recorded binding with the host as `HostLibrary` holds it now: a different one (or a host that is gone) returns no password, and the stale `Keel Connection` item is removed, Keychain first. Renaming, retagging or a new SSH password keep the binding. A profile saved before the binding existed takes the host as it is at its first lookup. An alias resolved by `~/.ssh/config` is bound by name: an edit of that file is outside Keel.
+
 ### Profile store
 
 `ProfileStore` (KeelCore actor) is the single owner of `connections.json` and the `Keel Connection` / `Keel TLS` items, through an injected `SecretStore`.

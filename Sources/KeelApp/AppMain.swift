@@ -62,8 +62,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         let relay = promptRelay
         askpass = Bundle.main.executableURL.flatMap { AskpassHelperLocation.find(executable: $0) }.map { AskpassBroker(helperPath: $0, relay: relay) }
         tunnels = TunnelManager(askpass: askpass)
-        profiles = ProfileStore(directory: stateDirectory)
-        sshHosts = HostLibrary(storage: HostFileStorage(directory: stateDirectory), secrets: KeychainHostSecretStore())
+        let hosts = HostLibrary(storage: HostFileStorage(directory: stateDirectory), secrets: KeychainHostSecretStore())
+        sshHosts = hosts
+        // A password saved through a saved SSH host binds to where that host connects (FR-CN21).
+        profiles = ProfileStore(directory: stateDirectory, resolveSavedHost: { id in await hosts.hosts.first { $0.id == id } })
         knownCA = KnownCAStore(directory: stateDirectory)
         settings = SettingsModel(persistence: Persistence(directory: stateDirectory))
     }

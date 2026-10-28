@@ -184,7 +184,8 @@ public nonisolated static func accessibilityLabel(name: String, labelName: Strin
 `HostPickerModel` (`@MainActor`) lists saved SSH hosts from KeelSSH's `HostLibrary` plus aliases discovered in
 `~/.ssh/config` (injectable `Discover` closure), with notes for unfollowed `Include`s. `choose(_:)` turns a discovered
 alias into a saved host. `HostEditorModel` is the Add / Edit SSH Host sheet's form, with a write-only password and
-`requiresUserPresence`. Views: `HostPickerSection`, `HostEditorSheet`.
+`requiresUserPresence`; `connectionChanged` (edit only) is true when the typed destination, user, port or identity
+file connect elsewhere, and the sheet then warns that the saved passwords of the host and its connections go (FR-CN21). Views: `HostPickerSection`, `HostEditorSheet`.
 
 ### SSHPromptCenter / SSHPromptSheet
 
