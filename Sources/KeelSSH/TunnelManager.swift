@@ -15,6 +15,9 @@ public enum TunnelError: Error, Equatable, Sendable {
     case shutDown
     /// The person rejected ssh's host-key prompt, or left it unanswered until it timed out (FR-CN07); ssh then exited.
     case hostKeyNotAccepted(TunnelExit)
+    /// The user's ssh_config adds these forwards (`LocalForward …`, from `ssh -G`) for the destination; ssh never ran,
+    /// since they would open TCP ports beside Keel's socket (INT-06).
+    case configuredForwards([String])
 }
 
 /// One user's hold on a tunnel. Release it exactly once; a second release is ignored.
@@ -201,9 +204,17 @@ public actor TunnelManager {
         let path: String, arguments: [String]
         do throws(RuntimeDirectoryError) { path = try runtime.socketPath(id: socketID) } catch { return .failure(.runtimeDirectory(error)) }
         do throws(SSHTunnelArgumentError) { arguments = try SSHTunnelArguments.arguments(for: key.configuration, socketPath: path) } catch { return .failure(.invalidArguments(error)) }
+        let sshEnvironment = baseEnvironment.merging(environment) { $1 }
+        // `ssh -G` resolves the same arguments against the user's config without connecting. Unreadable output isn't
+        // fatal: the launch below reports ssh's own error.
+        if let options = await launcher.effectiveOptions(executable: SSHTunnelArguments.executable, arguments: ["-G"] + arguments, environment: sshEnvironment, timeout: connectTimeout) {
+            let forwards = SSHTunnelArguments.configuredForwards(in: options, socketPath: path)
+            guard forwards.isEmpty else { return .failure(.configuredForwards(forwards)) }
+        }
+        if isShutDown || tunnels[key]?.generation != generation { return .failure(.shutDown) }
         let process: any TunnelProcess
         do throws(TunnelError) {
-            process = try launcher.launch(executable: SSHTunnelArguments.executable, arguments: arguments, environment: baseEnvironment.merging(environment) { $1 })
+            process = try launcher.launch(executable: SSHTunnelArguments.executable, arguments: arguments, environment: sshEnvironment)
         } catch {
             return .failure(error)
         }

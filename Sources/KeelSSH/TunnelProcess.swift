@@ -55,6 +55,14 @@ public protocol TunnelProcess: AnyObject, Sendable {
 
 public protocol TunnelProcessLauncher: Sendable {
     func launch(executable: String, arguments: [String], environment: [String: String]) throws(TunnelError) -> any TunnelProcess
+    /// What ssh prints for `arguments`, which start with `-G` (print the effective options, connect nowhere), or nil when
+    /// it couldn't be read within `timeout`. The tunnel manager checks it for forwards the user's config adds.
+    func effectiveOptions(executable: String, arguments: [String], environment: [String: String], timeout: Duration) async -> String?
+}
+
+extension TunnelProcessLauncher {
+    /// A launcher that doesn't run the real ssh (tests) has no configuration to check.
+    public func effectiveOptions(executable: String, arguments: [String], environment: [String: String], timeout: Duration) async -> String? { nil }
 }
 
 /// Spawns ssh with `posix_spawn` (no shell): its own session and process group (no controlling terminal, so ssh can never
@@ -65,6 +73,67 @@ public struct SSHProcessLauncher: TunnelProcessLauncher {
 
     public func launch(executable: String, arguments: [String], environment: [String: String]) throws(TunnelError) -> any TunnelProcess {
         try SpawnedProcess.spawn(executable: executable, arguments: arguments, environment: environment)
+    }
+
+    static let optionsLimit = 256 * 1_024
+
+    /// Runs `ssh -G …` like a tunnel (no shell, own process group) with stdout in a pipe, keeping at most 256 KiB. nil
+    /// when ssh can't start, fails, or doesn't finish in time (it is then terminated); the launch that follows reports
+    /// the real error.
+    public func effectiveOptions(executable: String, arguments: [String], environment: [String: String], timeout: Duration) async -> String? {
+        var pipeFDs: [Int32] = [-1, -1]
+        guard pipe(&pipeFDs) == 0 else { return nil }
+        _ = fcntl(pipeFDs[0], F_SETFD, FD_CLOEXEC); _ = fcntl(pipeFDs[1], F_SETFD, FD_CLOEXEC)
+        let process: SpawnedProcess
+        do { process = try SpawnedProcess.spawn(executable: executable, arguments: arguments, environment: environment, stdout: pipeFDs[1]) } catch {
+            close(pipeFDs[0]); close(pipeFDs[1]); return nil
+        }
+        close(pipeFDs[1])
+        let output = PipeReader(fd: pipeFDs[0], limit: Self.optionsLimit)
+        let exit = await withTaskGroup(of: TunnelExit?.self) { group in
+            group.addTask { await process.waitForExit() }
+            group.addTask {
+                do { try await Task.sleep(for: timeout) } catch { return nil }
+                // The group still waits for the exit above, so the stuck ssh is stopped here.
+                if process.group.signal(SIGTERM) { try? await Task.sleep(for: .milliseconds(200)); if process.exit == nil { process.group.signal(SIGKILL) } }
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
+        guard let exit, exit.status == .exited(0), let data = output.finish() else { return nil }
+        return String(decoding: data, as: UTF8.self)
+    }
+}
+
+/// Reads one pipe on its own thread into a bounded buffer. `finish` waits briefly for end of file, since a child of
+/// ssh's (`Match exec`) may keep the pipe open; nil when the output went past the limit or never ended.
+final class PipeReader: @unchecked Sendable {
+    private let lock = NSLock()
+    private var data = Data()
+    private var truncated = false
+    private let closed = DispatchSemaphore(value: 0)
+
+    init(fd: Int32, limit: Int) {
+        let thread = Thread { [self] in
+            var buffer = [UInt8](repeating: 0, count: 4_096)
+            while true {
+                let count = read(fd, &buffer, buffer.count)
+                if count < 0, errno == EINTR { continue }
+                guard count > 0 else { break }
+                lock.withLock { if data.count + count > limit { truncated = true } else { data.append(contentsOf: buffer.prefix(count)) } }
+            }
+            close(fd)
+            closed.signal()
+        }
+        thread.name = "Keel ssh -G"
+        thread.start()
+    }
+
+    func finish() -> Data? {
+        guard closed.wait(timeout: .now() + .milliseconds(500)) == .success else { return nil }
+        return lock.withLock { truncated ? nil : data }
     }
 }
 
@@ -91,7 +160,8 @@ final class SpawnedProcess: TunnelProcess, @unchecked Sendable {
         }
     }
 
-    static func spawn(executable: String, arguments: [String], environment: [String: String]) throws(TunnelError) -> SpawnedProcess {
+    /// `stdout` is a descriptor for ssh's standard output (the caller closes its copy); nil means `/dev/null`.
+    static func spawn(executable: String, arguments: [String], environment: [String: String], stdout: Int32? = nil) throws(TunnelError) -> SpawnedProcess {
         var pipeFDs: [Int32] = [-1, -1]
         guard pipe(&pipeFDs) == 0 else { throw .launchFailed(errno) }
         // Both ends close on exec, so no concurrently spawned process can hold the pipe open; dup2 clears it on fd 2.
@@ -102,7 +172,7 @@ final class SpawnedProcess: TunnelProcess, @unchecked Sendable {
         posix_spawn_file_actions_init(&actions); posix_spawnattr_init(&attributes)
         defer { posix_spawn_file_actions_destroy(&actions); posix_spawnattr_destroy(&attributes) }
         posix_spawn_file_actions_addopen(&actions, 0, "/dev/null", O_RDONLY, 0)
-        posix_spawn_file_actions_addopen(&actions, 1, "/dev/null", O_WRONLY, 0)
+        if let stdout { posix_spawn_file_actions_adddup2(&actions, stdout, 1) } else { posix_spawn_file_actions_addopen(&actions, 1, "/dev/null", O_WRONLY, 0) }
         posix_spawn_file_actions_adddup2(&actions, pipeFDs[1], 2)
         // SETSID: new session and group led by ssh, so `kill(-pid)` reaches it and its ProxyCommand children.
         // CLOEXEC_DEFAULT: only the three descriptors above are inherited. SETSIGDEF/SETSIGMASK: a clean signal state.

@@ -52,6 +52,10 @@ needs a person, hardware or an environment that wasn't available.
 - The CA-change prompt shows both fingerprints on screen (the core flow is tested in `KnownCATests`).
 - A saved profile through an SSH bastion browses end to end; closing the last tab ends ssh within 11 s and quitting
   leaves no `ssh -N` child (checked with `ps`). The tunnel core is tested in `TunnelIntegrationTests`.
+- With `ControlMaster auto` + `ControlPersist` and `ForkAfterAuthentication yes` under `Host *` in `~/.ssh/config`, a
+  tunnel still runs as Keel's own foreground ssh and ends with its last tab; with a `LocalForward` for the bastion,
+  connecting shows the `TUNNEL_FAILED` config-forwards message (the `ssh -G` check is tested against the real
+  `/usr/bin/ssh` in `SSHTunnelArgumentsTests`, the refusal in `TunnelManagerTests`).
 - Keel and Trellis run at the same time without sharing state.
 - MAC-17: a second `swift run Keel` (or `open -n` of the built app) brings the running instance's windows forward and
   exits 75, while the installed and development builds still run side by side. The lock itself is tested in

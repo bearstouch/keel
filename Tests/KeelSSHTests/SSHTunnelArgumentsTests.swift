@@ -81,6 +81,46 @@ final class SSHTunnelArgumentsTests: XCTestCase {
         XCTAssertLessThan(try XCTUnwrap(arguments.firstIndex(of: "ForkAfterAuthentication=no")), try XCTUnwrap(arguments.firstIndex(of: "--")))
     }
 
+    func testFindsForwardsTheConfigAdds() {
+        let output = """
+            user deploy
+            exitonforwardfailure yes
+            localforward \(socket) [127.0.0.1]:6379
+            localforward 6380 [localhost]:6379
+            remoteforward 9000 [localhost]:22
+            dynamicforward 1080
+            forwardagent no
+            """
+        XCTAssertEqual(
+            SSHTunnelArguments.configuredForwards(in: output, socketPath: socket), ["LocalForward 6380 [localhost]:6379", "RemoteForward 9000 [localhost]:22", "DynamicForward 1080"])
+        XCTAssertEqual(SSHTunnelArguments.configuredForwards(in: "user deploy\nlocalforward \(socket) [127.0.0.1]:6379\nforwardx11 no\n", socketPath: socket), [], "Keel's own -L is not a config forward")
+        let many = (1...5).map { "dynamicforward \(1_080 + $0)\u{1B}[31m" }.joined(separator: "\n")
+        XCTAssertEqual(SSHTunnelArguments.configuredForwards(in: many, socketPath: socket), ["DynamicForward 1081[31m", "DynamicForward 1082[31m", "DynamicForward 1083[31m"])
+    }
+
+    /// Runs the real `/usr/bin/ssh -G` (it connects nowhere) with a private config, as the tunnel manager does.
+    func testRealSSHReportsConfigForwards() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("keel-ssh-g-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let config = folder.appendingPathComponent("config")
+        try "Host ops\n  LocalForward 6380 localhost:6379\n  ControlMaster auto\n  ControlPersist 10m\n  ForkAfterAuthentication yes\nHost plain\n  User deploy\n".write(
+            to: config, atomically: true, encoding: .utf8)
+        func options(_ destination: String) async throws -> String {
+            let arguments = try SSHTunnelArguments.arguments(for: SSHTunnelConfiguration(destination: destination, redisHost: "127.0.0.1", redisPort: 6379), socketPath: socket)
+            let output = await SSHProcessLauncher().effectiveOptions(
+                executable: SSHTunnelArguments.executable, arguments: ["-G", "-F", config.path] + arguments, environment: ["HOME": folder.path], timeout: .seconds(10))
+            return try XCTUnwrap(output, destination)
+        }
+        let ops = try await options("ops")
+        XCTAssertEqual(SSHTunnelArguments.configuredForwards(in: ops, socketPath: socket), ["LocalForward 6380 [localhost]:6379"])
+        XCTAssertTrue(ops.contains("controlmaster false") && ops.contains("forkafterauthentication no") && ops.contains("controlpersist no"), "Keel's -o options win over the config")
+        let plain = try await options("plain")
+        XCTAssertEqual(SSHTunnelArguments.configuredForwards(in: plain, socketPath: socket), [])
+        let broken = await SSHProcessLauncher().effectiveOptions(executable: SSHTunnelArguments.executable, arguments: ["-G", "-F", folder.path + "/missing"], environment: [:], timeout: .seconds(10))
+        XCTAssertNil(broken, "A failing ssh -G is no answer, never an empty one")
+    }
+
     func testSavedHostFieldsCarryOver() throws {
         let draft = try HostDraft(name: "Ops", destination: "ops.example.com", user: "deploy", port: "2200", identityFile: "/k").validated { _ in true }
         let configuration = SSHTunnelConfiguration(host: SavedHost(id: UUID(), draft: draft, revision: 1), redisHost: "127.0.0.1", redisPort: 6379)

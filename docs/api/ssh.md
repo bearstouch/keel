@@ -61,6 +61,8 @@ public enum SSHTunnelArguments {
     public static let forbiddenOptions: [String]   // StrictHostKeyChecking, UserKnownHostsFile, ProxyCommand, LocalCommand, ...
     public static func arguments(for configuration: SSHTunnelConfiguration, socketPath: String)
         throws(SSHTunnelArgumentError) -> [String]
+    /// `LocalForward`/`RemoteForward`/`DynamicForward` specs in `ssh -G` output other than Keel's own socket (at most 3)
+    public static func configuredForwards(in options: String, socketPath: String) -> [String]
 }
 ```
 
@@ -77,12 +79,15 @@ public protocol TunnelProcess: AnyObject, Sendable {
 }
 public protocol TunnelProcessLauncher: Sendable {
     func launch(executable: String, arguments: [String], environment: [String: String]) throws(TunnelError) -> any TunnelProcess
+    /// `ssh -G …` output, or nil (default implementation: nil, no check)
+    func effectiveOptions(executable: String, arguments: [String], environment: [String: String], timeout: Duration) async -> String?
 }
 public struct SSHProcessLauncher: TunnelProcessLauncher   // posix_spawn, new session and process group, no shell
 ```
 
 `SSHProcessLauncher` gives ssh no controlling terminal, `/dev/null` stdin/stdout, a stderr pipe keeping only the last
-4 KiB, and no other inherited descriptors.
+4 KiB, and no other inherited descriptors. Its `effectiveOptions` runs `ssh -G` the same way with stdout in a pipe (at
+most 256 KiB) and answers nil when ssh fails, overflows or doesn't finish within the timeout (it is then terminated).
 
 | Type | Kind | Purpose |
 | --- | --- | --- |
@@ -164,7 +169,7 @@ Errors are typed enums; `KeelCore` maps them to the shared codes (see [Errors](.
 
 | Enum | Cases |
 | --- | --- |
-| `TunnelError` | `invalidArguments(_)`, `runtimeDirectory(_)`, `launchFailed(Int32)`, `exited(TunnelExit)`, `timeout(Duration)`, `shutDown`, `hostKeyNotAccepted(TunnelExit)` |
+| `TunnelError` | `invalidArguments(_)`, `runtimeDirectory(_)`, `launchFailed(Int32)`, `exited(TunnelExit)`, `timeout(Duration)`, `shutDown`, `hostKeyNotAccepted(TunnelExit)`, `configuredForwards([String])` |
 | `SSHTunnelArgumentError` | see above |
 | `RuntimeDirectoryError` | `unsafe`, `pathTooLong`, `io(Int32)` |
 | `HostLibraryError` | `invalid(_)`, `notFound`, `conflict(expected:actual:)`, `readOnly`, `io(Int32)`, `secretStore`, `notAuthorized` |

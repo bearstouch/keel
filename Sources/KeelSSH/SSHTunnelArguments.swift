@@ -94,6 +94,23 @@ public enum SSHTunnelArguments {
         return bare
     }
 
+    /// Forwards the user's ssh_config adds to a tunnel, from `ssh -G` output: every `localforward` other than Keel's own
+    /// socket, every `remoteforward` and `dynamicforward`. ssh can't be told to drop them (`ClearAllForwardings` also drops
+    /// Keel's `-L`), and they would open TCP ports and make a second tunnel to the host fail (`ExitOnForwardFailure`).
+    /// At most 3, each as `LocalForward <spec>` with control characters removed and cut to 120 characters.
+    public static func configuredForwards(in options: String, socketPath: String) -> [String] {
+        let names = ["localforward": "LocalForward", "remoteforward": "RemoteForward", "dynamicforward": "DynamicForward"]
+        var found: [String] = []
+        for line in options.split(whereSeparator: \.isNewline) {
+            let fields = line.split(separator: " ", omittingEmptySubsequences: true)
+            guard let first = fields.first, let name = names[first.lowercased()], fields.count > 1 else { continue }
+            if name == "LocalForward", fields[1] == socketPath { continue }
+            let spec = fields.dropFirst().joined(separator: " ").unicodeScalars.filter { $0.properties.generalCategory != .control && $0.properties.generalCategory != .format }
+            found.append("\(name) \(String(String.UnicodeScalarView(spec)).prefix(120))")
+        }
+        return Array(found.prefix(3))
+    }
+
     private static func hasUnsafeCharacters(_ text: String, allowSpaces: Bool) -> Bool {
         text.unicodeScalars.contains { scalar in
             scalar.properties.generalCategory == .control || scalar.value == 0x7F || (!allowSpaces && scalar.properties.isWhitespace)

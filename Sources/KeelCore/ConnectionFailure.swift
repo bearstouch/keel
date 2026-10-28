@@ -126,6 +126,11 @@ public struct ConnectionFailure: Error, Equatable, Sendable, CustomStringConvert
             self.init(
                 category: .tunnelFailed, message: "Host key not accepted for \(destination).",
                 suggestion: "Connect again to review the fingerprint, or check the host's entry in ~/.ssh/known_hosts.", tunnelExit: exit)
+        case .configuredForwards(let forwards):
+            self.init(
+                category: .tunnelFailed,
+                message: "Your SSH configuration adds port forwards for \(destination) (\(forwards.joined(separator: "; "))), so Keel didn't start the tunnel: they would open TCP ports beside Keel's private socket.",
+                suggestion: "Move LocalForward, RemoteForward and DynamicForward out of the Host or Match block that matches \(destination) in ~/.ssh/config (or Host *), or use an alias without them.")
         }
     }
 

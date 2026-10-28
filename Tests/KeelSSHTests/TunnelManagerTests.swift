@@ -99,7 +99,18 @@ final class FakeLauncher: TunnelProcessLauncher, @unchecked Sendable {
         return process
     }
 
+    /// `ssh -G` output, built from the socket path in the arguments; nil answers like an unreadable config.
+    var options: (@Sendable (_ socketPath: String) -> String?)?
+    private var optionQueries: [[String]] = []
+
+    func effectiveOptions(executable: String, arguments: [String], environment: [String: String], timeout: Duration) async -> String? {
+        lock.withLock { optionQueries.append([executable] + arguments) }
+        let forward = arguments.firstIndex(of: "-L").map { arguments[$0 + 1] } ?? ""
+        return options?(String(forward.prefix { $0 != ":" }))
+    }
+
     var processes: [FakeProcess] { lock.withLock { launched } }
+    var queries: [[String]] { lock.withLock { optionQueries } }
 }
 
 final class TunnelManagerTests: XCTestCase {
@@ -254,6 +265,33 @@ final class TunnelManagerTests: XCTestCase {
             XCTAssertEqual(error, .invalidArguments(.invalidDestination))
         }
         XCTAssertEqual(launcher.processes.count, 0)
+    }
+
+    /// INT-06: forwards from the user's ssh_config would open TCP ports and break a second profile through the same host.
+    func testRefusesToLaunchWhenConfigAddsForwards() async throws {
+        launcher.options = { "user deploy\nlocalforward \($0) [127.0.0.1]:6379\nlocalforward 6380 [localhost]:6379\n" }
+        let manager = manager()
+        do {
+            _ = try await manager.acquire(profileID: profile, configuration: configuration, connectTimeout: .seconds(10))
+            XCTFail("Expected a refusal")
+        } catch {
+            XCTAssertEqual(error, .configuredForwards(["LocalForward 6380 [localhost]:6379"]))
+        }
+        XCTAssertEqual(launcher.processes.count, 0, "Nothing is launched")
+        let query = try XCTUnwrap(launcher.queries.first)
+        XCTAssertEqual(Array(query.prefix(2)), ["/usr/bin/ssh", "-G"])
+        let tunnelArguments = try SSHTunnelArguments.arguments(for: configuration, socketPath: "/s.sock")
+        XCTAssertEqual(query.count, tunnelArguments.count + 2, "-G checks exactly the arguments the launch uses")
+        XCTAssertEqual(query.last, "ops")
+        let users = await manager.userCount(profileID: profile)
+        XCTAssertEqual(users, 0)
+
+        launcher.options = { "user deploy\nlocalforward \($0) [127.0.0.1]:6379\n" }
+        _ = try await manager.acquire(profileID: profile, configuration: configuration, connectTimeout: .seconds(10))
+        XCTAssertEqual(launcher.processes.count, 1, "Only Keel's own forward: ssh starts")
+        launcher.options = { _ in nil }
+        _ = try await manager.acquire(profileID: UUID(), configuration: configuration, connectTimeout: .seconds(10))
+        XCTAssertEqual(launcher.processes.count, 2, "Unreadable ssh -G output doesn't block the launch; ssh reports its own errors")
     }
 
     func testConcurrentAcquiresShareOneStart() async throws {

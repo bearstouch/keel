@@ -44,7 +44,7 @@ Every requirement has a stable ID, a priority and an acceptance check. Unless ma
 | `TLS_CA_CHANGED` | The custom CA file's SHA-256 changed and the user declined the new fingerprint (FR-CN04); nothing is sent | The file's path |
 | `AUTH_FAILED` | `WRONGPASS`, `NOAUTH`, `ERR invalid password`, user disabled | Username (never the password); for `NOAUTH`, that a password is required |
 | `PERMISSION_DENIED` | `NOPERM` during handshake (e.g. `SELECT`, `INFO`) | The command the ACL user can't run |
-| `TUNNEL_FAILED` | ssh exited, forward failed, host key declined, or the tunnel settings were invalid (nothing runs) | ssh exit status and sanitized last stderr line; the SSH destination; a fix chosen from ssh's message (host key, permission denied, forwarding, DNS) |
+| `TUNNEL_FAILED` | ssh exited, forward failed, host key declined, the tunnel settings were invalid, or the user's ssh_config adds port forwards for the destination (nothing runs in the last two) | ssh exit status and sanitized last stderr line; the SSH destination; a fix chosen from ssh's message (host key, permission denied, forwarding, DNS); for config forwards, up to three of them and where to remove them |
 | `PROTOCOL_ERROR` | The port doesn't speak RESP | "This port doesn't look like a Redis server" |
 | `DB_OUT_OF_RANGE` | `SELECT` fails | The index and the server's database count (from `CONFIG GET databases`, when permitted) |
 | `CONNECTION_FAILED` | The connection dropped during the handshake, or another OS error | Host and port, the handshake step; suggests TLS when the server may require it |
