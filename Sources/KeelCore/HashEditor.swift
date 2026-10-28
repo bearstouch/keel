@@ -31,6 +31,8 @@ public enum HashEditor {
             return LoadedValue(rows: rows, watch: watch)
         }
         let page = try await scan(key, from: startCursor, service, context)
+        // A complete scan with no fields: the key went away between `HLEN` and `HSCAN` (HSCAN of a missing key is empty).
+        guard !page.rows.isEmpty || page.next != nil else { throw EditorReads.gone }
         return LoadedValue(rows: page.rows, watch: watch, next: page.next)
     }
 
