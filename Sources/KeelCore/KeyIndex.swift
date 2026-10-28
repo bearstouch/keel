@@ -434,7 +434,8 @@ public actor KeyIndex {
     /// fails or the calling task is cancelled. The UI calls it while the list is visible and cancels it when hidden.
     @discardableResult
     public func autoPage() async -> KeyIndexStatus {
-        guard !inFlight else { mode = .auto; return status }
+        // A page in flight: the loop running it (one `stopAutoPage()` or `pause()` asked to end after it) carries on.
+        guard !inFlight else { mode = .auto; pauseRequested = false; stopRequested = false; return status }
         mode = .auto; pauseRequested = false; stopRequested = false
         let epoch = scanEpoch
         // Load more during the loop switches to manual, which ends the loop after the page in flight.

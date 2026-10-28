@@ -137,6 +137,34 @@ final class KeyIndexReviewTests: XCTestCase {
         XCTAssertEqual(status.mode, .manual)
     }
 
+    func testAutoPageWhileAStoppedLoopsPageIsInFlightKeepsThatLoopGoing() async {
+        // The list hides and shows again (a quick tab switch) within one page: the run must not end after it.
+        let index = gatedIndex(pages: (0..<5).map { keys("p", $0 * 2..<$0 * 2 + 2) })
+        let auto = Task { await index.autoPage() }
+        await waitForScans(1)
+        await index.stopAutoPage()
+        var status = await index.autoPage()
+        XCTAssertEqual(status.mode, .auto)
+        transport.release(10)
+        status = await auto.value
+        XCTAssertEqual(scans.count, 5, "the loop that was asked to stop carries on")
+        XCTAssertEqual(status.phase, .complete)
+        XCTAssertEqual(status.loadedCount, 10)
+    }
+
+    func testResumeRightAfterPauseWhileAPageIsInFlightKeepsTheLoopGoing() async {
+        let index = gatedIndex(pages: (0..<5).map { keys("p", $0 * 2..<$0 * 2 + 2) })
+        let auto = Task { await index.autoPage() }
+        await waitForScans(1)
+        await index.pause()
+        _ = await index.autoPage()
+        transport.release(10)
+        let status = await auto.value
+        XCTAssertEqual(scans.count, 5)
+        XCTAssertEqual(status.phase, .complete)
+        XCTAssertEqual(status.loadedCount, 10)
+    }
+
     func testPauseDuringAutoPageStopsAfterThePageInFlight() async {
         let index = gatedIndex(pages: (0..<5).map { keys("p", $0 * 2..<$0 * 2 + 2) })
         let auto = Task { await index.autoPage() }

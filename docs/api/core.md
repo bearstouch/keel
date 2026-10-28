@@ -541,7 +541,7 @@ public func keys(in range: Range<Int>) -> [Data]
 public func keys(at indices: [Int], generation expected: Int) -> [Data]?     // nil when indices went stale
 public func metadata(at index: Int) -> KeyMetadata
 public func loadMore() async -> KeyIndexStatus
-public func autoPage() async -> KeyIndexStatus
+public func autoPage() async -> KeyIndexStatus              // with a page in flight, keeps that run going (clears a stop or pause)
 public func pause(); public func continueScanning() async -> KeyIndexStatus
 public func stopAutoPage()                                     // ends the loop after the page in flight; mode stays auto
 public func setPagingMode(_ mode: KeyPagingMode)               // ⋯ → Auto-page off: manual (a paused scan goes idle)
