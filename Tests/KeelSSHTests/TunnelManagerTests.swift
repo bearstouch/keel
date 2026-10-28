@@ -374,6 +374,33 @@ final class TunnelManagerTests: XCTestCase {
         await ready.shutdown()
     }
 
+    /// A tab that joins while the cancelled start is still stopping its ssh (SIGTERM sent, not yet exited) didn't
+    /// cancel: it gets a tunnel of its own, never the other tab's cancellation.
+    func testJoinerOfAStoppingCancelledStartStartsItsOwnTunnel() async throws {
+        launcher.exitOnTerm = false
+        let launcher = launcher, unblock = Flag(), runtime = runtime!
+        let manager = TunnelManager(
+            launcher: launcher, makeRuntime: { runtime }, probe: { _ in launcher.processes.count >= 2 },
+            sleep: { _ in
+                // Holds the stop's SIGTERM wait open until the second caller has joined.
+                while launcher.processes.first?.sentSignals == [SIGTERM], !unblock.value { try await Task.sleep(for: .milliseconds(1)) }
+                try await Task.sleep(for: .milliseconds(1))
+            })
+        let first = Task { [profile, configuration] in try await manager.acquire(profileID: profile, configuration: configuration, connectTimeout: .seconds(30)) }
+        await eventually("ssh launched") { !launcher.processes.isEmpty }
+        first.cancel()
+        await eventually("stopping the abandoned ssh") { launcher.processes.first?.sentSignals == [SIGTERM] }
+        let second = Task { [profile, configuration] in try await manager.acquire(profileID: profile, configuration: configuration, connectTimeout: .seconds(30)) }
+        await eventually("second caller joined the stopping start") { await manager.userCount(profileID: profile) == 1 }
+        unblock.value = true
+        let lease = try await second.value
+        if case .failure(let error) = await first.result { XCTAssertEqual(error as? TunnelError, .cancelled) } else { XCTFail("Expected cancelled") }
+        XCTAssertEqual(launcher.processes.count, 2, "The second caller started a fresh ssh")
+        XCTAssertEqual(launcher.processes.first?.sentSignals, [SIGTERM, SIGKILL])
+        await manager.release(lease)
+        await manager.shutdown()
+    }
+
     /// A cancelled caller leaves a tunnel another tab still waits for: that ssh keeps starting and serves the other tab.
     func testCancelledAcquirerKeepsASharedStartingTunnel() async throws {
         let ready = Flag()

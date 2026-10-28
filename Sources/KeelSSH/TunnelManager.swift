@@ -118,6 +118,9 @@ public actor TunnelManager {
                 join(key, leaseID)
                 let result = await waitForStart(task, key: key, leaseID: leaseID)
                 if Task.isCancelled { leave(key, leaseID, generation: tunnel.generation); throw .cancelled }
+                // Everyone before this caller gave up and the start was stopping when it joined (`stop` suspends):
+                // this caller didn't cancel, so it starts its own tunnel instead of failing with their cancellation.
+                if case .failure(.cancelled) = result { continue }
                 if case .failure(let error) = result { throw error }
                 // Joined successfully only if the same tunnel is still there and still holds this lease.
                 if let current = tunnels[key], current.generation == tunnel.generation, current.users.contains(leaseID) { return lease(key, current, leaseID) }
