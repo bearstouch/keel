@@ -37,7 +37,7 @@ public final class BrowserModel: ObservableObject {
     public let serverMode: ServerMode
     /// The server's `databases` (`DatabaseList.probeCount` at session setup); nil offers db0–db15.
     public let databaseCount: Int?
-    /// Loads the first page after a restart; the tab resumes Auto-page here when that is the mode.
+    /// Loads the first page after a restart in manual mode; Auto-page (FR-KB02) runs `autoPage` instead.
     let startScan: @MainActor (KeyIndex) async -> Void
     /// The type's editor; nil shows the shell without a value editor (types whose editor isn't built yet).
     let editorBinding: @MainActor (KeyType) -> EditorBinding?
@@ -52,6 +52,8 @@ public final class BrowserModel: ObservableObject {
     /// Bumped by every selection, so only the newest presence check reports.
     private var presenceRequest = 0
     private var selection: AnyCancellable?
+    /// Auto-page scans only while the list is on screen; hiding it stops the run after the page in flight.
+    private var listShown = true
     private var observers: [NSObjectProtocol] = []
 
     public init(
@@ -77,7 +79,14 @@ public final class BrowserModel: ObservableObject {
             let list = self.list
             Task { await self.confirmingUnsavedChanges({ list.applyHeldSelection() }, cancel: { list.dropHeldSelection() }) }
         }
-        filter?.confirmsRestart = { [weak self] action in await self?.confirmingUnsavedChanges(action) }
+        filter?.confirmsRestart = { [weak self] action in
+            await self?.confirmingUnsavedChanges { [weak self] in
+                // The old filter's auto-page run must not page the new scan.
+                await self?.list.index.stopAutoPage()
+                await action()
+            }
+        }
+        filter?.startScan = { [weak self] _ in await self?.startScanning() }
         let center = NotificationCenter.default
         observers.append(
             center.addObserver(forName: KeyListCommands.refreshNotification, object: nil, queue: .main) { [weak self] note in
@@ -156,6 +165,7 @@ public final class BrowserModel: ObservableObject {
     public func refresh() async {
         let selected = await list.selectedKeyName()
         missingKey = nil
+        await list.index.stopAutoPage()
         await list.index.restart()
         if let selected { await list.select(keyBytes: selected) }
         await scan()
@@ -180,6 +190,7 @@ public final class BrowserModel: ObservableObject {
         self.database = database
         missingKey = nil
         await list.select(keyBytes: nil)
+        await list.index.stopAutoPage()
         await list.index.switchDatabase(database)
         // The old database's total must not show beside the new one's keys.
         list.setTotalKeys(nil)
@@ -193,10 +204,68 @@ public final class BrowserModel: ObservableObject {
         let request = countsRequest
         await list.reload()
         async let counts: Void = loadCounts(request)
-        await startScan(list.index)
+        await startScanning()
         await list.reload()
         await counts
     }
+
+    // MARK: - Paging (FR-KB02)
+
+    /// After a restart: the first page in manual mode; in Auto-page every page up to the limit.
+    private func startScanning() async {
+        if await list.index.status.mode == .auto { await autoPage() } else { await startScan(list.index) }
+    }
+
+    /// The footer's link. Load more is manual paging (it ends Auto-page); Retry and Continue keep the mode.
+    public func perform(_ action: KeyIndexFooter.Action) async {
+        let index = list.index
+        let auto = await index.status.mode == .auto
+        switch action {
+        case .loadMore: await index.loadMore()
+        case .retry: if auto { await autoPage() } else { await index.loadMore() }
+        case .continue: if auto { await autoPage { _ = await index.continueScanning() } } else { await index.continueScanning() }
+        }
+        await list.reload()
+    }
+
+    /// ⋯ → Auto-page, Pause Scanning, Resume Scanning.
+    public func page(_ command: KeyListPagingCommand) async {
+        let index = list.index
+        switch command {
+        case .autoPage(true), .resume: await autoPage()
+        case .autoPage(false): await index.setPagingMode(.manual)
+        // The run stops after the page in flight and the footer reads "Paused".
+        case .pause: await index.pause()
+        }
+        await list.reload()
+    }
+
+    /// The list is on screen (FR-KB02 scans only then): hiding it stops Auto-page after the page in flight; showing it
+    /// again resumes a run that wasn't paused, failed or finished.
+    public func setListShown(_ shown: Bool) async {
+        guard shown != listShown else { return }
+        listShown = shown
+        guard shown else { await list.index.stopAutoPage(); return }
+        let status = await list.index.status
+        if status.mode == .auto, status.phase == .idle || status.phase == .scanning { await autoPage() }
+    }
+
+    /// Runs `KeyIndex.autoPage` (or `body`, such as Continue, which resumes it) while the list re-reads the index a few
+    /// times a second rather than after every page, then once more at the end.
+    private func autoPage(_ body: (@Sendable () async -> Void)? = nil) async {
+        let index = list.index, list = list
+        await index.setPagingMode(.auto)
+        guard listShown else { return }
+        // Only the reload ticker is ever cancelled: cancelling the scan would fail its page in flight.
+        let ticker = Task {
+            while (try? await Task.sleep(for: Self.autoPageReload)) != nil { await list.reload() }
+        }
+        if let body { await body() } else { await index.autoPage() }
+        ticker.cancel()
+        await list.reload()
+    }
+
+    static let autoPageReload = Duration.milliseconds(250)
 
     /// `DBSIZE` for the footer and `INFO keyspace` for the picker. A failure leaves the total unknown (the footer
     /// shows the loaded count only) and keeps the counts the picker had.
@@ -501,15 +570,19 @@ public struct DatabasePicker: View {
 /// The key list with the "Key no longer exists" notice above its footer when the opened key is gone (FR-KB12).
 public struct BrowserPane: View {
     @ObservedObject var model: BrowserModel
-    let perform: (KeyIndexFooter.Action) async -> Void
+    /// The footer's links; nil runs them through the model (`BrowserModel.perform`), which keeps Auto-page going.
+    let perform: ((KeyIndexFooter.Action) async -> Void)?
 
-    public init(model: BrowserModel, perform: @escaping (KeyIndexFooter.Action) async -> Void) { self.model = model; self.perform = perform }
+    public init(model: BrowserModel, perform: ((KeyIndexFooter.Action) async -> Void)? = nil) { self.model = model; self.perform = perform }
 
     public var body: some View {
         VStack(spacing: 0) {
-            KeyListPane(dataSource: model.list, filter: model.filter, perform: perform)
+            KeyListPane(dataSource: model.list, filter: model.filter, perform: perform ?? { await model.perform($0) }, paging: { await model.page($0) })
             if model.missingKey != nil { MissingKeyNotice(model: model) }
         }
+        // Auto-page scans only while the list is on screen (FR-KB02).
+        .onAppear { Task { await model.setListShown(true) } }
+        .onDisappear { Task { await model.setListShown(false) } }
         .sheet(item: $model.deleteConfirmation) { confirmation in
             TypedConfirmationSheet(model: confirmation) { model.deleteConfirmation = nil }
         }

@@ -543,6 +543,8 @@ public func metadata(at index: Int) -> KeyMetadata
 public func loadMore() async -> KeyIndexStatus
 public func autoPage() async -> KeyIndexStatus
 public func pause(); public func continueScanning() async -> KeyIndexStatus
+public func stopAutoPage()                                     // ends the loop after the page in flight; mode stays auto
+public func setPagingMode(_ mode: KeyPagingMode)               // ⋯ → Auto-page off: manual (a paused scan goes idle)
 public func restart(filter: KeyFilter? = nil); public func switchDatabase(_ database: Int)
 public func databaseSize() async -> Result<Int, KeyIndexError>
 public func index(of key: Data) -> Int?; public func presence(of key: Data) async -> KeyPresence

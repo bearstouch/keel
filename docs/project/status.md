@@ -47,6 +47,8 @@ needs a person, hardware or an environment that wasn't available.
 - Switching between two connected tabs in Console mode, and moving one to another window, keeps keyboard focus in
   the selected tab's console and its typed-confirmation sheets bound to that tab (the view swap is tested in
   `TabContentIdentityReviewTests`).
+- The key list's ⋯ menu shows Auto-page (checked while on) and Pause / Resume Scanning, readable by VoiceOver, and the
+  footer counts up while auto-paging (FR-KB02; the model is tested in `BrowserPagingTests`, the menu itself is not).
 - With unsaved edits, clicking or arrowing to another key, switching database, applying a filter or opening a recent
   key from the palette shows the Save / Don’t Save / Cancel alert, and Cancel leaves the list selection as it was
   (FR-ED16; the model and the list's held click are tested in `BrowserUnsavedChangesReviewTests`, the alert itself and

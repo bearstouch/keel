@@ -113,6 +113,30 @@ final class KeyIndexReviewTests: XCTestCase {
         XCTAssertEqual(status.loadedCount, 2)
     }
 
+    func testStopAutoPageLandsThePageInFlightAndKeepsTheMode() async {
+        let index = gatedIndex(pages: (0..<5).map { keys("p", $0 * 2..<$0 * 2 + 2) })
+        let auto = Task { await index.autoPage() }
+        await waitForScans(1)
+        await index.stopAutoPage()
+        transport.release(10)
+        var status = await auto.value
+        XCTAssertEqual(scans.count, 1)
+        XCTAssertEqual(status.loadedCount, 2, "the page in flight lands, unlike a cancelled task's")
+        XCTAssertEqual(status.phase, .idle)
+        XCTAssertEqual(status.mode, .auto)
+        status = await index.autoPage()
+        XCTAssertEqual(status.phase, .complete, "the next run continues from the cursor")
+        XCTAssertEqual(status.loadedCount, 10)
+
+        // Auto-page off while paused: back to Load more.
+        await index.restart()
+        await index.pause()
+        await index.setPagingMode(.manual)
+        status = await index.status
+        XCTAssertEqual(status.phase, .idle)
+        XCTAssertEqual(status.mode, .manual)
+    }
+
     func testPauseDuringAutoPageStopsAfterThePageInFlight() async {
         let index = gatedIndex(pages: (0..<5).map { keys("p", $0 * 2..<$0 * 2 + 2) })
         let auto = Task { await index.autoPage() }

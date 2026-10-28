@@ -283,6 +283,9 @@ public final class KeyListDataSource: NSObject, ObservableObject {
         }
     }
 
+    /// The index's paging mode and phase at the last reload, for the ⋯ menu's Auto-page and Pause items.
+    public var pagingStatus: KeyIndexStatus { status }
+
     /// The key waiting for a page to load it before it is selected; nil when none.
     var pendingKey: Data? { pendingSelection }
 

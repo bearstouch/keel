@@ -229,6 +229,13 @@ struct KeyListHost: NSViewRepresentable {
     static func dismantleNSView(_ container: ModelViewContainer, coordinator: ()) { container.release() }
 }
 
+/// The key list's ⋯ paging items (FR-KB02).
+public enum KeyListPagingCommand: Sendable, Equatable {
+    /// On: scan page after page up to the loaded-key limit; off: back to Load more.
+    case autoPage(Bool)
+    case pause, resume
+}
+
 /// The key list with the filter field above it and its one-line footer ("250,000 of 1.2M keys loaded · Load more").
 /// The browser that owns the scan (KEEL-025/026) calls `reload()` after each page.
 public struct KeyListPane: View {
@@ -237,9 +244,14 @@ public struct KeyListPane: View {
     let filter: KeyFilterModel?
     /// Runs the footer's action (Load more, Continue, Retry) on the index; the pane reloads afterwards.
     let perform: (KeyIndexFooter.Action) async -> Void
+    /// The ⋯ menu's Auto-page, Pause and Resume (FR-KB02); nil hides them.
+    let paging: ((KeyListPagingCommand) async -> Void)?
 
-    public init(dataSource: KeyListDataSource, filter: KeyFilterModel? = nil, perform: @escaping (KeyIndexFooter.Action) async -> Void) {
-        self.dataSource = dataSource; self.filter = filter; self.perform = perform
+    public init(
+        dataSource: KeyListDataSource, filter: KeyFilterModel? = nil, perform: @escaping (KeyIndexFooter.Action) async -> Void,
+        paging: ((KeyListPagingCommand) async -> Void)? = nil
+    ) {
+        self.dataSource = dataSource; self.filter = filter; self.perform = perform; self.paging = paging
     }
 
     public var body: some View {
@@ -264,7 +276,7 @@ public struct KeyListPane: View {
                 .buttonStyle(.plain).foregroundStyle(Tokens.accent)
             }
             Spacer(minLength: 0)
-            if dataSource.metadataLoader != nil || dataSource.onBulkDelete != nil { moreMenu }
+            if dataSource.metadataLoader != nil || dataSource.onBulkDelete != nil || paging != nil { moreMenu }
         }
         .font(Tokens.interface(11.5)).foregroundStyle(Tokens.muted)
         .lineLimit(1)
@@ -274,10 +286,17 @@ public struct KeyListPane: View {
         .accessibilityLabel(footer.text)
     }
 
-    /// The list's secondary actions ("show less, reveal on demand"). Show Sizes measures the visible rows (FR-KB07);
-    /// Delete Keys Matching… deletes what the server pattern filter matches (FR-SF05), so it needs one.
+    /// The list's secondary actions ("show less, reveal on demand"). Auto-page keeps scanning up to the limit and Pause
+    /// stops it after the page in flight (FR-KB02); Show Sizes measures the visible rows (FR-KB07); Delete Keys
+    /// Matching… deletes what the server pattern filter matches (FR-SF05), so it needs one.
     private var moreMenu: some View {
         Menu {
+            if let paging {
+                let status = dataSource.pagingStatus
+                Toggle("Auto-page", isOn: Binding(get: { status.mode == .auto }, set: { on in Task { await paging(.autoPage(on)) } }))
+                if status.mode == .auto, status.phase == .scanning { Button("Pause Scanning") { Task { await paging(.pause) } } }
+                if status.mode == .auto, status.phase == .paused { Button("Resume Scanning") { Task { await paging(.resume) } } }
+            }
             if dataSource.metadataLoader != nil {
                 Toggle("Show Sizes", isOn: Binding(get: { dataSource.showsSizes }, set: { on in Task { await dataSource.setShowsSizes(on) } }))
             }

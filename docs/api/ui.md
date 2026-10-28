@@ -230,6 +230,9 @@ public func refresh() async                                   // keeps the open 
 public func selectDatabase(_ database: Int) async             // asks first when the editor has unsaved changes
 public func reveal(_ key: Data, database: Int? = nil) async   // palette key; asks first unless it is the open key
 @discardableResult public func answerUnsavedChanges(_ choice: UnsavedChangesChoice) -> Task<Void, Never>   // .save, .discard, .cancel
+public func perform(_ action: KeyIndexFooter.Action) async    // footer link: Load more (manual), Retry, Continue (keep the mode)
+public func page(_ command: KeyListPagingCommand) async       // ⋯ → .autoPage(Bool), .pause, .resume (FR-KB02)
+public func setListShown(_ shown: Bool) async                 // Auto-page scans only while the list is on screen
 public func requestDeleteSelection() async                    // typed confirmation for multi-key delete
 public func requestBulkDelete() async
 public func createKey(_ key: Data, _ value: NewKey.Value, ttlMilliseconds: Int64?) async -> String?
@@ -267,7 +270,9 @@ public func setShowsSizes(_ on: Bool) async
 `KeyListOutlineView` / `KeyListTableView` override `keyDown` (⌫ deletes through the owner) and draw an inset focus
 ring (`KeyListFocus`). `KeyListCellView`, `KeyListBadge` and `KeyListRowView` are internal AppKit cells using
 `Tokens.NS`. `KeyListPane` (public SwiftUI) hosts the scroll view via `KeyListHost` (`NSViewRepresentable`) with the
-filter bar and footer.
+filter bar and footer; its optional `paging` closure adds Auto-page, Pause Scanning and Resume Scanning
+(`KeyListPagingCommand`) to the footer's ⋯ menu, which reads `KeyListDataSource.pagingStatus`. In Auto-page the browser
+reloads the list every 250 ms while the run lasts, not after every page.
 
 `KeyListCommands` and `EditorCommands` hold the notification names (`refreshNotification`, `newKeyNotification`,
 `deleteNotification`, `selectDatabaseNotification` + `databaseKey`, `focusFilterNotification`, `saveNotification`,

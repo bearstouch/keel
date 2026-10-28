@@ -19,8 +19,8 @@ public final class KeyFilterModel: ObservableObject {
     @Published public private(set) var focusRequest = 0
 
     public let list: KeyListDataSource
-    /// Loads the first page after a restart; the browser that owns paging (KEEL-025/026) resumes Auto-page here.
-    let startScan: @MainActor (KeyIndex) async -> Void
+    /// Loads after a restart; the browser that owns paging replaces it, so Auto-page resumes under the new filter.
+    var startScan: @MainActor (KeyIndex) async -> Void
     private var focusObserver: NSObjectProtocol?
     /// The browser's check before a restart closes an editor with unsaved changes (FR-ED16): it runs the restart now
     /// or once the user answers, never on Cancel.

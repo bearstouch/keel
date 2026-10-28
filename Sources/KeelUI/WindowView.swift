@@ -411,13 +411,8 @@ private struct BrowserLayout: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            BrowserPane(model: browser) { action in
-                switch action {
-                case .loadMore, .retry: await browser.list.index.loadMore()
-                case .continue: await browser.list.index.continueScanning()
-                }
-            }
-            .frame(width: 380)
+            BrowserPane(model: browser)
+                .frame(width: 380)
             Tokens.hair.frame(width: 1)
             VStack(spacing: 0) {
                 ProductionWriteNotice(session: session)

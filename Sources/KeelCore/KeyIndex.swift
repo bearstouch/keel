@@ -246,6 +246,8 @@ public actor KeyIndex {
     private var mode = KeyPagingMode.manual
     private var inFlight = false
     private var pauseRequested = false
+    /// `stopAutoPage()`: the loop ends after the page in flight without pausing.
+    private var stopRequested = false
     /// Bumped by `restart` only, so a page still in flight for the previous scan is dropped when it lands.
     private var scanEpoch = 0
     /// Bumped whenever key indices stop meaning what they meant — a restart, or a key removed from the list — so the
@@ -433,14 +435,26 @@ public actor KeyIndex {
     @discardableResult
     public func autoPage() async -> KeyIndexStatus {
         guard !inFlight else { mode = .auto; return status }
-        mode = .auto; pauseRequested = false
+        mode = .auto; pauseRequested = false; stopRequested = false
         let epoch = scanEpoch
         // Load more during the loop switches to manual, which ends the loop after the page in flight.
-        while !Task.isCancelled, !pauseRequested, mode == .auto, await scanPage() {}
+        while !Task.isCancelled, !pauseRequested, !stopRequested, mode == .auto, await scanPage() {}
         // A restart during the loop owns the phase; otherwise a loop that stopped mid-scan is paused or idle.
         if epoch == scanEpoch, !inFlight, phase == .scanning { phase = pauseRequested ? .paused : .idle }
         return status
     }
+
+    /// ⋯ → Auto-page off: manual mode, which ends an auto-page loop after the page in flight and leaves the scan
+    /// waiting for Load more. On, the caller then runs `autoPage()`.
+    public func setPagingMode(_ mode: KeyPagingMode) {
+        self.mode = mode
+        if mode == .manual { pauseRequested = false; if phase == .paused { phase = .idle } }
+    }
+
+    /// Ends an auto-page loop after the page in flight without pausing it (the list hid, the scan restarts): the mode
+    /// stays auto and the next `autoPage()` continues from the cursor. Unlike cancelling the calling task, the page in
+    /// flight lands rather than failing.
+    public func stopAutoPage() { stopRequested = true }
 
     /// Stops auto-paging after the page in flight (⋯ menu → Pause scanning).
     public func pause() {
@@ -476,7 +490,7 @@ public actor KeyIndex {
         treeBuild += 1
         tree = NamespaceTree(separator: profileSeparator ?? browser?.namespaceSeparator ?? tree.separator, build: treeBuild)
         cursor = Data("0".utf8); started = false
-        limit = configuration.limit; phase = .idle; inFlight = false; pauseRequested = false
+        limit = configuration.limit; phase = .idle; inFlight = false; pauseRequested = false; stopRequested = false
     }
 
     /// The database switcher (FR-KB08): the same index, filters and paging mode on another database, starting empty.
