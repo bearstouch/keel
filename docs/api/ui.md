@@ -189,7 +189,8 @@ alias into a saved host. `HostEditorModel` is the Add / Edit SSH Host sheet's fo
 ### SSHPromptCenter / SSHPromptSheet
 
 `SSHPromptCenter` (`@MainActor`) attaches to KeelSSH's `PromptRelay` and queues every non-password ssh prompt
-(host-key confirmation and others) for the user; `respond(_:)` answers the head of the queue. `SSHPromptSheet` shows
+(host-key confirmation and others) for the user; `respond(to:with:)` answers the prompt with that ID (the one the sheet showed) and drops an answer for a prompt no
+longer queued. `SSHPromptSheet` shows
 `current`; apply with `.sshPrompts(_:)`. Nothing is auto-accepted.
 
 ### ProfileTransferModel

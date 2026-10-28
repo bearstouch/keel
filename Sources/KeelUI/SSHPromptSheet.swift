@@ -28,11 +28,12 @@ public final class SSHPromptCenter: ObservableObject {
         }
     }
 
-    /// Answers the prompt on screen. A prompt already withdrawn (timed out, tunnel gone) is ignored by the relay.
-    public func respond(_ response: SSHPromptResponse) {
-        guard let prompt = queue.first else { return }
-        queue.removeFirst()
-        Task { [relay] in await relay.respond(to: prompt.id, with: response) }
+    /// Answers the prompt the user saw, by its ID. An answer for a prompt no longer queued (timed out, tunnel gone) is
+    /// dropped: it must never answer the prompt queued behind it, which the user hasn't seen.
+    public func respond(to id: UUID, with response: SSHPromptResponse) {
+        guard let index = queue.firstIndex(where: { $0.id == id }) else { return }
+        queue.remove(at: index)
+        Task { [relay] in await relay.respond(to: id, with: response) }
     }
 }
 
@@ -144,7 +145,7 @@ private struct SSHPromptPresenter: ViewModifier {
             // The setter is a no-op: SwiftUI may write nil while swapping to the next queued prompt, which must not
             // answer it. Every sheet has a cancel-action button, and the sheet can't be dismissed any other way.
             content.sheet(item: Binding(get: { active ? center.current : nil }, set: { _ in })) { prompt in
-                SSHPromptSheet(prompt: prompt) { center.respond($0) }.id(prompt.id).interactiveDismissDisabled()
+                SSHPromptSheet(prompt: prompt) { center.respond(to: prompt.id, with: $0) }.id(prompt.id).interactiveDismissDisabled()
             }
         }
     }
