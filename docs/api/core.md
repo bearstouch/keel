@@ -729,7 +729,7 @@ public func close() async                            // closes the job connectio
 | --- | --- | --- |
 | `KeelLog` | struct | `os_log` wrapper by `Category` (`connection`, `data`, `jobs`, `app`). Fields are `LogField`: `.code` (non-SCREAMING_SNAKE becomes `INVALID_CODE`), `.count`, `.serverKind`, `.serverText` (private, debug builds only). Errors are recorded in `DiagnosticsRecorder`. Sink and build are injectable |
 | `DiagnosticsRecorder` / `DiagnosticsReport` | final class (lock) / Codable struct | Last 50 error codes and server kinds seen; `DiagnosticsReport.current(profileCount:)` exports `Keel Diagnostics.json` with no user data |
-| `LaunchArguments` | struct | Strict parse of `--state-directory <abs>` and `--fixture`; unknown flags throw `ParseError` (the app exits 64) |
+| `LaunchArguments` | struct | Strict parse of `--state-directory <abs>` and `--fixture`; unknown flags and single-dash spellings of Keel's flags (`-fixture`: `ParseError.singleDash`, with the suggested flag) throw `ParseError` (the app exits 64); other `-Key value` AppKit defaults are skipped |
 | `LaunchMetrics` | enum | Writes first-sidebar-render seconds to `KEEL_LAUNCH_METRICS` for benchmarks |
 | `KeelShortcut`, `KeelShortcutMap`, `KeelShortcutSettings` | enum / typealiases | Keel's menu actions over the vendored `ShortcutMap`/`KeyChord`/`ShortcutSettings` (`TrellisShared/KeyboardShortcuts.swift`) |
 | `PaletteSearch` / `PaletteItem` / `RecentKeys` | enum / structs | Command-palette ranking (`limit = 50`) and in-memory recent keys (`limit = 20`, never persisted) |

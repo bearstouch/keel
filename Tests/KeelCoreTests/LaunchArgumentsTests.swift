@@ -28,6 +28,17 @@ final class LaunchArgumentsTests: XCTestCase {
         XCTAssertEqual(try LaunchArguments.parse(["-NSQuitAlwaysKeepsWindows", "--fixture"]), LaunchArguments(fixture: true), "A Keel flag is never taken as a default's value")
     }
 
+    /// A single-dash Keel flag was read as an AppKit default and skipped with its value, launching against the real state.
+    func testSingleDashKeelFlagsAreRefusedWithASuggestion() {
+        assertParse(["-fixture"], throws: .singleDash("-fixture", suggestion: "--fixture"))
+        assertParse(["-state-directory", "/tmp/demo"], throws: .singleDash("-state-directory", suggestion: "--state-directory"))
+        assertParse(["-state-directory=/tmp/demo"], throws: .singleDash("-state-directory=/tmp/demo", suggestion: "--state-directory"))
+        assertParse(["-Fixture"], throws: .singleDash("-Fixture", suggestion: "--fixture"))
+        assertParse(["-NSDocumentRevisionsDebugMode", "-fixture"], throws: .singleDash("-fixture", suggestion: "--fixture"), "Never eaten as a default's value")
+        XCTAssertEqual(LaunchArguments.ParseError.singleDash("-fixture", suggestion: "--fixture").description, "Unknown argument -fixture. Did you mean --fixture?")
+        XCTAssertEqual(try LaunchArguments.parse(["-AppleLanguages", "(en)", "-NSFixture", "YES", "--fixture"]), LaunchArguments(fixture: true), "Real defaults still pass")
+    }
+
     private func assertParse(
         _ arguments: [String], throws expected: LaunchArguments.ParseError, _ message: String = "", file: StaticString = #filePath, line: UInt = #line
     ) {

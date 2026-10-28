@@ -136,6 +136,8 @@ in `release/manifest.json` and in `scripts/package-release.sh`.
 | `--fixture` | Fresh temporary state folder; Sparkle is never started; secrets stay in memory (`LaunchSecrets`), never in the login Keychain. |
 | `--state-directory <abs path>` | Separate state directory. |
 | anything else starting `--` | exit 64 |
+| `-fixture`, `-state-directory …` (any case, `=value` too) | exit 64 with "Did you mean --…?" (`ParseError.singleDash`) |
+| other `-Key [value]`, `-psn_…` | AppKit defaults and LaunchServices: skipped (a following Keel flag is never taken as the value) |
 
 ### `AppDelegate` (final class, @MainActor; `NSApplicationDelegate`, `NSWindowDelegate`, `NSMenuItemValidation`)
 
