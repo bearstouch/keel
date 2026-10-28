@@ -42,7 +42,10 @@ final class PromptRelayTests: XCTestCase {
         // Classification: only ssh's password prompt is ever a candidate for the saved password.
         for (text, expected) in [
             (Self.hostKeyText, SSHPrompt.Kind.hostKey),
-            ("WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!\nHost key for bastion has changed. Are you sure (yes/no)?", .hostKey),
+            (
+                "Warning: the ED25519 host key for 'bastion' differs from the key for the IP address '10.0.0.5'\nOffending key for IP in /Users/me/.ssh/known_hosts:3\nAre you sure you want to continue connecting (yes/no)? ",
+                .hostKey
+            ),
             ("Enter passphrase for key '/Users/me/.ssh/id_ed25519': ", .passphrase),
             ("Verification code: ", .code),
             ("(deploy@bastion) One-time password (OATH) for `deploy': ", .password),

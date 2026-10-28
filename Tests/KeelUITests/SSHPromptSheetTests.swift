@@ -84,6 +84,10 @@ final class SSHPromptSheetTests: XCTestCase {
         XCTAssertFalse(SSHPromptSheet.takesText(.hostKey), "A host key is accepted or rejected, never typed")
         XCTAssertTrue(SSHPromptSheet.takesText(.passphrase))
         XCTAssertEqual(SSHPromptSheet.fieldLabel(.code), "Answer")
+        let text = "(deploy@bastion) Verification code: "
+        let server = SSHPrompt(owner: UUID(), destination: "bastion", text: text, askpass: AskpassPrompt.classify(text, kind: nil))
+        XCTAssertEqual(SSHPromptSheet.subtitle(SSHPrompt(owner: UUID(), destination: "bastion", text: "Verification code: ", askpass: .typed(echo: false))), "ssh to bastion")
+        XCTAssertEqual(SSHPromptSheet.subtitle(server), "Asked by the SSH server bastion", "A server's text is never presented as ssh's own")
         _ = RootView(prompts: SSHPromptCenter(relay: PromptRelay())).body  // Building the body must not trap.
     }
 }

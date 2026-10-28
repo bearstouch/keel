@@ -128,7 +128,7 @@ public func respond(to id: UUID, with response: SSHPromptResponse)
 
 | Type | Values |
 | --- | --- |
-| `SSHPrompt` (struct, Identifiable) | `id`, `destination`, `text`, `kind`, `echo`; `Kind`: `hostKey`, `password`, `passphrase`, `code`, `confirm`, `notice`. |
+| `SSHPrompt` (struct, Identifiable) | `id`, `destination`, `text`, `kind`, `echo`, `fromServer` (a keyboard-interactive prompt: the server wrote the text); `Kind`: `hostKey`, `password`, `passphrase`, `code`, `confirm`, `notice`. |
 | `SSHPromptResponse` | `text(Data)`, `accept`, `decline`, `cancelled`. |
 | `SSHPromptEvent` | `show(SSHPrompt)`, `withdraw(UUID)`. |
 

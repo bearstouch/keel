@@ -50,7 +50,7 @@ public struct SSHPromptSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(Self.title(prompt.kind)).font(Tokens.interface(13, weight: .semibold))
-                Text("ssh to \(prompt.destination)").font(Tokens.interface(12)).foregroundStyle(Tokens.muted)
+                Text(Self.subtitle(prompt)).font(Tokens.interface(12)).foregroundStyle(Tokens.muted)
             }
             ScrollView {
                 Text(prompt.text)
@@ -59,7 +59,7 @@ public struct SSHPromptSheet: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxHeight: 220)
-            .accessibilityLabel("ssh says: \(prompt.text)")
+            .accessibilityLabel("\(prompt.fromServer ? "The SSH server says" : "ssh says"): \(prompt.text)")
             if Self.takesText(prompt.kind) { field }
             HStack {
                 Spacer()
@@ -110,6 +110,11 @@ public struct SSHPromptSheet: View {
         case .confirm: return "Confirm SSH request"
         case .notice: return "SSH notice"
         }
+    }
+
+    /// A keyboard-interactive question is the server's own text; the sheet says so instead of presenting it as ssh's.
+    static func subtitle(_ prompt: SSHPrompt) -> String {
+        prompt.fromServer ? "Asked by the SSH server \(prompt.destination)" : "ssh to \(prompt.destination)"
     }
 
     static func takesText(_ kind: SSHPrompt.Kind) -> Bool { [.password, .passphrase, .code].contains(kind) }
