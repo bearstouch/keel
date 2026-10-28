@@ -85,6 +85,7 @@ rm -rf "$contents/Frameworks/Sparkle.framework/Versions/B/XPCServices" "$content
 # SwiftPM links with @loader_path only; the bundle keeps its frameworks one level up.
 /usr/bin/install_name_tool -add_rpath "@executable_path/../Frameworks" "$contents/MacOS/Keel"
 scripts/generate-app-icon.sh --compile "$contents/Resources"
+cp LICENSE "$contents/Resources/LICENSE.txt"
 cp ThirdParty/Sparkle-LICENSE.txt "$contents/Resources/Sparkle-LICENSE.txt"
 cp release/Info.plist "$contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $version" -c "Set :CFBundleVersion $version" "$contents/Info.plist"

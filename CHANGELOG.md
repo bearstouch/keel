@@ -5,6 +5,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Keel is now licensed under the MIT License (`LICENSE`); the app bundles it as `Contents/Resources/LICENSE.txt`.
+
 ## [0.9.0] - Unreleased
 
 First release of Keel, a native Redis client for macOS. Supports Redis 6.0+, Valkey 7.2–9.x and Dragonfly.
