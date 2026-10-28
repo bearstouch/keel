@@ -369,6 +369,9 @@ public actor DataCommandService {
         return .readOnly(message: "This transaction queued writes before \(profile.name) became read-only; DISCARD ends it.")
     }
 
+    /// Whether the console's connection has a `MULTI` open: anything sent on it now is queued, not run.
+    public func inTransaction(console: UUID) async -> Bool { await session.openTransaction(.console(console)) != nil }
+
     /// What a console command does to its connection's `MULTI`.
     static func transactionStep(_ info: CommandInfo?, _ safetyClass: SafetyClass) -> TransactionStep {
         switch info?.name {

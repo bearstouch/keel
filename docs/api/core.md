@@ -91,6 +91,7 @@ public actor DataCommandService {
     public func stream(_ command: DataCommand, context: DataContext) async throws(DataCommandError) -> AsyncStream<RESPValue>
     public func stopStream(console: UUID) async
     public func closeConsole(_ console: UUID) async
+    public func inTransaction(console: UUID) async -> Bool   // a MULTI is open on the console's connection (FR-SF08 measures nothing then)
     public func supports(_ capability: ServerCapability, context: DataContext) async -> Bool
     public func refreshCatalog(context: DataContext) async throws(DataCommandError)
     public func lockReadOnly()
@@ -250,7 +251,8 @@ public static func run(_ keys: [Data], service: DataCommandService, context: Dat
 
 The console's O(N) warning (FR-SF08) for `KEYS`, `SMEMBERS`/`HGETALL`/`LRANGE` over `threshold = 10_000` elements and
 `FLUSHALL` without `ASYNC`. Sizes are read through the data path on the console's own connection (`DBSIZE`, `SCARD`,
-`HLEN`, `LLEN`, `INFO keyspace`); an unreadable size gives no warning (the policy's confirmation still applies).
+`HLEN`, `LLEN`, `INFO keyspace`); an unreadable size gives no warning (the policy's confirmation still applies). While the console's connection has a
+`MULTI` open nothing is measured and `check` returns nil, so no size read is queued in the user's transaction.
 
 ```swift
 public static func check(_ arguments: [Data], service: DataCommandService, origin: CommandOrigin = .console, context: DataContext) async -> ComplexityWarning?

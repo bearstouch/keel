@@ -73,6 +73,38 @@ final class ConsoleTransactionTests: XCTestCase {
         XCTAssertEqual(server.connections, 2)
         XCTAssertEqual(server.executed, 0)
     }
+
+    // MARK: - FR-SF08 size reads
+
+    func testNoSizeReadIsQueuedInsideMulti() async throws {
+        let server = TransactionServer()
+        let console = ConsoleSession(service: DataCommandService(session: server.session()), profile: writable, database: 0)
+        _ = await console.run(args("MULTI"))
+        let queued = await console.run(args("HGETALL", "h"))
+        XCTAssertEqual(queued, .printed([ConsoleLine("QUEUED", kind: .output, reply: 2)]))
+        let exec = await console.run(args("EXEC"))
+        // One reply per typed command: no HLEN was queued ahead of HGETALL.
+        XCTAssertEqual(exec, .printed([ConsoleLine("1) (empty array)", kind: .output, reply: 3)]))
+        XCTAssertEqual(server.commands, [["MULTI"], ["HGETALL", "h"], ["EXEC"]])
+        XCTAssertEqual(server.executed, 1)
+        // Once EXEC ends the transaction, the size is read and warns again.
+        guard case .needsGoAhead = await console.run(args("HGETALL", "h")) else { return XCTFail("HGETALL on 20,000 fields warns outside MULTI") }
+        XCTAssertEqual(server.commands.last, ["HLEN", "h"])
+    }
+
+    func testKeysAndFlushallInsideMultiMeasureNothing() async throws {
+        let server = TransactionServer()
+        let console = ConsoleSession(service: DataCommandService(session: server.session()), profile: writable, database: 0)
+        _ = await console.run(args("MULTI"))
+        guard case .needsConfirmation(_, let keysWarning) = await console.run(args("KEYS", "*")) else { return XCTFail("KEYS asks first") }
+        guard case .needsConfirmation(_, let flushWarning) = await console.run(args("FLUSHALL")) else { return XCTFail("FLUSHALL asks first") }
+        XCTAssertNil(keysWarning); XCTAssertNil(flushWarning)
+        // Both confirmations cancelled: nothing but MULTI went out, so EXEC runs an empty transaction.
+        XCTAssertEqual(server.commands, [["MULTI"]])
+        let exec = await console.run(args("EXEC"))
+        XCTAssertEqual(exec, .printed([ConsoleLine("(empty array)", kind: .output, reply: 4)]))
+        XCTAssertEqual(server.executed, 0)
+    }
 }
 
 /// An in-memory server that keeps `MULTI` state per connection: queues commands, answers `EXEC` with one reply per
