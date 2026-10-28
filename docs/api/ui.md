@@ -224,16 +224,21 @@ public init(list: KeyListDataSource, filter: KeyFilterModel? = nil, database: In
 @Published public var deleteConfirmation: TypedConfirmationModel?
 @Published public var bulkDelete: BulkDeleteModel?
 @Published public var showsNewKey: Bool
+@Published public private(set) var unsavedChangesPrompt: UnsavedChangesPrompt?   // FR-ED16: Save / Don't Save / Cancel
 public func start() async
-public func refresh() async
-public func selectDatabase(_ database: Int) async
-public func reveal(_ key: Data) async
+public func refresh() async                                   // keeps the open editor and its draft
+public func selectDatabase(_ database: Int) async             // asks first when the editor has unsaved changes
+public func reveal(_ key: Data, database: Int? = nil) async   // palette key; asks first unless it is the open key
+@discardableResult public func answerUnsavedChanges(_ choice: UnsavedChangesChoice) -> Task<Void, Never>   // .save, .discard, .cancel
 public func requestDeleteSelection() async                    // typed confirmation for multi-key delete
 public func requestBulkDelete() async
 public func createKey(_ key: Data, _ value: NewKey.Value, ttlMilliseconds: Int64?) async -> String?
 ```
 
-`BrowserPane` and `DatabasePicker` are the public views over it; `MissingKeyNotice` is internal.
+`BrowserPane` and `DatabasePicker` are the public views over it; `MissingKeyNotice` is internal. `BrowserPane` shows
+`unsavedChangesPrompt` as an alert. A click or arrow key in the list that would close an editor with unsaved changes
+is held by the list's `selectionIndexesForProposedSelection` delegate and made only after Save or Don't Save; a
+filter change waits the same way (`KeyFilterModel.confirmsRestart`).
 
 ### KeyListDataSource and the AppKit lists
 

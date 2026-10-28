@@ -16,6 +16,9 @@ public final class BrowserModel: ObservableObject {
     @Published public private(set) var missingKey: Data?
     /// The selected key, open in the editor shell (KEEL-027) once its presence check named its type.
     @Published public private(set) var editor: EditorSession?
+    /// A selection change, database switch, filter or palette key that would close the editor while it has unsaved
+    /// changes, waiting for Save, Don't Save or Cancel (FR-ED16); the pane shows it as an alert.
+    @Published public private(set) var unsavedChangesPrompt: UnsavedChangesPrompt?
     /// ⇧⌘N asked for the new-key sheet (FR-ED14).
     @Published public var showsNewKey = false
     /// The profile's read-only flag, read at `start()`; true until then, so New Key is never offered before it is known.
@@ -68,6 +71,13 @@ public final class BrowserModel: ObservableObject {
             let request = self.presenceRequest
             Task { await self.checkSelection(key, request: request) }
         }
+        list.holdsSelectionChange = { [weak self] in self?.editor?.hasUnsavedChanges == true }
+        list.onHeldSelection = { [weak self] in
+            guard let self else { return }
+            let list = self.list
+            Task { await self.confirmingUnsavedChanges({ list.applyHeldSelection() }, cancel: { list.dropHeldSelection() }) }
+        }
+        filter?.confirmsRestart = { [weak self] action in await self?.confirmingUnsavedChanges(action) }
         let center = NotificationCenter.default
         observers.append(
             center.addObserver(forName: KeyListCommands.refreshNotification, object: nil, queue: .main) { [weak self] note in
@@ -159,7 +169,13 @@ public final class BrowserModel: ObservableObject {
     /// ⌥⌘0…⌥⌘9 and the picker: shows `database` in the same tab with an empty list (FR-KB08). The filters and the
     /// paging mode stay; the selection doesn't (it named a key in another database). Databases the switcher doesn't
     /// offer (db1 on a cluster, db12 of 8) are ignored.
+    /// Unsaved changes in the open editor are asked about first.
     public func selectDatabase(_ database: Int) async {
+        guard database != self.database, databases.entry(database) != nil else { return }
+        await confirmingUnsavedChanges { [weak self] in await self?.switchDatabase(database) }
+    }
+
+    private func switchDatabase(_ database: Int) async {
         guard database != self.database, databases.entry(database) != nil else { return }
         self.database = database
         missingKey = nil
@@ -235,9 +251,17 @@ public final class BrowserModel: ObservableObject {
         await editor.load()
     }
 
-    /// The palette's recent key: selected in the list when loaded there, otherwise opened in the editor after the usual
-    /// presence check (a key gone since shows the missing-key notice).
-    public func reveal(_ key: Data) async {
+    /// The palette's recent key, in `database` (nil: the shown one): selected in the list when loaded there, otherwise
+    /// opened in the editor after the usual presence check (a key gone since shows the missing-key notice). Another key
+    /// than the open one asks about its unsaved changes first.
+    public func reveal(_ key: Data, database: Int? = nil) async {
+        let database = database ?? self.database
+        guard let editor, editor.key != key || editor.context.database != database else { await revealNow(key, database: database); return }
+        await confirmingUnsavedChanges { [weak self] in await self?.revealNow(key, database: database) }
+    }
+
+    private func revealNow(_ key: Data, database: Int) async {
+        if database != self.database { await switchDatabase(database) }
         await list.select(keyBytes: key)
         // Loaded: the selection opens it. Not loaded (another page, filtered out): the list keeps it pending.
         guard list.selectedKey == nil else { return }
@@ -250,6 +274,47 @@ public final class BrowserModel: ObservableObject {
         case .missing: missingKey = key; editor = nil
         // A failed check changes nothing: the open editor, if any, stays.
         case .failed: break
+        }
+    }
+
+    // MARK: - Unsaved changes (FR-ED16)
+
+    /// Something that would close the open editor while it has unsaved changes.
+    public struct UnsavedChangesPrompt: Identifiable {
+        public let id = UUID()
+        /// The open key's display name, for the alert's title.
+        public let keyName: String
+        let editor: EditorSession
+        let proceed: @MainActor () async -> Void
+        let cancel: @MainActor () -> Void
+    }
+
+    public enum UnsavedChangesChoice: Sendable { case save, discard, cancel }
+
+    /// Runs `action` now, or once the user saved or discarded the open editor's unsaved changes; Cancel runs `cancel`
+    /// and changes nothing. A second request while one is asked is cancelled.
+    func confirmingUnsavedChanges(_ action: @escaping @MainActor () async -> Void, cancel: @escaping @MainActor () -> Void = {}) async {
+        guard let editor, editor.hasUnsavedChanges else { await action(); return }
+        guard unsavedChangesPrompt == nil else { cancel(); return }
+        unsavedChangesPrompt = UnsavedChangesPrompt(keyName: KeyDisplay.name(editor.key), editor: editor, proceed: action, cancel: cancel)
+    }
+
+    /// The alert's answer. Taken at once (the alert's dismissal must not cancel it); the save or the move runs in the
+    /// returned task. A save that fails or hits a conflict keeps the draft, the editor says why, and nothing moves.
+    @discardableResult
+    public func answerUnsavedChanges(_ choice: UnsavedChangesChoice) -> Task<Void, Never> {
+        let prompt = unsavedChangesPrompt
+        unsavedChangesPrompt = nil
+        return Task {
+            guard let prompt else { return }
+            switch choice {
+            case .cancel: prompt.cancel()
+            case .discard: prompt.editor.revert(); await prompt.proceed()
+            case .save:
+                await prompt.editor.save()
+                guard !prompt.editor.hasUnsavedChanges else { prompt.cancel(); return }
+                await prompt.proceed()
+            }
         }
     }
 
@@ -451,6 +516,19 @@ public struct BrowserPane: View {
         .sheet(item: $model.bulkDelete) { bulkDelete in
             BulkDeleteSheet(model: bulkDelete) { model.bulkDelete = nil }
         }
+        .alert(unsavedTitle, isPresented: askingUnsaved, presenting: model.unsavedChangesPrompt) { _ in
+            Button("Save") { model.answerUnsavedChanges(.save) }
+            Button("Don’t Save", role: .destructive) { model.answerUnsavedChanges(.discard) }
+            Button("Cancel", role: .cancel) { model.answerUnsavedChanges(.cancel) }
+        } message: { _ in
+            Text("Your changes will be lost if you don’t save them.")
+        }
+    }
+
+    private var unsavedTitle: String { "Save changes to “\(model.unsavedChangesPrompt?.keyName ?? "this key")”?" }
+
+    private var askingUnsaved: Binding<Bool> {
+        Binding(get: { model.unsavedChangesPrompt != nil }, set: { if !$0 { model.answerUnsavedChanges(.cancel) } })
     }
 }
 

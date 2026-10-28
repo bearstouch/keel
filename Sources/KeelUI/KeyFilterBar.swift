@@ -22,6 +22,9 @@ public final class KeyFilterModel: ObservableObject {
     /// Loads the first page after a restart; the browser that owns paging (KEEL-025/026) resumes Auto-page here.
     let startScan: @MainActor (KeyIndex) async -> Void
     private var focusObserver: NSObjectProtocol?
+    /// The browser's check before a restart closes an editor with unsaved changes (FR-ED16): it runs the restart now
+    /// or once the user answers, never on Cancel.
+    var confirmsRestart: ((@escaping @MainActor () async -> Void) async -> Void)?
 
     /// `filter` is the one the index was created with (`KeyIndexConfiguration.filter`).
     public init(list: KeyListDataSource, filter: KeyFilter = KeyFilter(), startScan: @escaping @MainActor (KeyIndex) async -> Void = { _ = await $0.loadMore() }) {
@@ -64,6 +67,12 @@ public final class KeyFilterModel: ObservableObject {
     /// A changed filter restarts the scan: the loaded keys go at once, so no stale key shows under the new filter
     /// (AC2). The same filter again does nothing; Refresh (⌘R) is how to rescan with it.
     func apply(_ filter: KeyFilter) async {
+        guard filter != applied else { return }
+        guard let confirmsRestart else { await restart(with: filter); return }
+        await confirmsRestart { [weak self] in await self?.restart(with: filter) }
+    }
+
+    private func restart(with filter: KeyFilter) async {
         guard filter != applied else { return }
         applied = filter
         await list.index.restart(filter: filter)

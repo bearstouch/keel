@@ -102,8 +102,7 @@ public final class TabSession: ObservableObject, Identifiable {
     /// While still connecting, the key waits for the browser.
     public func reveal(_ key: Data, database: Int) async {
         guard let browser, status == .connected else { pendingReveal = key; return }
-        if browser.database != database { await browser.selectDatabase(database) }
-        await browser.reveal(key)
+        await browser.reveal(key, database: database)
     }
 
     /// Disconnect (⇧⌘D): closes every connection of the tab and its tunnel lease. The browser goes with it.

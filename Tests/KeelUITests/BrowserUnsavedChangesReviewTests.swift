@@ -20,7 +20,7 @@ final class BrowserUnsavedChangesReviewTests: XCTestCase {
                 return LoadedValue(rows: [EditorRow(id: Data(), value: Data("v".utf8))], watch: WatchGuard(key: key, reads: [], expected: []))
             },
             writes: { key, _, draft in saves ? [.stringSet(key: key, value: draft.first?.value ?? Data(), keepTTL: true)] : [] })
-        let model = BrowserModel(list: list, database: 0, editorBinding: { _ in binding })
+        let model = BrowserModel(list: list, filter: KeyFilterModel(list: list), database: 0, editorBinding: { _ in binding })
         await model.start()
         return (model, list, server)
     }
@@ -78,6 +78,130 @@ final class BrowserUnsavedChangesReviewTests: XCTestCase {
         editor.revert()
         await model.refresh()
         try await waitUntil { model.editor == nil }
+    }
+
+    // MARK: - Asking first (FR-ED16)
+
+    /// A click as AppKit makes it: the delegate sees the proposed rows first and may keep the current ones.
+    @MainActor private func click(_ list: KeyListDataSource, rows: IndexSet) {
+        let allowed = list.tableView(list.tableView, selectionIndexesForProposedSelection: rows)
+        list.tableView.selectRowIndexes(allowed, byExtendingSelection: false)
+    }
+
+    @MainActor private func dirtyEditor(_ keys: Set<String> = ["user:1", "user:2"], saves: Bool = false) async throws -> (BrowserModel, KeyListDataSource, EditorSession) {
+        let (model, list, _) = await browser(keys, saves: saves)
+        let editor = try await open("user:1", in: model, list)
+        editor.update(Self.draft)
+        return (model, list, editor)
+    }
+
+    @MainActor func testClickingAnotherKeyAsksAndCancelKeepsSelectionAndDraft() async throws {
+        let (model, list, editor) = try await dirtyEditor()
+        click(list, rows: [1])
+        try await waitUntil { model.unsavedChangesPrompt != nil }
+        XCTAssertEqual(model.unsavedChangesPrompt?.keyName, "user:1")
+        XCTAssertEqual(list.selectedKey, 0, "the click is held while the user answers")
+        XCTAssertEqual(list.tableView.selectedRow, 0)
+
+        await model.answerUnsavedChanges(.cancel).value
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertNil(model.unsavedChangesPrompt)
+        XCTAssertEqual(list.selectedKey, 0)
+        XCTAssertTrue(model.editor === editor)
+        XCTAssertEqual(editor.draft, Self.draft)
+
+        // A multi-key selection would close the editor too.
+        click(list, rows: [0, 1])
+        try await waitUntil { model.unsavedChangesPrompt != nil }
+        XCTAssertTrue(list.selectedKeys.isEmpty)
+        await model.answerUnsavedChanges(.cancel).value
+    }
+
+    @MainActor func testDontSaveMovesTheSelection() async throws {
+        let (model, list, editor) = try await dirtyEditor()
+        click(list, rows: [1])
+        try await waitUntil { model.unsavedChangesPrompt != nil }
+        await model.answerUnsavedChanges(.discard).value
+        try await waitUntil { model.editor?.key == Data("user:2".utf8) }
+        XCTAssertEqual(list.selectedKey, 1)
+        XCTAssertFalse(editor.hasUnsavedChanges)
+    }
+
+    @MainActor func testSaveMovesOnlyOnceSaved() async throws {
+        // Saved (nothing left to write): the click goes through.
+        let (model, list, _) = try await dirtyEditor()
+        click(list, rows: [1])
+        try await waitUntil { model.unsavedChangesPrompt != nil }
+        await model.answerUnsavedChanges(.save).value
+        try await waitUntil { model.editor?.key == Data("user:2".utf8) }
+
+        // A save the server refuses keeps the draft and the selection.
+        let (refused, refusedList, editor) = try await dirtyEditor(saves: true)
+        click(refusedList, rows: [1])
+        try await waitUntil { refused.unsavedChangesPrompt != nil }
+        await refused.answerUnsavedChanges(.save).value
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertTrue(refused.editor === editor)
+        XCTAssertEqual(editor.draft, Self.draft)
+        XCTAssertEqual(refusedList.selectedKey, 0)
+    }
+
+    @MainActor func testCleanEditorMovesWithoutAsking() async throws {
+        let (model, list, _) = await browser(["user:1", "user:2"])
+        _ = try await open("user:1", in: model, list)
+        click(list, rows: [1])
+        XCTAssertNil(model.unsavedChangesPrompt)
+        XCTAssertEqual(list.selectedKey, 1)
+        try await waitUntil { model.editor?.key == Data("user:2".utf8) }
+    }
+
+    @MainActor func testDatabaseSwitchAsksFirst() async throws {
+        let (model, _, editor) = try await dirtyEditor()
+        await model.selectDatabase(1)
+        XCTAssertNotNil(model.unsavedChangesPrompt)
+        XCTAssertEqual(model.database, 0)
+        await model.answerUnsavedChanges(.cancel).value
+        XCTAssertEqual(model.database, 0)
+        XCTAssertTrue(model.editor === editor)
+
+        await model.selectDatabase(1)
+        await model.answerUnsavedChanges(.discard).value
+        XCTAssertEqual(model.database, 1)
+        XCTAssertNil(model.editor)
+    }
+
+    @MainActor func testFilterAsksFirst() async throws {
+        let (model, list, editor) = try await dirtyEditor()
+        let filter = try XCTUnwrap(model.filter)
+        await filter.setType(.hash)
+        XCTAssertNotNil(model.unsavedChangesPrompt)
+        XCTAssertNil(filter.applied.type, "nothing is applied until the user answers")
+        XCTAssertEqual(list.keyCountForTests, 2)
+        await model.answerUnsavedChanges(.cancel).value
+        XCTAssertNil(filter.applied.type)
+        XCTAssertTrue(model.editor === editor)
+
+        filter.patternText = "user:2"
+        await filter.applyPattern()
+        await model.answerUnsavedChanges(.discard).value
+        XCTAssertEqual(filter.applied.pattern, Data("user:2".utf8))
+        try await waitUntil { model.editor == nil }
+    }
+
+    @MainActor func testPaletteKeyAsksUnlessItIsTheOpenOne() async throws {
+        let (model, _, editor) = try await dirtyEditor()
+        await model.reveal(Data("user:1".utf8), database: 0)
+        XCTAssertNil(model.unsavedChangesPrompt, "the open key itself closes nothing")
+        XCTAssertTrue(model.editor === editor)
+
+        await model.reveal(Data("user:2".utf8), database: 0)
+        XCTAssertNotNil(model.unsavedChangesPrompt)
+        await model.answerUnsavedChanges(.cancel).value
+        XCTAssertTrue(model.editor === editor)
+        await model.reveal(Data("other".utf8), database: 1)
+        await model.answerUnsavedChanges(.discard).value
+        XCTAssertEqual(model.database, 1)
+        try await waitUntil { model.editor?.key == Data("other".utf8) }
     }
 
     @MainActor private func waitUntil(_ condition: () -> Bool) async throws {
