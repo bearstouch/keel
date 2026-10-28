@@ -158,7 +158,7 @@ public enum SafetyPolicy {
     public static func evaluate(_ arguments: [Data], command: CommandInfo?, origin: CommandOrigin,
                                 profile: SafetyProfile, database: Int, confirmation: CommandConfirmation?) -> SafetyVerdict
 }
-public enum GlobPattern {                            // Redis stringmatchlen on bytes
+public enum GlobPattern {                            // port of Redis/Valkey stringmatchlen on bytes; exactly `*` matches every key
     public static func matches(_ pattern: Data, _ subject: Data) -> Bool
     public static func matchesEverything(_ pattern: Data) -> Bool   // every non-empty key: `*`, `?*`, `[^]*` (FR-SF05)
 }
@@ -712,7 +712,7 @@ cancellation, so an in-flight `UNLINK` finishes and its outcome stays known.
 ```swift
 public init(pattern: Data, type: KeyTypeFilter? = nil, throttle: Int? = defaultThrottle, service: DataCommandService,
             profile: SafetyProfile, database: Int, clock: Clock = .continuous)
-public static func refusal(pattern: Data, type: KeyTypeFilter?) -> String?      // empty, *, or module type filter
+public static func refusal(pattern: Data, type: KeyTypeFilter?) -> String?      // empty, a pattern every key matches, or module type filter
 public static func confirmation(for pattern: Data, database: Int) -> CommandConfirmation
 public static func request(for pattern: Data, estimate: Int?, exact: Bool = false, profile: SafetyProfile, database: Int) -> TypedConfirmation
 public func sample() async -> Sample                // up to 20 SCAN pages / 100 matches + DBSIZE, for the estimate
@@ -722,7 +722,7 @@ public nonisolated func cancel(); public nonisolated var isCancelled: Bool
 public func close() async                            // closes the job connection
 ```
 
-`Report.summary` always carries the caveat that keys created or renamed during the run may remain.
+`Report.summary` always carries the caveat that keys created or renamed during the run may remain. `Progress.skipped` counts keys SCAN returned that `GlobPattern.matches` rejected (never sent); the summary names them and `Report.isComplete` is false while it is non-zero.
 
 ## App support
 

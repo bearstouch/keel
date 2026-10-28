@@ -232,28 +232,18 @@ public enum SafetyPolicy {
     }
 }
 
-/// Redis glob matching (`stringmatchlen`, case-sensitive) on bytes: `*`, `?`, `[abc]`, `[^a-z]`, `\x`.
+/// Redis glob matching on bytes, ported from `stringmatchlen` (Redis and Valkey `util.c`, case-sensitive): `*`, `?`,
+/// `[abc]`, `[^a-z]`, `\x`. Its edge cases are kept: `x-]` with three bytes left is a range (that `]` doesn't close the
+/// class), an unterminated class runs to the end, a trailing `\` is literal, more than 1,000 nested `*`s match nothing.
+/// Range bounds compare C `char`s, signed on x86-64 and unsigned on arm64 Linux servers, so with a byte ≥ 0x80 in the
+/// pattern a key matches when either reading does (the server already matched it under one of them).
 public enum GlobPattern {
     public static func matches(_ pattern: Data, _ subject: Data) -> Bool {
+        // SCAN and KEYS don't match at all for exactly `*`: every key is listed, the empty one too.
+        if pattern.count == 1, pattern.first == star { return true }
         let p = [UInt8](pattern), s = [UInt8](subject)
-        var pi = 0, si = 0
-        // Every token but `*` consumes exactly one byte, so backtracking to the last `*` is enough (no recursion).
-        var starPattern: Int?, starSubject = 0
-        while si < s.count {
-            if pi < p.count, p[pi] == UInt8(ascii: "*") {
-                while pi < p.count, p[pi] == UInt8(ascii: "*") { pi += 1 }
-                starPattern = pi; starSubject = si
-                continue
-            }
-            if pi < p.count, let next = matchOne(p, pi, s[si]) {
-                pi = next; si += 1
-                continue
-            }
-            guard let star = starPattern else { return false }
-            starSubject += 1; si = starSubject; pi = star
-        }
-        while pi < p.count, p[pi] == UInt8(ascii: "*") { pi += 1 }
-        return pi == p.count
+        if match(p, s, signed: false) { return true }
+        return p.contains { $0 >= 0x80 } && match(p, s, signed: true)
     }
 
     /// A pattern that matches every non-empty key (FR-SF05 refuses it; that is FLUSHDB): at least one `*` and at most
@@ -261,11 +251,15 @@ public enum GlobPattern {
     /// patterns; `??*` (not 1-byte keys) and `?` (only 1-byte keys) are not.
     public static func matchesEverything(_ pattern: Data) -> Bool {
         let p = [UInt8](pattern)
+        return matchesEverything(p, signed: false) || (p.contains { $0 >= 0x80 } && matchesEverything(p, signed: true))
+    }
+
+    private static func matchesEverything(_ p: [UInt8], signed: Bool) -> Bool {
         var pi = 0, stars = 0, others = 0
         while pi < p.count {
-            if p[pi] == UInt8(ascii: "*") { stars += 1; pi += 1; continue }
+            if p[pi] == star { stars += 1; pi += 1; continue }
             // Every byte must match the token; the index after it doesn't depend on which one did.
-            let nexts = (0...UInt8.max).map { matchOne(p, pi, $0) }
+            let nexts = (0...UInt8.max).map { token(p, pi, $0, signed: signed) }
             guard let next = nexts[0], nexts.allSatisfy({ $0 == next }) else { return false }
             others += 1; pi = next
             if others > 1 { return false }
@@ -273,35 +267,95 @@ public enum GlobPattern {
         return stars > 0
     }
 
-    /// The pattern index after the token at `pi` when it matches `byte`; nil when it doesn't.
-    private static func matchOne(_ p: [UInt8], _ pi: Int, _ byte: UInt8) -> Int? {
+    private static let star = UInt8(ascii: "*"), backslash = UInt8(ascii: "\\")
+
+    /// `stringmatchlen` without its recursion (a task's stack is too small for 1,000 frames): every token but `*` takes
+    /// exactly one byte, so backtracking to the last `*` gives the same answer as recursing at each one.
+    private static func match(_ p: [UInt8], _ s: [UInt8], signed: Bool) -> Bool {
+        // Redis reads no pattern for an empty key, so only the empty pattern matches it (`**` doesn't).
+        if s.isEmpty { return p.isEmpty }
+        if exceedsNesting(p) { return false }
+        var pi = 0, si = 0
+        var starPattern: Int?, starSubject = 0
+        while si < s.count {
+            if pi < p.count, p[pi] == star {
+                while pi < p.count, p[pi] == star { pi += 1 }
+                starPattern = pi; starSubject = si
+                continue
+            }
+            if pi < p.count, let next = token(p, pi, s[si], signed: signed) {
+                pi = next; si += 1
+                continue
+            }
+            guard let resume = starPattern else { return false }
+            starSubject += 1; si = starSubject; pi = resume
+        }
+        while pi < p.count, p[pi] == star { pi += 1 }
+        return pi == p.count
+    }
+
+    /// Redis recurses once per run of `*`s and gives up past 1,000 levels. A match must get past every such run with
+    /// key bytes left (only stars may follow the key's end), so a 1,001st run that isn't the pattern's end means no
+    /// key matches at all.
+    private static func exceedsNesting(_ p: [UInt8]) -> Bool {
+        guard p.lazy.filter({ $0 == star }).count > 1_000 else { return false }
+        var pi = 0, runs = 0
+        while pi < p.count {
+            if p[pi] == star {
+                runs += 1
+                while pi < p.count, p[pi] == star { pi += 1 }
+                if runs > 1_000 { return pi < p.count }
+                continue
+            }
+            // A token no byte matches ends every match before the runs after it count.
+            guard let next = (0...UInt8.max).lazy.compactMap({ token(p, pi, $0, signed: false) }).first else { return false }
+            pi = next
+        }
+        return false
+    }
+
+    /// The pattern index after the one-byte token at `p[pi]` (not `*`) when it matches `byte`; nil when it doesn't.
+    private static func token(_ p: [UInt8], _ pi: Int, _ byte: UInt8, signed: Bool) -> Int? {
         switch p[pi] {
         case UInt8(ascii: "?"):
             return pi + 1
-        case UInt8(ascii: "\\") where pi + 1 < p.count:
-            return p[pi + 1] == byte ? pi + 2 : nil
         case UInt8(ascii: "["):
             var i = pi + 1
             let negate = i < p.count && p[i] == UInt8(ascii: "^")
             if negate { i += 1 }
             var matched = false
-            // Like Redis, an unterminated class runs to the end of the pattern.
-            while i < p.count, p[i] != UInt8(ascii: "]") {
-                if p[i] == UInt8(ascii: "\\"), i + 1 < p.count {
-                    if p[i + 1] == byte { matched = true }
-                    i += 2
-                } else if i + 2 < p.count, p[i + 1] == UInt8(ascii: "-"), p[i + 2] != UInt8(ascii: "]") {
-                    let low = min(p[i], p[i + 2]), high = max(p[i], p[i + 2])
-                    if (low...high).contains(byte) { matched = true }
-                    i += 3
-                } else {
-                    if p[i] == byte { matched = true }
+            while true {
+                let left = p.count - i
+                if left >= 2, p[i] == backslash {
                     i += 1
+                    if p[i] == byte { matched = true }
+                } else if left > 0, p[i] == UInt8(ascii: "]") {
+                    break
+                } else if left == 0 {
+                    // Unterminated: the class ends with the pattern.
+                    i -= 1
+                    break
+                } else if left >= 3, p[i + 1] == UInt8(ascii: "-") {
+                    // `x-]` is a range too; its `]` is the bound, not the end of the class.
+                    var low = value(p[i], signed), high = value(p[i + 2], signed)
+                    if low > high { swap(&low, &high) }
+                    if (low...high).contains(value(byte, signed)) { matched = true }
+                    i += 2
+                } else if p[i] == byte {
+                    matched = true
                 }
+                i += 1
             }
-            return matched != negate ? min(i + 1, p.count) : nil
+            return matched != negate ? i + 1 : nil
+        case backslash:
+            // A trailing `\` stands for itself.
+            let i = p.count - pi >= 2 ? pi + 1 : pi
+            return p[i] == byte ? i + 1 : nil
         default:
             return p[pi] == byte ? pi + 1 : nil
         }
     }
+
+    /// A byte as C `char`: signed (x86-64) or unsigned (arm64 Linux).
+    private static func value(_ byte: UInt8, _ signed: Bool) -> Int { signed ? Int(Int8(bitPattern: byte)) : Int(byte) }
 }

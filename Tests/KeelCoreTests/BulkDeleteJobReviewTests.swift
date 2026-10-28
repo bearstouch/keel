@@ -136,4 +136,26 @@ final class BulkDeleteJobReviewTests: BulkDeleteJobFixture {
         XCTAssertEqual(browsed.values, ["browser(db0)", "browser(db0)"], "one browse per throttle wait, on the browser's own connection")
         XCTAssertEqual(Set(server.opened.map(\.role)), [.job(job.id), .browser(database: 0)])
     }
+
+    /// FR-SF05: a key SCAN MATCH returned but Keel's own check rejects is never sent, and the report counts it instead of
+    /// saying the run is complete.
+    func testKeysTheLocalCheckRejectsAreReportedNotDropped() async throws {
+        let keyspace = keyspace(matching: 1_500, other: 300)
+        // This server's MATCH lets everything through, as one that reads the pattern differently would.
+        let server = RecordingServer { arguments in
+            guard arguments.first == "SCAN", let match = arguments.firstIndex(of: "MATCH") else { return keyspace.answer(arguments) }
+            var unmatched = arguments; unmatched.removeSubrange(match...(match + 1))
+            return keyspace.answer(unmatched)
+        }
+        let report = await run(try job(keyspace, server: server))
+        XCTAssertNil(report.failure)
+        XCTAssertFalse(report.isComplete, "300 keys the server matched were left")
+        XCTAssertEqual(report.deleted, 1_500)
+        XCTAssertEqual(report.progress.matched, 1_500)
+        XCTAssertEqual(report.progress.skipped, 300)
+        XCTAssertFalse(unlinks(server).joined().contains { $0.hasPrefix("user:") }, "a rejected key is never sent")
+        XCTAssertTrue(report.summary.contains("300 keys the server matched were left"), report.summary)
+        XCTAssertTrue(report.details.contains("left 300"), report.details)
+        XCTAssertEqual(keyspace.remaining.count, 300)
+    }
 }

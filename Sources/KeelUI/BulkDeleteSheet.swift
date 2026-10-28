@@ -186,7 +186,7 @@ struct BulkDeleteSheet: View {
     }
 
     @ViewBuilder private func finished(_ report: BulkDeleteJob.Report) -> some View {
-        title(report.isComplete ? "Bulk delete finished" : "Bulk delete stopped")
+        title(report.isComplete ? "Bulk delete finished" : report.failure == nil ? "Bulk delete finished with keys left" : "Bulk delete stopped")
         Text(report.summary).font(Tokens.interface(12.5)).foregroundStyle(Tokens.fg).fixedSize(horizontal: false, vertical: true)
         Text(report.details).font(Tokens.interface(12)).foregroundStyle(Tokens.muted)
         HStack {
