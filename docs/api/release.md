@@ -125,7 +125,10 @@ in `release/manifest.json` and in `scripts/package-release.sh`.
 2. `AppInstanceIdentity(bundleIdentifier:)` picks `com.bearstouch.keel` or `com.bearstouch.keel.dev`.
 3. `StateLocation.resolve(...)` then `StateLocation.prepare(_:)`; an unusable folder (file, symlink, other owner) exits
    **73** (`EX_CANTCREAT`).
-4. Creates `AppDelegate(arguments:stateDirectory:)`, keeps it alive with `withExtendedLifetime`, runs `NSApplication`.
+4. `InstanceLock(directory:)` (MAC-17) before any state is read, held for the whole run. A lock held by another
+   process activates that instance (same bundle ID or executable) and exits **75** (`EX_TEMPFAIL`); an unusable lock
+   file exits **73**.
+5. Creates `AppDelegate(arguments:stateDirectory:)`, keeps it alive with `withExtendedLifetime`, runs `NSApplication`.
 
 | Flag | Effect |
 | --- | --- |

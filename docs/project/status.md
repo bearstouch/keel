@@ -53,6 +53,9 @@ needs a person, hardware or an environment that wasn't available.
 - A saved profile through an SSH bastion browses end to end; closing the last tab ends ssh within 11 s and quitting
   leaves no `ssh -N` child (checked with `ps`). The tunnel core is tested in `TunnelIntegrationTests`.
 - Keel and Trellis run at the same time without sharing state.
+- MAC-17: a second `swift run Keel` (or `open -n` of the built app) brings the running instance's windows forward and
+  exits 75, while the installed and development builds still run side by side. The lock itself is tested in
+  `InstanceLockTests`; the activation needs a logged-in session.
 - The built app shows the icon in the Dock, Finder and ⌘-Tab, and dark and tinted appearances follow the system
   setting.
 

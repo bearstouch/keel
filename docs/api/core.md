@@ -494,6 +494,7 @@ unreadable original is preserved as `<name>.corrupt.<uuid>.json` before `startEm
 
 | Type | Kind | Purpose |
 | --- | --- | --- |
+| `InstanceLock` | final class | MAC-17: `init(directory:)` takes an exclusive `flock` on `instance.lock` (0600, `O_NOFOLLOW`) and records the PID; `Failure.held(path:owner:)` when another process holds it, `.unusable(path:errno:)` for a link, folder or foreign file; `release()` or deinit drops it |
 | `StateLocation` | enum | `resolve(arguments:identity:applicationSupport:temporary:)` picks `--state-directory`, a fresh fixture folder, or `Application Support/<bundle id>`; `prepare(_:)` creates it 0700 and refuses a file, symlink or foreign-owned folder (`Failure`) |
 | `KnownCAStore` | actor | Owner of `known-ca.json` (FR-CN04): `check(profile:caFile:)` returns `CATrust.trusted(anchors:)` or `.changed(CAChange)`; only `accept(_:)` or `anchors(profile:caFile:confirm:)` turns a change into anchors; `forget(profile:)`. `CAFile.read` caps at 4 MiB. `CAFingerprint` is SHA-256 hex |
 | `TLSIdentityImporter` | struct | Imports a client identity from PKCS#12 or PEM cert + key (PKCS#8 incl. PBES2, PKCS#1, SEC1; `PrivateKeyDecoder`, `DER` internal) into the login Keychain, service `Keel TLS`; `clientIdentity(profileID:)`, `passphrase(profileID:)`. Errors: `TLSIdentityImportError` |

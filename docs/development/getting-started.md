@@ -43,7 +43,8 @@ Trellis: 4-space indent, 220 columns, semicolons and multi-variable `let` allowe
 | `--state-directory /abs/path` | Uses that folder (created owner-only, mode 0700) |
 
 An unknown `--` flag exits with status 64. An unusable state folder (a file, a symlink or another user's folder) exits
-with 73. Development builds use the bundle ID `com.bearstouch.keel.dev`, and installed builds use
+with 73. A second launch with a state folder that is already in use brings the running Keel forward and exits with
+75 (MAC-17). Development builds use the bundle ID `com.bearstouch.keel.dev`, and installed builds use
 `com.bearstouch.keel`. Each has its own state and instance lock, so both can run at once. State layout and formats are
 described in [Architecture → Persistence](../architecture.md#persistence).
 

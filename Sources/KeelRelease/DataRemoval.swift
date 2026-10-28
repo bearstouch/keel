@@ -81,12 +81,14 @@ public enum DataRemovalPlanner {
     public static let preferenceKeys = ["keyboardShortcuts"] + UpdatePolicy.sparklePreferenceKeys
     /// The stems of Keel's state files (`PersistedFile`, `hosts.json`); checked against KeelCore by the tests.
     public static let stateFileStems = ["connections", "hosts", "windows", "settings", "known-ca"]
+    /// The single-instance lock (`InstanceLock.fileName`, MAC-17); checked against KeelCore by the tests.
+    public static let instanceLockFile = "instance.lock"
 
     /// Whether `name` is a file Keel writes in its state folder: `<stem>.json`, `<stem>.backup.json`, a recovery copy
     /// (`<stem>.corrupt.<UUID>.json`, `<stem>.unreadable.<UUID>.json`) or an atomic-write leftover (`.<stem>.<UUID>.tmp`).
-    /// Finder's `.DS_Store` counts too, so a folder the user once opened can still go.
+    /// The instance lock and Finder's `.DS_Store` count too, so a folder the user once opened can still go.
     public static func isKeelFile(_ name: String) -> Bool {
-        if name == ".DS_Store" { return true }
+        if name == ".DS_Store" || name == instanceLockFile { return true }
         for stem in stateFileStems {
             if name == "\(stem).json" || name == "\(stem).backup.json" { return true }
             for marker in ["corrupt", "unreadable"] where isUUID(name, between: "\(stem).\(marker).", and: ".json") { return true }

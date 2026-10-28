@@ -88,6 +88,8 @@ final class DataRemovalPlannerTests: XCTestCase {
         XCTAssertTrue(DataRemovalPlanner.preferenceKeys.contains("keyboardShortcuts"))
         XCTAssertTrue(DataRemovalPlanner.isKeelFile("hosts.unreadable.\(UUID().uuidString).json"))
         XCTAssertTrue(DataRemovalPlanner.isKeelFile(".hosts.\(UUID().uuidString).tmp"))
+        XCTAssertEqual(DataRemovalPlanner.instanceLockFile, InstanceLock.fileName)
+        XCTAssertTrue(DataRemovalPlanner.isKeelFile(InstanceLock.fileName), "The MAC-17 lock goes with the folder")
         for name in ["id_rsa", "config", "known_hosts", "connections.json.bak", "connections.corrupt.x.json", ".windows.tmp", "export.json", "trellis.json"] {
             XCTAssertFalse(DataRemovalPlanner.isKeelFile(name), name)
         }

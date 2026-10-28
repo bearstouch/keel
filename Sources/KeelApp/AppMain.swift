@@ -627,12 +627,28 @@ struct KeelMain {
             temporary: FileManager.default.temporaryDirectory)
         // EX_CANTCREAT (73): without a usable state folder nothing can be saved, so refuse to launch.
         do { try StateLocation.prepare(directory) } catch { fail(error, status: 73) }
+        // MAC-17: one instance per state folder, locked before any state is read, so two processes never overwrite
+        // each other's files. A second launch brings the running one forward and exits with EX_TEMPFAIL (75).
+        let lock: InstanceLock
+        do { lock = try InstanceLock(directory: directory) } catch {
+            if case .held(_, let owner) = error { bringForward(owner); fail(error, status: 75) }
+            fail(error, status: 73)
+        }
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
         let delegate = AppDelegate(arguments: arguments, stateDirectory: directory)
         app.delegate = delegate
         // `NSApplication.delegate` is weak; keep the delegate alive for the whole run loop.
-        withExtendedLifetime(delegate) { app.run() }
+        withExtendedLifetime((delegate, lock)) { app.run() }
+    }
+
+    /// Activates the process that holds the lock, only when it is this same app (a recorded PID may have been reused).
+    @MainActor private static func bringForward(_ owner: pid_t?) {
+        guard let owner, let running = NSRunningApplication(processIdentifier: owner) else { return }
+        let sameBundle = running.bundleIdentifier != nil && running.bundleIdentifier == Bundle.main.bundleIdentifier
+        let sameExecutable = running.executableURL?.resolvingSymlinksInPath() == Bundle.main.executableURL?.resolvingSymlinksInPath()
+        guard sameBundle || sameExecutable else { return }
+        running.activate(options: [.activateAllWindows])
     }
 
     /// Startup failures go to stderr with a sysexits status so scripts and CI can tell them apart.
