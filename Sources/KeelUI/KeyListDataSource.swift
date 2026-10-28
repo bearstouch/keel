@@ -276,6 +276,9 @@ public final class KeyListDataSource: NSObject, ObservableObject {
         }
     }
 
+    /// The key waiting for a page to load it before it is selected; nil when none.
+    var pendingKey: Data? { pendingSelection }
+
     /// The selected key's bytes, read from the index; nil when nothing or a folder is selected.
     public func selectedKeyName() async -> Data? {
         guard let key = selectedKey else { return nil }

@@ -142,12 +142,16 @@ public final class BrowserModel: ObservableObject {
 
     /// Restarts the scan keeping the filters and, once its key loads again, the selected key (FR-KB09); then
     /// re-reads `DBSIZE` and the switcher's counts. A key deleted meanwhile simply doesn't come back.
+    /// The open editor stays while its key waits to load again, so a draft survives; a clean one re-reads the value.
     public func refresh() async {
         let selected = await list.selectedKeyName()
         missingKey = nil
         await list.index.restart()
         if let selected { await list.select(keyBytes: selected) }
         await scan()
+        guard let editor, !editor.hasUnsavedChanges else { return }
+        // Not back on the first page (or deleted): the clean editor closes until the key loads again, as before.
+        if list.pendingKey == editor.key { self.editor = nil } else if await list.selectedKeyName() == editor.key, self.editor === editor { await editor.load() }
     }
 
     // MARK: - Database switcher
@@ -196,7 +200,8 @@ public final class BrowserModel: ObservableObject {
         missingKey = nil
         // The selection's pinned bytes when known: after a removal, row numbers can name a neighbour until the reload.
         guard let key, list.selectedKey == key, let bytes = await list.selectedKeyName() else {
-            if request == presenceRequest { editor = nil }
+            // The list waits to select the open key again (⌘R restarted the scan): the editor and its draft stay.
+            if request == presenceRequest, !keepsEditorForPendingKey { editor = nil }
             return
         }
         let presence = await list.index.presence(of: bytes)
@@ -207,6 +212,8 @@ public final class BrowserModel: ObservableObject {
         // The row now reads "expired" (or shows its new type); redraw it.
         await list.refreshRows(ofKeys: [key])
     }
+
+    private var keepsEditorForPendingKey: Bool { editor.map { $0.key == list.pendingKey && $0.context.database == database } ?? false }
 
     /// Opens `key` in the editor unless it already is (a refresh re-selects it; the open editor keeps its draft).
     private func open(_ key: Data, type: KeyType, request: Int) async {
