@@ -84,4 +84,37 @@ final class TLSConnectionReviewTests: XCTestCase {
         XCTAssertThrowsError(try parser.next()) { XCTAssertEqual($0 as? RESPError, .protocolError(.tlsRecord)) }
         XCTAssertEqual(RESPError.protocolError(.tlsRecord).code, "PROTOCOL_ERROR")
     }
+
+    /// Profiles accept `[::1]` as typed; Network would look the bracketed text up as a DNS name.
+    func testBracketedIPv6HostConnectsToTheAddress() {
+        for host in ["[::1]", "::1", "[fe80::1%lo0]"] {
+            guard case .hostPort(let resolved, let port) = NetworkTransport.nwEndpoint(.tcp(host: host, port: 6379)), case .ipv6 = resolved else { return XCTFail(host) }
+            XCTAssertEqual(port, 6379)
+        }
+        guard case .hostPort(.name("cache.internal", _), _) = NetworkTransport.nwEndpoint(.tcp(host: "cache.internal", port: 6379)) else { return XCTFail("name") }
+        XCTAssertEqual(RedisEndpoint.bareHost("[::1]"), "::1")
+        for unchanged in ["[cache]", "[]", "10.0.0.5", "cache.internal", "[::1"] { XCTAssertEqual(RedisEndpoint.bareHost(unchanged), unchanged) }
+    }
+
+    /// A bracketed IPv6 host is matched against the certificate's IP names, and never sent as SNI (RFC 6066).
+    func testBracketedIPv6HostMatchesIPSubjectAltName() throws {
+        let anchor = TLSConfiguration(anchorCertificates: try TLSFixtures.ders("self-signed.pem"))
+        for endpoint in [RedisEndpoint.tcp(host: "[::1]", port: 6380), .tcp(host: "::1", port: 6380)] {
+            let name = anchor.expectedName(for: endpoint)
+            XCTAssertEqual(name, "::1")
+            XCTAssertNil(anchor.protocolSettings(for: endpoint).sniName)
+            XCTAssertNil(anchor.evaluate(try TLSFixtures.trust("self-signed.pem"), serverName: name, at: TLSFixtures.date), "IP SAN ::1 matches")
+        }
+        // Through a tunnel the default name is the profile's host as typed (KeelCore passes it as the override).
+        let tunnelled = TLSConfiguration(serverName: "[::1]", anchorCertificates: anchor.anchorCertificates)
+        XCTAssertEqual(tunnelled.expectedName(for: .unixSocket(path: "/tmp/t.sock")), "::1")
+        XCTAssertNil(tunnelled.protocolSettings(for: .unixSocket(path: "/tmp/t.sock")).sniName)
+        let other = anchor.expectedName(for: .tcp(host: "[::2]", port: 6380))
+        XCTAssertEqual(other, "::2")
+        XCTAssertEqual(anchor.evaluate(try TLSFixtures.trust("self-signed.pem"), serverName: other, at: TLSFixtures.date)?.isHostnameMismatch, true, "Another address doesn't match")
+    }
+}
+
+extension TLSTrustFailure {
+    fileprivate var isHostnameMismatch: Bool { if case .hostnameMismatch = self { true } else { false } }
 }

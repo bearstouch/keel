@@ -146,7 +146,11 @@ public enum HandshakeError: Error, Equatable, Sendable {
 ```swift
 case tcp(host: String, port: UInt16)
 case unixSocket(path: String)
+public static func bareHost(_ host: String) -> String   // "[::1]" -> "::1"; anything else unchanged
 ```
+
+`host` may be a bracketed IPv6 literal as typed in a profile; `NetworkTransport` and `TLSConfiguration.expectedName`
+use `bareHost`, so it connects to the address and is matched (never sent as SNI) as an IP.
 
 ### `Transport` (protocol, Sendable)
 

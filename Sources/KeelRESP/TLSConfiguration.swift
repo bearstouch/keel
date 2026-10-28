@@ -48,10 +48,11 @@ public struct TLSConfiguration: Sendable, Equatable {
         return ders
     }
 
-    /// The name sent as SNI and checked against the certificate.
+    /// The name sent as SNI and checked against the certificate; a bracketed IPv6 literal loses its brackets, so it is
+    /// matched as an IP address and never sent as SNI.
     public func expectedName(for endpoint: RedisEndpoint) -> String? {
-        if let serverName, !serverName.isEmpty { return serverName }
-        if case .tcp(let host, _) = endpoint { return host }
+        if let serverName, !serverName.isEmpty { return RedisEndpoint.bareHost(serverName) }
+        if case .tcp(let host, _) = endpoint { return RedisEndpoint.bareHost(host) }
         return nil
     }
 

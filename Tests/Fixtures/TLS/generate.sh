@@ -23,7 +23,7 @@ ca other-ca "/O=Other Fixtures/CN=Other Fixture CA"
 leaf server "/CN=redis.keel.test" "DNS:redis.keel.test" serverAuth keel-ca
 leaf client "/CN=keel-client" "DNS:keel-client" clientAuth keel-ca
 openssl req -x509 -new -newkey rsa:2048 -nodes -keyout self-signed.key -subj "/CN=self-signed.keel.test" -sha256 \
-    -not_before "$start" -not_after "$end" -addext subjectAltName=DNS:self-signed.keel.test,DNS:localhost,IP:127.0.0.1 \
+    -not_before "$start" -not_after "$end" -addext subjectAltName=DNS:self-signed.keel.test,DNS:localhost,IP:127.0.0.1,IP:::1 \
     -addext extendedKeyUsage=serverAuth -out self-signed.pem 2>/dev/null
 # Client key variants for the importer: PKCS#8 (from req), PKCS#1, encrypted PKCS#8 (PBES2/AES-256), EC pair, .p12.
 openssl pkey -in client.key -traditional -out client-pkcs1.key 2>/dev/null
