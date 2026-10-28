@@ -49,8 +49,11 @@ public enum SSHTunnelArguments {
         let destination = try validatedDestination(configuration.destination)
         let host = try forwardHost(configuration.redisHost)
         guard configuration.redisPort > 0 else { throw .invalidRedisPort }
+        // Command-line options win over ssh_config. A `ControlMaster`/`ControlPersist` or `ForkAfterAuthentication`
+        // from the user's config would hand the forward to a background ssh that Keel can't signal or clean up.
         var arguments = [
             "-N", "-T", "-o", "ExitOnForwardFailure=yes", "-o", "ServerAliveInterval=30", "-o", "StreamLocalBindUnlink=yes",
+            "-o", "ControlMaster=no", "-o", "ControlPath=none", "-o", "ControlPersist=no", "-o", "ForkAfterAuthentication=no",
             "-L", "\(socketPath):\(host):\(configuration.redisPort)"
         ]
         if let port = configuration.port {

@@ -10,6 +10,7 @@ final class SSHTunnelArgumentsTests: XCTestCase {
             try SSHTunnelArguments.arguments(for: configuration, socketPath: socket),
             [
                 "-N", "-T", "-o", "ExitOnForwardFailure=yes", "-o", "ServerAliveInterval=30", "-o", "StreamLocalBindUnlink=yes",
+                "-o", "ControlMaster=no", "-o", "ControlPath=none", "-o", "ControlPersist=no", "-o", "ForkAfterAuthentication=no",
                 "-L", "\(socket):127.0.0.1:6379", "-p", "2222", "-l", "deploy", "-i", "/Users/me/.ssh/id ed25519", "--", "ops"
             ], "One argv element per value: the space in the identity path is never split by a shell")
         XCTAssertEqual(SSHTunnelArguments.executable, "/usr/bin/ssh")
@@ -61,7 +62,23 @@ final class SSHTunnelArgumentsTests: XCTestCase {
         for option in SSHTunnelArguments.forbiddenOptions {
             XCTAssertFalse(arguments.contains { $0.localizedCaseInsensitiveContains(option) }, option)
         }
-        XCTAssertEqual(arguments.enumerated().filter { $0.element == "-o" }.map { arguments[$0.offset + 1] }, ["ExitOnForwardFailure=yes", "ServerAliveInterval=30", "StreamLocalBindUnlink=yes"])
+        XCTAssertEqual(
+            arguments.enumerated().filter { $0.element == "-o" }.map { arguments[$0.offset + 1] },
+            [
+                "ExitOnForwardFailure=yes", "ServerAliveInterval=30", "StreamLocalBindUnlink=yes", "ControlMaster=no", "ControlPath=none", "ControlPersist=no",
+                "ForkAfterAuthentication=no"
+            ])
+    }
+
+    func testOverridesConfigOptionsThatBackgroundSSH() throws {
+        // ssh takes the first value it sees for these and reads the command line before ssh_config, so a `Host *` with
+        // ControlMaster auto + ControlPersist or ForkAfterAuthentication yes can't move the forward to a process Keel
+        // doesn't own (the spawned ssh would exit 0 while a daemon keeps the socket).
+        let arguments = try SSHTunnelArguments.arguments(for: SSHTunnelConfiguration(destination: "ops", redisHost: "127.0.0.1", redisPort: 6379), socketPath: socket)
+        let options = arguments.enumerated().filter { $0.element == "-o" }.map { arguments[$0.offset + 1] }
+        for option in ["ControlMaster=no", "ControlPath=none", "ControlPersist=no", "ForkAfterAuthentication=no"] { XCTAssertTrue(options.contains(option), option) }
+        XCTAssertFalse(arguments.contains("-f") || arguments.contains("-M") || arguments.contains("-S"))
+        XCTAssertLessThan(try XCTUnwrap(arguments.firstIndex(of: "ForkAfterAuthentication=no")), try XCTUnwrap(arguments.firstIndex(of: "--")))
     }
 
     func testSavedHostFieldsCarryOver() throws {
