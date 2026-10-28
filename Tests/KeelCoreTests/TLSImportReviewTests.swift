@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import KeelRESP
 import Security
@@ -64,5 +65,37 @@ final class TLSImportReviewTests: XCTestCase {
         XCTAssertEqual(closed.category, .connectionFailed)
         XCTAssertFalse(closed.suggestion.contains("turn on TLS"), closed.suggestion)
         XCTAssertTrue(closed.suggestion.contains("client certificate"), closed.suggestion)
+    }
+
+    /// A SEC1 `EC PRIVATE KEY` for `scalar` on P-256, with `point` as its optional `[1] publicKey`.
+    private func sec1(_ scalar: Data, point: Data? = nil) -> Data {
+        let prime256v1: [UInt8] = [0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x03, 0x01, 0x07]
+        var fields: [DER] = [.integer(1), .octets(Array(scalar)), .explicit(0, .oid(prime256v1))]
+        if let point { fields.append(.explicit(1, DER(tag: DER.bitString, content: [0] + Array(point)))) }
+        return pem(DER.sequence(fields).encoded, "EC PRIVATE KEY")
+    }
+
+    /// The match check derives the public point from the scalar: neither a key file without its point (where the
+    /// certificate's point used to fill in) nor one carrying the certificate's point with another scalar passes.
+    func testECKeyMustMatchCertificateWhateverPointTheFileCarries() throws {
+        let certificate = try F.certificate("client-ec.pem")
+        let fixture = try P256.Signing.PrivateKey(pemRepresentation: String(decoding: try F.data("client-ec.key"), as: UTF8.self))
+        let other = P256.Signing.PrivateKey()
+        for key in [sec1(other.rawRepresentation), sec1(other.rawRepresentation, point: fixture.publicKey.x963Representation)] {
+            XCTAssertThrowsError(try PrivateKeyDecoder.pkcs8(from: key, passphrase: nil, certificate: certificate)) {
+                XCTAssertEqual($0 as? TLSIdentityImportError, .keyDoesNotMatchCertificate)
+            }
+        }
+        // The matching key passes with or without its point; a wrong point next to the right scalar doesn't matter.
+        for point in [nil, fixture.publicKey.x963Representation, other.publicKey.x963Representation] {
+            XCTAssertNoThrow(try PrivateKeyDecoder.pkcs8(from: sec1(fixture.rawRepresentation, point: point), passphrase: nil, certificate: certificate))
+        }
+        // Every curve Security supports derives its point; a scalar of zero or another width has none.
+        XCTAssertEqual(PrivateKeyDecoder.publicPoint(scalar: Array(other.rawRepresentation)), Array(other.publicKey.x963Representation))
+        let p384 = P384.Signing.PrivateKey(), p521 = P521.Signing.PrivateKey()
+        XCTAssertEqual(PrivateKeyDecoder.publicPoint(scalar: Array(p384.rawRepresentation)), Array(p384.publicKey.x963Representation))
+        XCTAssertEqual(PrivateKeyDecoder.publicPoint(scalar: Array(p521.rawRepresentation)), Array(p521.publicKey.x963Representation))
+        XCTAssertNil(PrivateKeyDecoder.publicPoint(scalar: [UInt8](repeating: 0, count: 32)))
+        XCTAssertNil(PrivateKeyDecoder.publicPoint(scalar: [UInt8](repeating: 1, count: 40)))
     }
 }
