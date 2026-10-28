@@ -31,6 +31,19 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - An SSH prompt answer always goes to the prompt on screen.
 - The filter help no longer offers `[!a]` as negation (only `[^a]` negates).
 - Typing in hash and set editors no longer re-sorts every row on each keystroke.
+- The forward check before an SSH tunnel never runs the user's `Match exec` commands.
+- Console masking no longer leaks a password for a quoted `"AUTH"` or for `HELLO … SETNAME auth AUTH user pass`.
+- Bulk delete refuses every pattern that matches all keys (such as `?*`), matches globs exactly like Redis and
+  Valkey, and reports keys the server matched but Keel left instead of saying "complete".
+- `--fixture` runs never read or write the login Keychain, and their Remove Keel Data never touches it.
+- Single-dash spellings of Keel's flags (`-fixture`, `-state-directory`) exit with 64 instead of launching.
+- A saved SSH host password is not replaced when the old one can't be read from the Keychain.
+- Closing a tab while it connects cancels the connect, its SSH tunnel start and its prompts.
+- Deleting a profile lists the tabs it closes and asks before discarding their unsaved changes.
+- A server's keyboard-interactive text is never shown as a host-key question.
+- An EC private key that doesn't match the certificate is refused at import.
+- A hash deleted just before it opens is reported as gone; sorted set scores that overflow a double are refused.
+- Key names escape bidi marks and line separators; hostile INFO memory figures no longer crash Info.
 
 ## [0.9.0] - Unreleased
 
