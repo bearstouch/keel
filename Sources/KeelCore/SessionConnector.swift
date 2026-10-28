@@ -99,6 +99,11 @@ public struct ProfileSessionConnector: SessionConnecting {
                 lease = acquired; endpoint = .unixSocket(path: acquired.socketPath)
             } catch { throw ConnectionFailure(tunnel: error, destination: resolved.destination) }
         }
+        // The tab closed or disconnected while connecting: open nothing more and give the tunnel back.
+        if Task.isCancelled {
+            if let lease, let tunnels { await tunnels.release(lease) }
+            throw .cancelled
+        }
 
         let makeConnection = makeConnection, target = endpoint
         let options = RedisConnection.Options(connectTimeout: connectTimeout, commandTimeout: commandTimeout)
@@ -144,6 +149,8 @@ public struct ProfileSessionConnector: SessionConnecting {
                 do throws(ConnectionFailure) { connection = try await session.connection(for: .browser(database: database), database: database) } catch { throw .notConnected }
                 return try await connection.send(arguments, mayWrite: false)
             }
+            // Cancelled during identification: a session nobody takes must not stay open.
+            guard !Task.isCancelled else { throw ConnectionFailure.cancelled }
             return ConnectedServer(
                 session: session, service: service, identity: identity, databaseCount: count, safety: safety, separator: settings.separator.flatMap { NamespaceSeparator(Data($0.utf8)) }, close: close)
         } catch {

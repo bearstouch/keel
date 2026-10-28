@@ -356,6 +356,46 @@ final class TunnelManagerTests: XCTestCase {
         if case .failure(let error) = await start.result { XCTAssertEqual(error as? TunnelError, .shutDown) } else { XCTFail("Expected shutDown") }
         XCTAssertEqual(launcher.processes.first?.sentSignals, [SIGTERM])
     }
+
+    /// A tab closed while its tunnel starts: the caller's cancellation stops the ssh nobody waits for any more.
+    func testCancelledSoleAcquirerStopsTheStartingSSH() async throws {
+        let manager = manager(probe: { _ in false })
+        let start = Task { [profile, configuration] in try await manager.acquire(profileID: profile, configuration: configuration, connectTimeout: .seconds(30)) }
+        await eventually("ssh launched") { !launcher.processes.isEmpty }
+        start.cancel()
+        if case .failure(let error) = await start.result { XCTAssertEqual(error as? TunnelError, .cancelled) } else { XCTFail("Expected cancelled") }
+        XCTAssertEqual(launcher.processes.first?.sentSignals, [SIGTERM])
+        let users = await manager.userCount(profileID: profile)
+        XCTAssertEqual(users, 0)
+        // Nothing is left behind: the next connect starts a fresh ssh.
+        let ready = self.manager(probe: { _ in true })
+        _ = try await ready.acquire(profileID: profile, configuration: configuration, connectTimeout: .seconds(1))
+        XCTAssertEqual(launcher.processes.count, 2)
+        await ready.shutdown()
+    }
+
+    /// A cancelled caller leaves a tunnel another tab still waits for: that ssh keeps starting and serves the other tab.
+    func testCancelledAcquirerKeepsASharedStartingTunnel() async throws {
+        let ready = Flag()
+        let manager = manager(probe: { _ in ready.value })
+        let first = Task { [profile, configuration] in try await manager.acquire(profileID: profile, configuration: configuration, connectTimeout: .seconds(30)) }
+        await eventually("ssh launched") { !launcher.processes.isEmpty }
+        let second = Task { [profile, configuration] in try await manager.acquire(profileID: profile, configuration: configuration, connectTimeout: .seconds(30)) }
+        await eventually("second caller joined") { await manager.userCount(profileID: profile) == 2 }
+        first.cancel()
+        await eventually("cancelled caller left") { await manager.userCount(profileID: profile) == 1 }
+        ready.value = true
+        let lease = try await second.value
+        if case .failure(let error) = await first.result { XCTAssertEqual(error as? TunnelError, .cancelled) } else { XCTFail("Expected cancelled") }
+        XCTAssertEqual(launcher.processes.count, 1)
+        XCTAssertEqual(launcher.processes.first?.sentSignals, [], "The shared ssh isn't stopped")
+        let users = await manager.userCount(profileID: profile)
+        XCTAssertEqual(users, 1)
+        await manager.release(lease)
+        await eventually("grace period scheduled") { clock.pendingCount > 0 }
+        clock.fire()
+        await eventually("closed after the grace period") { launcher.processes.first?.exit != nil }
+    }
 }
 
 final class SignalLog: @unchecked Sendable {

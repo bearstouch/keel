@@ -71,6 +71,8 @@ needs a person, hardware or an environment that wasn't available.
   `SavedHostBindingTests`.
 - A real sshd keyboard-interactive (PAM) prompt shows "Asked by the SSH server" with a text field, and one that says
   "yes/no" is never shown as a host key (classification is unit-tested in `AskpassReviewTests`).
+- Closing a tab while a real bastion's host-key sheet is up closes the sheet, ends that ssh and adds nothing to
+  `known_hosts` (the cancellation is tested with fakes in `TunnelAskpassTests` and `WindowModelTests`).
 - Keel and Trellis run at the same time without sharing state.
 - MAC-17: a second `swift run Keel` (or `open -n` of the built app) brings the running instance's windows forward and
   exits 75, while the installed and development builds still run side by side. The lock itself is tested in

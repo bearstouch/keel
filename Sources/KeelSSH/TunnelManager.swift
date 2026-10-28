@@ -18,6 +18,8 @@ public enum TunnelError: Error, Equatable, Sendable {
     /// The user's ssh_config adds these forwards (`LocalForward …`, from `ssh -G`) for the destination; ssh never ran,
     /// since they would open TCP ports beside Keel's socket (INT-06).
     case configuredForwards([String])
+    /// The acquiring task was cancelled (its tab closed or disconnected while connecting); it holds no lease.
+    case cancelled
 }
 
 /// One user's hold on a tunnel. Release it exactly once; a second release is ignored.
@@ -93,6 +95,8 @@ public actor TunnelManager {
     /// Opens (or joins) the tunnel for `profileID`. `environment` is added to ssh's environment. `savedPassword` reads the
     /// host's saved password (`HostLibrary.savedPassword(for:gate:)`); a launch calls it at most once, for ssh's first
     /// password prompt. The connect timeout starts over after the person answers one of ssh's prompts.
+    /// Cancelling the calling task gives up its hold at once; when no other caller waits for a starting tunnel, ssh is
+    /// terminated and its prompts are withdrawn. A tunnel other callers share keeps starting for them.
     public func acquire(
         profileID: UUID, configuration: SSHTunnelConfiguration, connectTimeout: Duration, environment: [String: String] = [:],
         savedPassword: (@Sendable () async -> Data?)? = nil
@@ -101,6 +105,7 @@ public actor TunnelManager {
         let leaseID = UUID()
         while true {
             guard !isShutDown else { throw .shutDown }
+            guard !Task.isCancelled else { throw .cancelled }
             guard let tunnel = tunnels[key] else { break }
             switch tunnel.state {
             case .ready where tunnel.process?.exit == nil:
@@ -111,7 +116,9 @@ public actor TunnelManager {
                 discard(key)
             case .starting(let task):
                 join(key, leaseID)
-                if case .failure(let error) = await task.value { throw error }
+                let result = await waitForStart(task, key: key, leaseID: leaseID)
+                if Task.isCancelled { leave(key, leaseID, generation: tunnel.generation); throw .cancelled }
+                if case .failure(let error) = result { throw error }
                 // Joined successfully only if the same tunnel is still there and still holds this lease.
                 if let current = tunnels[key], current.generation == tunnel.generation, current.users.contains(leaseID) { return lease(key, current, leaseID) }
             }
@@ -131,7 +138,9 @@ public actor TunnelManager {
         tunnel.state = .starting(task)
         tunnels[key] = tunnel
         let process: any TunnelProcess
-        switch await task.value {
+        let result = await waitForStart(task, key: key, leaseID: leaseID)
+        if Task.isCancelled { leave(key, leaseID, generation: generation); throw .cancelled }
+        switch result {
         case .success(let started): process = started
         case .failure(let error): throw error
         }
@@ -139,6 +148,24 @@ public actor TunnelManager {
         // report its exit, not a shutdown. No retry here, so an ssh that keeps dying never relaunches in a loop.
         guard let current = tunnels[key], current.generation == generation else { throw isShutDown ? .shutDown : process.exit.map(TunnelError.exited) ?? .shutDown }
         return lease(key, current, leaseID)
+    }
+
+    /// Waits for a starting tunnel; the caller's cancellation takes its lease off the tunnel, so a start nobody waits
+    /// for any more is stopped (`launchAndWait`).
+    private func waitForStart(_ task: Task<Result<any TunnelProcess, TunnelError>, Never>, key: Key, leaseID: UUID) async -> Result<any TunnelProcess, TunnelError> {
+        let generation = tunnels[key]?.generation
+        return await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            Task { await self.leave(key, leaseID, generation: generation) }
+        }
+    }
+
+    /// Takes a cancelled caller's lease off the tunnel: like `release`, without a lease handed out.
+    private func leave(_ key: Key, _ leaseID: UUID, generation: UUID?) {
+        guard var tunnel = tunnels[key], tunnel.generation == generation, tunnel.users.remove(leaseID) != nil else { return }
+        if tunnel.users.isEmpty, case .ready = tunnel.state { tunnel.closeToken = scheduleClose(key, generation: tunnel.generation) }
+        tunnels[key] = tunnel
     }
 
     /// Ends one hold. When it was the last, ssh is terminated after the grace period unless a new lease arrives first.
@@ -228,6 +255,8 @@ public actor TunnelManager {
         while attempts < limit {
             if let exit = process.exit { runtime.removeTunnelFiles(id: socketID); return .failure(exited(exit)) }
             if isShutDown || tunnels[key]?.generation != generation { await stop(process, socketID: socketID); return .failure(.shutDown) }
+            // Every caller gave up (tabs closed while connecting): stop ssh, so its prompts go away with it.
+            if tunnels[key]?.users.isEmpty == true { await stop(process, socketID: socketID); return .failure(.cancelled) }
             if probe(path) { return .success(process) }
             // While a prompt is on screen the deadline starts over, so ssh gets the full connect timeout after the
             // answer to finish authenticating; the relay's own timeout bounds the wait for the person.

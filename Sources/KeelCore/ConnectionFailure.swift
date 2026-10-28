@@ -98,6 +98,9 @@ public struct ConnectionFailure: Error, Equatable, Sendable, CustomStringConvert
         }
     }
 
+    /// The connect was cancelled (its tab closed or disconnected while connecting); nothing was left open. No tab shows it.
+    public static let cancelled = ConnectionFailure(category: .connectionFailed, message: "The connection was cancelled.", suggestion: "Connect again.")
+
     /// A tunnel that couldn't be opened (FR-CN05). `destination` is the SSH host as configured; no Redis connection was made.
     public init(tunnel error: TunnelError, destination: String) {
         switch error {
@@ -122,6 +125,8 @@ public struct ConnectionFailure: Error, Equatable, Sendable, CustomStringConvert
             self.init(category: .tunnelFailed, message: "Couldn't create Keel's private folder for tunnel sockets.", suggestion: "Check the permissions of your temporary folder, then try again.")
         case .shutDown:
             self.init(category: .tunnelFailed, message: "The SSH tunnel was closed because Keel is quitting.", suggestion: "Open the connection again.")
+        case .cancelled:
+            self = .cancelled
         case .hostKeyNotAccepted(let exit):
             self.init(
                 category: .tunnelFailed, message: "Host key not accepted for \(destination).",

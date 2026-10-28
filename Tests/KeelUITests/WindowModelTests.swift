@@ -260,6 +260,39 @@ final class WindowModelTests: XCTestCase {
         XCTAssertEqual(connector.closed, 1)
     }
 
+    /// Closing a tab while it connects cancels the connect itself (its SSH tunnel start and prompts go with it), and
+    /// the session that still lands is closed, never adopted.
+    @MainActor func testClosingATabWhileConnectingCancelsTheConnect() async throws {
+        let store = await Self.makeStore(in: directory)
+        let profile = try await store.create(ConnectionSettings(name: "bastion"))
+        let connector = FakeConnector()
+        let cancelled = CancelFlag()
+        connector.during = {
+            for _ in 0..<400 where !Task.isCancelled { try? await Task.sleep(for: .milliseconds(5)) }
+            if Task.isCancelled { cancelled.set() }
+        }
+        let app = await makeApp(store, connector: connector)
+        let window = try XCTUnwrap(app.windows.first)
+        let tab = window.open(profileID: profile.id, database: 0)
+        try await settle(app, tab.id, to: .connecting)
+        let session = try XCTUnwrap(app.session(tab.id))
+        XCTAssertEqual(app.requestClose(tab.id), .closed)
+        for _ in 0..<200 where !cancelled.value || connector.closed == 0 { try await Task.sleep(for: .milliseconds(5)) }
+        XCTAssertTrue(cancelled.value, "The connector's task is cancelled")
+        XCTAssertEqual(connector.closed, 1, "The late session is closed")
+        XCTAssertEqual(session.status, .disconnected)
+        XCTAssertNil(session.browser)
+
+        // Disconnect while connecting cancels too.
+        let other = window.open(profileID: profile.id, database: 0)
+        try await settle(app, other.id, to: .connecting)
+        await app.disconnect(other.id)
+        for _ in 0..<200 where connector.closed < 2 { try await Task.sleep(for: .milliseconds(5)) }
+        XCTAssertEqual(connector.closed, 2)
+        XCTAssertEqual(app.session(other.id)?.status, .disconnected)
+        XCTAssertNil(app.session(other.id)?.browser)
+    }
+
     @MainActor func testDeletedProfilesTabsCloseInEveryWindowAndAreNotRestored() async throws {
         let store = await Self.makeStore(in: directory)
         let gone = try await store.create(ConnectionSettings(name: "gone"))
@@ -294,4 +327,11 @@ final class WindowModelTests: XCTestCase {
         let big = MainWindow.constrained(NSRect(x: -50, y: -400, width: 2000, height: 1200), to: [screen])
         XCTAssertEqual(big, NSRect(x: 0, y: 0, width: 1440, height: 875))
     }
+}
+
+final class CancelFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var flag = false
+    func set() { lock.withLock { flag = true } }
+    var value: Bool { lock.withLock { flag } }
 }

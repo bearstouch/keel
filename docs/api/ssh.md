@@ -40,7 +40,9 @@ public func userCount(profileID: UUID) -> Int
 ```
 
 `savedPassword` is called at most once per launch, for ssh's first password prompt. The connect timeout restarts after
-the user answers a prompt.
+the user answers a prompt. Cancelling the calling task (a tab closed or disconnected while connecting) fails the acquire
+with `cancelled` and takes its hold off the tunnel; a tunnel still starting with no other caller is terminated, which
+withdraws its pending prompts. A tunnel other callers share keeps starting for them.
 
 | Type | Kind | Purpose |
 | --- | --- | --- |
@@ -180,7 +182,7 @@ Errors are typed enums; `KeelCore` maps them to the shared codes (see [Errors](.
 
 | Enum | Cases |
 | --- | --- |
-| `TunnelError` | `invalidArguments(_)`, `runtimeDirectory(_)`, `launchFailed(Int32)`, `exited(TunnelExit)`, `timeout(Duration)`, `shutDown`, `hostKeyNotAccepted(TunnelExit)`, `configuredForwards([String])` |
+| `TunnelError` | `invalidArguments(_)`, `runtimeDirectory(_)`, `launchFailed(Int32)`, `exited(TunnelExit)`, `timeout(Duration)`, `shutDown`, `hostKeyNotAccepted(TunnelExit)`, `configuredForwards([String])`, `cancelled` |
 | `SSHTunnelArgumentError` | see above |
 | `RuntimeDirectoryError` | `unsafe`, `pathTooLong`, `io(Int32)` |
 | `HostLibraryError` | `invalid(_)`, `notFound`, `conflict(expected:actual:)`, `readOnly`, `io(Int32)`, `secretStore`, `notAuthorized` |

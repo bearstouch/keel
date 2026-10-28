@@ -353,7 +353,8 @@ public struct ConnectedServer: Sendable {
 identity, SSH tunnel lease from `TunnelManager` (keyed by profile, shared across tabs), then a `ServerSession` whose
 opener connects, handshakes and selects. On the first browser connection it identifies the server (refusing below the
 minimum with `UNSUPPORTED_SERVER`), loads the live catalog and asks `CONFIG GET databases` (best effort). Any failure
-closes what was opened. Settings (timeouts, client name, console RESP version) are read once per connect; only the
+closes what was opened. A cancelled calling task (the tab closed or disconnected while connecting) cancels the tunnel
+acquire, opens nothing more and fails with `ConnectionFailure.cancelled` after closing what was opened. Settings (timeouts, client name, console RESP version) are read once per connect; only the
 console connection uses the console protocol setting, every other role stays on RESP3. All collaborators are injected
 through `init` (`makeConnection`, `detector`, `settings`, `resolveSavedHost`, …).
 
@@ -369,7 +370,7 @@ Test Connection for the connection sheet: `test(_ settings:password:profileID:) 
 User-facing connect failure (FR-CN10): `category`, `message`, `suggestion`, optional `phase` (timeouts), scrubbed
 `serverError`, `tunnelExit`. Messages never contain the password; server text loses echoed arguments. Mapping
 initializers: `init(connecting: RedisError, …)`, `init(handshake: HandshakeError, …)`, `init(tunnel: TunnelError, destination:)`,
-`init(caFile: KnownCAError)`, `init(unsupported: ServerKind, version:minimum:)`. Categories are listed in the error table.
+`init(caFile: KnownCAError)`, `init(unsupported: ServerKind, version:minimum:)`; `cancelled` (`CONNECTION_FAILED`, never shown in a tab). Categories are listed in the error table.
 
 ### Server detection
 
