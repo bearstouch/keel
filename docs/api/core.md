@@ -86,7 +86,7 @@ public actor DataCommandService {
     public init(session: ServerSession, catalog: CommandCatalog = .bundled)
 
     public func execute(_ command: DataCommand, origin: CommandOrigin, context: DataContext) async throws(DataCommandError) -> DataCommandResult
-    public func verdict(_ command: DataCommand, origin: CommandOrigin, context: DataContext) -> SafetyVerdict   // sends nothing
+    public func verdict(_ command: DataCommand, origin: CommandOrigin, context: DataContext) async -> SafetyVerdict   // sends nothing
     public func executeTransaction(_ writes: [DataOperation], unchanged watch: WatchGuard?, context: DataContext) async throws(DataCommandError) -> DataCommandResult
     public func stream(_ command: DataCommand, context: DataContext) async throws(DataCommandError) -> AsyncStream<RESPValue>
     public func stopStream(console: UUID) async
@@ -103,7 +103,9 @@ public actor DataCommandService {
   is opened. Console commands flagged `blocking` run with no command timeout (Stop closes the connection). Refusals log
   at info, failures at error, code only.
 - `verdict`: what the policy says now, without sending. The console uses it to measure and confirm first; `execute`
-  evaluates again, so a verdict never lets anything through on its own.
+  evaluates again, so a verdict never lets anything through on its own. Both add one rule the pure policy can't see: on
+  a read-only (or locked) profile a console's `EXEC` is `READ_ONLY` while its open `MULTI` has queued a command
+  read-only refuses (`SafetyPolicy.readOnlyRefused`), so writes queued before the lock never run; `DISCARD` ends it.
 - `executeTransaction`: an editor save. Every write and every guard read passes the policy (origin `.editor`) before the
   first byte; guard reads must be non-writing. With a `WatchGuard` it sends `WATCH key`, repeats the reads and compares
   (RESP2/RESP3 null and score spellings are equal), then pipelines `MULTI … EXEC` on the pinned browser connection.
@@ -315,7 +317,9 @@ public init(open: @escaping Open)
 public func readyRoles() async -> Set<ConnectionRole>
 public func connection(for role: ConnectionRole, database: Int) async throws(ConnectionFailure) -> RedisConnection
 public func send(_ arguments: [Data], mayWrite: Bool, role: ConnectionRole, database: Int,
-                 bindsDatabase: Bool = true, selecting: Int? = nil, timeout: Duration? = nil) async throws(DataCommandError) -> RESPValue
+                 bindsDatabase: Bool = true, selecting: Int? = nil, timeout: Duration? = nil,
+                 transaction: TransactionStep? = nil) async throws(DataCommandError) -> RESPValue
+public func openTransaction(_ role: ConnectionRole) async -> OpenTransaction?
 public func stream(_ arguments: [Data], role: ConnectionRole, database: Int) async throws(DataCommandError) -> AsyncStream<RESPValue>
 public func pinnedConnection(for role: ConnectionRole, database: Int) async throws(DataCommandError) -> RedisConnection
 public func close(_ role: ConnectionRole) async
@@ -324,6 +328,9 @@ public func closeAll() async
 
 `send` tracks each connection's database: a command that binds a database runs only when the connection is known to be
 on it (`INVALID_PARAMS` otherwise); a console `SELECT`/`RESET` clears the known database until the server answers.
+It also follows a console's `MULTI` from the replies (`TransactionStep`: `begin` on `MULTI` `OK`, `end` on `EXEC` /
+`DISCARD` / `RESET` / `QUIT`, `queue(mayWrite:)` on a `QUEUED` reply); `openTransaction` answers nil once the connection
+it was opened on is closed or replaced. `OpenTransaction.queuedWrite` says whether a command read-only refuses was queued.
 `ServerSession.send` is the data path's transport, not an entry point: call `DataCommandService` instead.
 
 ### `SessionConnecting` / `ProfileSessionConnector` / `ConnectedServer`

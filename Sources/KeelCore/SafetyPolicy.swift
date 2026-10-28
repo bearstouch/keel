@@ -123,6 +123,8 @@ public enum SafetyPolicy {
         "client|caching"
     ]
     static let forbiddenNames: Set<String> = ["client|reply"]
+    /// What read-only refuses, whoever asks (unknown fails closed).
+    public static let readOnlyRefused: Set<SafetyClass> = [.write, .destructive, .script, .admin, .unknown]
 
     /// `command` is the catalog's resolution of `arguments` (nil when unknown).
     public static func classify(_ arguments: [Data], command: CommandInfo?) -> SafetyClass {
@@ -154,7 +156,7 @@ public enum SafetyPolicy {
         let safetyClass = classify(arguments, command: command)
         let display = command?.displayName ?? "This command"
         // 1. Read-only blocks every possible write, whoever asks (unknown fails closed).
-        if profile.readOnly, [.write, .destructive, .script, .admin, .unknown].contains(safetyClass) {
+        if profile.readOnly, readOnlyRefused.contains(safetyClass) {
             return .readOnly(message: "Write commands are blocked on this connection (\(profile.name) is read-only).")
         }
         // 2. What each origin may run.
