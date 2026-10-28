@@ -49,4 +49,15 @@ final class SortedSetEditorReviewTests: XCTestCase {
         XCTAssertFalse(DataCommandService.sameScore(.bulkString(d("0.1")), .bulkString(d("0.1"))), "only a double expectation")
         XCTAssertFalse(DataCommandService.sameScore(.null, .double(0.1)))
     }
+
+    /// FR-ED05: input takes decimal numbers and `inf` / `+inf` / `-inf` in any case. A literal too large or too small
+    /// for a double is refused instead of saving `inf` or 0, and NaN, hex floats and other spellings are refused.
+    func testParseScoreRefusesOverflowAndOtherSpellings() {
+        for (text, score) in [("inf", Double.infinity), ("+INF", .infinity), ("-Inf", -.infinity), (".5", 0.5), ("5.", 5), ("-0", -0.0), ("0.000", 0), ("1e308", 1e308), ("5e-324", 5e-324)] {
+            XCTAssertEqual(SortedSetEditor.parseScore(text), score, text)
+        }
+        for invalid in ["1e400", "-1e400", "1e-400", "infinity", "-Infinity", "nan", "-nan", "0x10", "0x1p3", ".", "e5", "1e", "1e+", "+", "1 2", "١"] {
+            XCTAssertNil(SortedSetEditor.parseScore(invalid), invalid)
+        }
+    }
 }

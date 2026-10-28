@@ -26,10 +26,34 @@ public enum SortedSetEditor {
         return text.hasSuffix(".0") ? String(text.dropLast(2)) : text
     }
 
-    /// The score a user typed: a number (`1.5`, `-3`, `1e3`) or `inf`, `+inf`, `-inf`; nil for anything else (NaN included).
+    /// The score a user typed: a decimal number (`1.5`, `-3`, `.5`, `1e3`) or `inf`, `+inf`, `-inf` in any case; nil for
+    /// anything else. `Double(String)` alone would also take NaN, hex floats and `infinity`, and turn `1e400` into `inf`
+    /// and `1e-400` into 0, so a typo would save a different score; Redis refuses those overflows too.
     public static func parseScore(_ text: String) -> Double? {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty, let value = Double(trimmed), !value.isNaN else { return nil }
+        switch trimmed.lowercased() {
+        case "inf", "+inf": return .infinity
+        case "-inf": return -.infinity
+        default: break
+        }
+        var rest = Substring(trimmed)
+        if rest.first == "-" || rest.first == "+" { rest = rest.dropFirst() }
+        func digits() -> Substring {
+            let run = rest.prefix(while: { $0.isASCII && $0.isNumber })
+            rest = rest.dropFirst(run.count)
+            return run
+        }
+        var mantissa = digits()
+        if rest.first == "." { rest = rest.dropFirst(); mantissa += digits() }
+        guard !mantissa.isEmpty else { return nil }
+        if rest.first == "e" || rest.first == "E" {
+            rest = rest.dropFirst()
+            if rest.first == "-" || rest.first == "+" { rest = rest.dropFirst() }
+            guard !digits().isEmpty else { return nil }
+        }
+        guard rest.isEmpty, let value = Double(trimmed), value.isFinite else { return nil }
+        // Zero only from zero digits: a nonzero literal that underflows to 0 is refused like one that overflows.
+        guard value != 0 || mantissa.allSatisfy({ $0 == "0" }) else { return nil }
         return value
     }
 
