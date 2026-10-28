@@ -16,9 +16,19 @@ public enum ConsoleMasking {
             // `AUTH password` or `AUTH username password`: the password is the last argument.
             return words.count > 1 ? [words.count - 1] : []
         case "hello":
-            // `HELLO protover AUTH username password [SETNAME name]`.
-            guard let auth = words.indices.dropFirst(2).first(where: { words[$0] == "auth" }), auth + 2 < words.count else { return [] }
-            return [auth + 2]
+            // `HELLO protover [AUTH username password] [SETNAME name]`, walked the way the server reads it, so a SETNAME
+            // value spelled `auth` isn't taken for the option. When unsure (no integer protover, a short AUTH, an
+            // unknown option) everything from there on is hidden.
+            var masked: Set<Int> = []
+            var index = words.count > 1 && Int(words[1]) == nil ? 1 : 2
+            while index < words.count {
+                switch words[index] {
+                case "auth" where index + 2 < words.count: masked.insert(index + 2); index += 3
+                case "setname" where index + 1 < words.count: index += 2
+                default: masked.formUnion((words[index] == "auth" ? index + 1 : index)..<words.count); index = words.count
+                }
+            }
+            return masked
         case "acl" where words.count > 3 && words[1] == "setuser":
             // Rules after the user name: `>pass` / `<pass` add or remove a password, `#hash` / `!hash` a hashed one.
             return Set(words.indices.dropFirst(3).filter { index in arguments[index].first.map { Self.passwordRules.contains($0) } ?? false })
@@ -59,11 +69,43 @@ public enum ConsoleMasking {
     }
 
     /// A line that couldn't be split into arguments (FR-CO02) is echoed too: when it starts with a command that takes
-    /// credentials, only that name is kept, since where its secret starts can't be told.
+    /// credentials, only that name is kept, since where its secret starts can't be told. The name is read the way the
+    /// tokenizer would (quotes dropped, escapes decoded), so `"AUTH" "s3cret` or `'auth' …` is caught too.
     public static func displayUnparsed(_ line: String) -> String {
-        let name = line.split(whereSeparator: \.isWhitespace).first.map(String.init) ?? ""
-        return credentialCommands.contains(name.lowercased()) ? name + " " + mask : line
+        let name = leadingWord(line)
+        guard credentialCommands.contains(String(decoding: name, as: UTF8.self).lowercased()) else { return line }
+        return (plain(name) ?? KeyDisplay.redisCliArgument(name)) + " " + mask
     }
+
+    /// The first argument of a line that may not parse, decoded like `ConsoleTokenizer` but forgiving: an unclosed or
+    /// misplaced quote doesn't fail, and any whitespace ends the word, inside quotes too (`"AUTH s3cret` reads `AUTH`).
+    private static func leadingWord(_ line: String) -> Data {
+        var bytes = Array(line.utf8)
+        if let nul = bytes.firstIndex(of: 0) { bytes.removeSubrange(nul...) }
+        func isSpace(_ byte: UInt8) -> Bool { byte == 0x20 || (0x09...0x0D).contains(byte) }
+        func at(_ index: Int) -> UInt8 { index < bytes.count ? bytes[index] : 0 }
+        let backslash = UInt8(ascii: "\\"), double = UInt8(ascii: "\""), single = UInt8(ascii: "'")
+        var index = bytes.firstIndex { !isSpace($0) } ?? bytes.count
+        var word: [UInt8] = [], quote: UInt8? = nil
+        while index < bytes.count, !isSpace(bytes[index]) {
+            let byte = bytes[index]
+            if quote == double, byte == backslash, at(index + 1) == UInt8(ascii: "x"), let high = hexValue(at(index + 2)), let low = hexValue(at(index + 3)) {
+                word.append(high << 4 | low); index += 3
+            } else if quote == double, byte == backslash, index + 1 < bytes.count {
+                index += 1; word.append(bytes[index])
+            } else if quote == single, byte == backslash, at(index + 1) == single {
+                index += 1; word.append(single)
+            } else if byte == double || byte == single, quote == nil || quote == byte {
+                quote = quote == nil ? byte : nil
+            } else {
+                word.append(byte)
+            }
+            index += 1
+        }
+        return Data(word)
+    }
+
+    private static func hexValue(_ byte: UInt8) -> UInt8? { UInt8(String(UnicodeScalar(byte)), radix: 16) }
 
     private static let credentialCommands: Set<String> = ["auth", "hello", "acl", "config", "migrate"]
     private static let passwordRules: Set<UInt8> = [UInt8(ascii: ">"), UInt8(ascii: "<"), UInt8(ascii: "#"), UInt8(ascii: "!")]
