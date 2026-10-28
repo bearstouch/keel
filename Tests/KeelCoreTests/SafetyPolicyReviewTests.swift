@@ -53,4 +53,23 @@ final class SafetyPolicyReviewTests: XCTestCase {
         XCTAssertEqual(verdict("SCRIPT FLUSH", .editor, catalog: merged).code, "BLOCKED_COMMAND")
         XCTAssertEqual(verdict("SCRIPT FLUSH", .console), .allow(.script), "bundled SCRIPT FLUSH is still a script")
     }
+
+    /// FR-SF05: a pattern that matches every non-empty key is FLUSHDB, whatever its spelling: the job refuses it and a
+    /// confirmation for it covers no delete.
+    func testPatternsMatchingEveryKeyAreRefused() {
+        for pattern in ["*", "**", "?*", "*?", "*?*", "**?**", "[^]*", "*[^"] {
+            let bytes = Data(pattern.utf8)
+            XCTAssertTrue(GlobPattern.matchesEverything(bytes), pattern)
+            XCTAssertTrue(BulkDeleteJob.refusal(pattern: bytes, type: nil)?.contains("FLUSHDB") ?? false, pattern)
+            let yes = CommandConfirmation(scope: .pattern(bytes), database: 0)
+            let arguments = ["UNLINK", "a", "b"].map { Data($0.utf8) }
+            let result = SafetyPolicy.evaluate(arguments, command: CommandCatalog.bundled.resolve(arguments), origin: .bulk, profile: writable, database: 0, confirmation: yes)
+            XCTAssertEqual(result.code, "CONFIRMATION_REQUIRED", pattern)
+        }
+        // Each of these leaves some keys alone, so it stays a bulk delete.
+        for pattern in ["?", "??*", "*??", "a*", "*a", "[^a]*", "*\\*", "[a-z]*", "", "[]*"] {
+            XCTAssertFalse(GlobPattern.matchesEverything(Data(pattern.utf8)), pattern)
+        }
+        XCTAssertTrue(GlobPattern.matchesEverything(Data([0x2A, 0x5B, 0x00, 0x2D, 0xFF, 0x5D])), "*[\\x00-\\xff] in bytes")
+    }
 }

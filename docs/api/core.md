@@ -160,6 +160,7 @@ public enum SafetyPolicy {
 }
 public enum GlobPattern {                            // Redis stringmatchlen on bytes
     public static func matches(_ pattern: Data, _ subject: Data) -> Bool
+    public static func matchesEverything(_ pattern: Data) -> Bool   // every non-empty key: `*`, `?*`, `[^]*` (FR-SF05)
 }
 ```
 
@@ -219,7 +220,7 @@ public struct CommandConfirmation: Sendable, Equatable {
 
 A `CommandConfirmation` covers only its database and scope: `.command` matches the arguments byte for byte; `.keys`
 covers multi-key `DEL`/`UNLINK` whose keys are all in the selection; `.pattern` covers `DEL`/`UNLINK` whose keys all
-match the glob, and never `*`/`**` (that is `FLUSHDB`).
+match the glob, and never a glob every key matches (`*`, `?*`, `[^]*`: that is `FLUSHDB`).
 
 ### `TypedConfirmation` (struct, Sendable)
 

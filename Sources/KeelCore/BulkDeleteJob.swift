@@ -162,10 +162,13 @@ public actor BulkDeleteJob {
 
     static func clamped(_ throttle: Int?) -> Int? { throttle.map { min(max($0, throttleRange.lowerBound), throttleRange.upperBound) } }
 
-    /// Why the job can't run with this pattern and type; nil when it can. `*` (or `**`) is every key: that is FLUSHDB.
+    /// Why the job can't run with this pattern and type; nil when it can. A pattern every key matches (`*`, `?*`, `[^]*`)
+    /// is FLUSHDB, which has its own confirmation.
     public static func refusal(pattern: Data, type: KeyTypeFilter?) -> String? {
         if pattern.isEmpty { return "Enter a pattern to delete the keys that match it." }
-        if GlobPattern.matchesEverything(pattern) { return "The pattern * matches every key; use FLUSHDB to empty the database." }
+        if GlobPattern.matchesEverything(pattern) {
+            return "The pattern \(KeyDisplay.redisCliArgument(pattern)) matches every key; use FLUSHDB to empty the database."
+        }
         // SCAN can't select module types; checking each key's TYPE first is not offered for deletes.
         if type == .other { return "Bulk delete can filter by the six core types only." }
         return nil
@@ -354,8 +357,3 @@ private final class CancelFlag: @unchecked Sendable {
 
 /// Lets the job's steps return `Result<_, Failure>` without a wrapper type.
 extension MultiKeyDelete.Failure: Error {}
-
-extension GlobPattern {
-    /// Only `*`s: a pattern every key matches (FR-SF05 refuses it).
-    public static func matchesEverything(_ pattern: Data) -> Bool { !pattern.isEmpty && pattern.allSatisfy { $0 == UInt8(ascii: "*") } }
-}

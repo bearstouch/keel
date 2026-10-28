@@ -219,7 +219,7 @@ public enum SafetyPolicy {
         case .keys(let selection):
             return isKeyDeletion(arguments, safetyClass) && arguments.dropFirst().allSatisfy(selection.contains)
         case .pattern(let pattern):
-            // `*` (or `**`) deletes everything: that is FLUSHDB, with its own confirmation (FR-SF05).
+            // A pattern every key matches (`*`, `?*`, …) deletes everything: that is FLUSHDB, with its own confirmation (FR-SF05).
             guard !GlobPattern.matchesEverything(pattern), isKeyDeletion(arguments, safetyClass) else { return false }
             return arguments.dropFirst().allSatisfy { GlobPattern.matches(pattern, $0) }
         }
@@ -254,6 +254,23 @@ public enum GlobPattern {
         }
         while pi < p.count, p[pi] == UInt8(ascii: "*") { pi += 1 }
         return pi == p.count
+    }
+
+    /// A pattern that matches every non-empty key (FR-SF05 refuses it; that is FLUSHDB): at least one `*` and at most
+    /// one other token, which matches every byte (`?`, `[^]`, `[\x00-\xff]`, …). `*`, `?*`, `*?*`, `[^]*` are such
+    /// patterns; `??*` (not 1-byte keys) and `?` (only 1-byte keys) are not.
+    public static func matchesEverything(_ pattern: Data) -> Bool {
+        let p = [UInt8](pattern)
+        var pi = 0, stars = 0, others = 0
+        while pi < p.count {
+            if p[pi] == UInt8(ascii: "*") { stars += 1; pi += 1; continue }
+            // Every byte must match the token; the index after it doesn't depend on which one did.
+            let nexts = (0...UInt8.max).map { matchOne(p, pi, $0) }
+            guard let next = nexts[0], nexts.allSatisfy({ $0 == next }) else { return false }
+            others += 1; pi = next
+            if others > 1 { return false }
+        }
+        return stars > 0
     }
 
     /// The pattern index after the token at `pi` when it matches `byte`; nil when it doesn't.
