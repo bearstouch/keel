@@ -481,6 +481,14 @@ public protocol SecretStore: Sendable {
 `KeychainSecretStore` writes generic passwords, *when unlocked, this device only*. Secrets never go anywhere else. The
 `Keel SSH Host` service belongs to `KeelSSH`.
 
+`LaunchSecrets(arguments:)` picks the stores for a launch: `usesKeychain`, `profiles: any SecretStore`,
+`hosts: any HostSecretStore`, `identities: TLSIdentityImporter` and `clientIdentity: (UUID) -> TLSClientIdentity?`
+(through `identities`). Normally they are `KeychainSecretStore`, `KeychainHostSecretStore` and
+`TLSIdentityImporter()`; a `--fixture` run gets `InMemorySecretStore`, `InMemoryHostSecretStore` and
+`TLSIdentityImporter(keychain: NoTLSIdentityKeychain())`, so it never reads or writes the Keychain. A `SecIdentity`
+needs a keychain, so a fixture run's certificate import fails with `unsupportedKey(NoTLSIdentityKeychain.message)`
+after the in-memory checks, and it connects without a client identity.
+
 ### `Persistence<Document>` (actor) and `PersistenceCodec`
 
 Single writer of one state file (`PersistedFile`: `connections`, `hosts`, `windows`, `settings`, `known-ca`).

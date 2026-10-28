@@ -81,6 +81,30 @@ final class DataRemovalPlannerTests: XCTestCase {
         XCTAssertEqual(removedKeys, ["keyboardShortcuts"])
     }
 
+    /// MAC-22: a `--fixture` run removes its state folder only. The Keychain items it could see (the installed app's)
+    /// aren't even listed, no preference key is planned, and a hand-built plan with items still removes none.
+    func testStateFolderOnlyScopeNeverTouchesKeychainOrPreferences() throws {
+        try write(PersistedFile.connections.fileName, in: state)
+        let profile = UUID().uuidString
+        let keychain = FakeKeychain([("Keel Connection", profile), ("Keel SSH Host", profile)])
+        keychain.unreadable = Set(DataRemovalPlanner.keychainServices)
+
+        var plan = DataRemovalPlanner.plan(stateDirectory: state, home: home, keychain: keychain, storedPreferenceKeys: ["keyboardShortcuts"], scope: .stateFolderOnly)
+        XCTAssertEqual(plan.scope, .stateFolderOnly)
+        XCTAssertEqual(plan.files, [PersistedFile.connections.fileName])
+        XCTAssertEqual(plan.keychainItems, [])
+        XCTAssertEqual(plan.unreadableServices, [], "The Keychain isn't queried")
+        XCTAssertEqual(plan.preferenceKeys, [])
+
+        keychain.unreadable = []
+        plan.keychainItems = [.init(service: "Keel Connection", account: profile)]
+        var removedKeys: [String] = []
+        XCTAssertEqual(DataRemovalPlanner.execute(plan, keychain: keychain) { removedKeys.append($0) }.failures, [])
+        XCTAssertFalse(fm.fileExists(atPath: state.path))
+        XCTAssertEqual(keychain.remaining.count, 2)
+        XCTAssertEqual(removedKeys, [])
+    }
+
     /// The allow-lists match what Keel actually writes, so a new state file or Keychain service can't be missed.
     func testAllowListsMatchKeelNames() {
         XCTAssertEqual(Set(DataRemovalPlanner.stateFileStems), Set(PersistedFile.allCases.map(\.rawValue)))
