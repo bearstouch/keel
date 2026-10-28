@@ -106,6 +106,9 @@ needs a person, hardware or an environment that wasn't available.
   removed) in the sheet applies from Save on.
 - **Large node expansion.** `NSOutlineView.expandItem` takes about 0.3 s for a node with 500,000 children (its own
   per-child bookkeeping; Keel's callbacks take about 40 ms), so FR-KB04's 200 ms expand check is not met yet.
+- **Typing in a large value.** Each keystroke in the viewer still copies the whole text, converts it back to bytes and,
+  in JSON view, validates it on the main actor (O(value size); unmeasured). The hash and set tables no longer sort
+  again and the change marks are no longer recomputed over every row per keystroke (`EditorTypingReviewTests`).
 - **Xcode 26.3 and later aren't used.** Test runs built by Xcode 26.3 (Swift 6.2.4) and 26.6 (Swift 6.3.3) abort on
   GitHub's `macos-26` runners with "freed pointer was not the last allocation" in a `Persistence` debounce task whose
   `Task.sleep` ends without suspending (a zero debounce, or a task cancelled before it sleeps). The same suite, with

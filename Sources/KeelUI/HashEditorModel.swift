@@ -32,6 +32,11 @@ public final class HashEditorModel: ObservableObject {
 
     public let session: EditorSession
     private var draftChanges: AnyCancellable?
+    /// The last sort: the draft's ids, filter and order it was taken for, and the draft positions in table order. Typing
+    /// in the viewer changes a value, never an id, so each keystroke reuses the order instead of comparing every name.
+    private var sorted: (ids: [Data], filter: String, order: SortOrder, positions: [Int])?
+    /// Sorts taken (tests check that typing takes none).
+    private(set) var sorts = 0
 
     public init(session: EditorSession) {
         self.session = session
@@ -110,15 +115,20 @@ public final class HashEditorModel: ObservableObject {
     // MARK: - Table
 
     private func refresh(_ draft: [EditorRow]? = nil) {
-        let named = (draft ?? session.draft).map { (row: $0, name: KeyDisplay.name($0.id)) }
+        let draft = draft ?? session.draft
+        let ids = draft.map(\.id)
+        if let sorted, sorted.ids == ids, sorted.filter == filter, sorted.order == order { rows = sorted.positions.map { draft[$0] }; return }
+        let named = draft.indices.map { (position: $0, id: draft[$0].id, name: KeyDisplay.name(draft[$0].id)) }
         let needle = filter.trimmingCharacters(in: .whitespaces)
         let shown = needle.isEmpty ? named : named.filter { $0.name.localizedCaseInsensitiveContains(needle) }
         let ascending = order == .ascending
-        rows = shown.sorted { a, b in
+        let positions = shown.sorted { a, b in
             // Names that compare equal (escaped bytes aside) fall back to the bytes, so the order is stable.
             let result = a.name.localizedStandardCompare(b.name)
-            if result == .orderedSame { return ascending ? a.row.id.lexicographicallyPrecedes(b.row.id) : b.row.id.lexicographicallyPrecedes(a.row.id) }
+            if result == .orderedSame { return ascending ? a.id.lexicographicallyPrecedes(b.id) : b.id.lexicographicallyPrecedes(a.id) }
             return ascending ? result == .orderedAscending : result == .orderedDescending
-        }.map(\.row)
+        }.map(\.position)
+        sorted = (ids, filter, order, positions); sorts += 1
+        rows = positions.map { draft[$0] }
     }
 }

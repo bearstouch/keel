@@ -16,6 +16,9 @@ public final class SetEditorModel: ObservableObject {
 
     public let session: EditorSession
     private var draftChanges: AnyCancellable?
+    /// The last sort, as in `HashEditorModel`: reused while the draft's members and the filter are the same.
+    private var sorted: (ids: [Data], filter: String, positions: [Int])?
+    private(set) var sorts = 0
 
     public init(session: EditorSession) {
         self.session = session
@@ -53,14 +56,19 @@ public final class SetEditorModel: ObservableObject {
     }
 
     private func refresh(_ draft: [EditorRow]? = nil) {
-        let named = (draft ?? session.draft).map { (row: $0, name: KeyDisplay.name($0.id)) }
+        let draft = draft ?? session.draft
+        let ids = draft.map(\.id)
+        if let sorted, sorted.ids == ids, sorted.filter == filter { rows = sorted.positions.map { draft[$0] }; return }
+        let named = draft.indices.map { (position: $0, id: draft[$0].id, name: KeyDisplay.name(draft[$0].id)) }
         let needle = filter.trimmingCharacters(in: .whitespaces)
         let shown = needle.isEmpty ? named : named.filter { $0.name.localizedCaseInsensitiveContains(needle) }
-        rows = shown.sorted { a, b in
+        let positions = shown.sorted { a, b in
             // Names that compare equal (escaped bytes aside) fall back to the bytes, so the order is stable.
             let result = a.name.localizedStandardCompare(b.name)
-            if result == .orderedSame { return a.row.id.lexicographicallyPrecedes(b.row.id) }
+            if result == .orderedSame { return a.id.lexicographicallyPrecedes(b.id) }
             return result == .orderedAscending
-        }.map(\.row)
+        }.map(\.position)
+        sorted = (ids, filter, positions); sorts += 1
+        rows = positions.map { draft[$0] }
     }
 }
