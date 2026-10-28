@@ -73,12 +73,13 @@ public struct KeyFilter: Sendable, Equatable {
     /// The SCAN for one page under this filter.
     public func scan(cursor: Data, count: Int) -> DataOperation { .scan(cursor: cursor, match: scanMatch, count: count, type: scanType) }
 
-    /// Shown in the glob help popover: Redis's `stringmatchlen` syntax, which `MATCH` uses.
+    /// Shown in the glob help popover: Redis's `stringmatchlen` syntax, which `MATCH` uses. Only `^` negates a class:
+    /// `[!a]` is one of `!` or `a`, so advertising it would list (and bulk-delete) exactly the keys meant to be left out.
     public static let globHelp: [(syntax: String, meaning: String)] = [
         ("*", "any run of characters, including none"),
         ("?", "exactly one character"),
         ("[abc]", "one of a, b or c"),
-        ("[^a] or [!a]", "any one character except a"),
+        ("[^a]", "any one character except a"),
         ("[a-z]", "one character in the range"),
         ("\\*", "a literal *, ? or [ (escape with a backslash)")
     ]

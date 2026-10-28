@@ -34,4 +34,26 @@ final class KeyFilterReviewTests: XCTestCase {
         let after = await index.generation
         XCTAssertEqual(after, before + 1)
     }
+
+    /// The glob help says what Redis's `stringmatchlen` (and `GlobPattern`, which bulk delete checks keys with) does:
+    /// each entry's syntax matches the subjects its meaning promises and none it rules out.
+    func testGlobHelpAgreesWithGlobPattern() {
+        let examples: [String: (matches: [String], rejects: [String])] = [
+            "*": (["", "a", "user:1"], []),
+            "?": (["a", "!"], ["", "ab"]),
+            "[abc]": (["a", "b", "c"], ["d", "ab", ""]),
+            "[^a]": (["b", "!", "z"], ["a", ""]),
+            "[a-z]": (["a", "m", "z"], ["A", "0", "aa"]),
+            "\\*": (["*"], ["a", "\\*", ""])
+        ]
+        XCTAssertEqual(Set(KeyFilter.globHelp.map(\.syntax)), Set(examples.keys), "every help entry has examples")
+        for (syntax, cases) in examples {
+            for subject in cases.matches { XCTAssertTrue(GlobPattern.matches(Data(syntax.utf8), Data(subject.utf8)), "\(syntax) should match \(subject)") }
+            for subject in cases.rejects { XCTAssertFalse(GlobPattern.matches(Data(syntax.utf8), Data(subject.utf8)), "\(syntax) should not match \(subject)") }
+        }
+        // `!` doesn't negate: `session:[!a]*` keeps exactly the session:a… keys, so the help never offers it.
+        XCTAssertTrue(GlobPattern.matches(Data("session:[!a]*".utf8), Data("session:abc".utf8)))
+        XCTAssertFalse(GlobPattern.matches(Data("session:[!a]*".utf8), Data("session:xyz".utf8)))
+        XCTAssertFalse(KeyFilter.globHelp.contains { $0.syntax.contains("[!") || $0.meaning.contains("[!") })
+    }
 }
