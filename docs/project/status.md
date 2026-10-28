@@ -102,6 +102,10 @@ needs a person, hardware or an environment that wasn't available.
 
 ## Known gaps
 
+- **Config forwards with `Match exec`.** The INT-06 forward check is skipped when the user's ssh_config (or an
+  `Include`) has a `Match exec`, or a file Keel can't read, because `ssh -G` would run that command an extra time; such a
+  tunnel still gets any `LocalForward`/`RemoteForward`/`DynamicForward` the config adds.
+
 - **Test Connection and a new client certificate.** Test uses the profile's saved identity; one just imported (or
   removed) in the sheet applies from Save on.
 - **Large node expansion.** `NSOutlineView.expandItem` takes about 0.3 s for a node with 500,000 children (its own

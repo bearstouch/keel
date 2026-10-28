@@ -56,7 +56,8 @@ public protocol TunnelProcess: AnyObject, Sendable {
 public protocol TunnelProcessLauncher: Sendable {
     func launch(executable: String, arguments: [String], environment: [String: String]) throws(TunnelError) -> any TunnelProcess
     /// What ssh prints for `arguments`, which start with `-G` (print the effective options, connect nowhere), or nil when
-    /// it couldn't be read within `timeout`. The tunnel manager checks it for forwards the user's config adds.
+    /// it couldn't be read within `timeout`. The tunnel manager checks it for forwards the user's config adds. An empty
+    /// answer means the config sets no forward (ssh needn't run).
     func effectiveOptions(executable: String, arguments: [String], environment: [String: String], timeout: Duration) async -> String?
 }
 
@@ -69,7 +70,10 @@ extension TunnelProcessLauncher {
 /// prompt on the terminal Keel was started from), stdin and stdout on `/dev/null`, stderr into a pipe of which only the
 /// last 4 KiB is kept, and no other inherited descriptors.
 public struct SSHProcessLauncher: TunnelProcessLauncher {
-    public init() {}
+    private let scanConfig: @Sendable ([String]) -> SSHConfigScan
+
+    /// `scanConfig` reads the config files ssh would read for the given arguments (tests pass their own).
+    public init(scanConfig: @escaping @Sendable ([String]) -> SSHConfigScan = { SSHConfigScan.scan(arguments: $0) }) { self.scanConfig = scanConfig }
 
     public func launch(executable: String, arguments: [String], environment: [String: String]) throws(TunnelError) -> any TunnelProcess {
         try SpawnedProcess.spawn(executable: executable, arguments: arguments, environment: environment)
@@ -79,8 +83,14 @@ public struct SSHProcessLauncher: TunnelProcessLauncher {
 
     /// Runs `ssh -G …` like a tunnel (no shell, own process group) with stdout in a pipe, keeping at most 256 KiB. nil
     /// when ssh can't start, fails, or doesn't finish in time (it is then terminated); the launch that follows reports
-    /// the real error.
+    /// the real error. `ssh -G` evaluates `Match exec`, so the config files are read first: without any forward ssh
+    /// isn't run (empty answer), and with a `Match exec` (or a file that couldn't be read) the check is skipped (nil)
+    /// rather than run the user's commands an extra time.
     public func effectiveOptions(executable: String, arguments: [String], environment: [String: String], timeout: Duration) async -> String? {
+        let config = scanConfig(arguments)
+        guard config.complete else { return nil }
+        guard config.forwards else { return "" }
+        guard !config.matchExec else { return nil }
         var pipeFDs: [Int32] = [-1, -1]
         guard pipe(&pipeFDs) == 0 else { return nil }
         _ = fcntl(pipeFDs[0], F_SETFD, FD_CLOEXEC); _ = fcntl(pipeFDs[1], F_SETFD, FD_CLOEXEC)

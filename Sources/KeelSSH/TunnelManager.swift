@@ -205,8 +205,8 @@ public actor TunnelManager {
         do throws(RuntimeDirectoryError) { path = try runtime.socketPath(id: socketID) } catch { return .failure(.runtimeDirectory(error)) }
         do throws(SSHTunnelArgumentError) { arguments = try SSHTunnelArguments.arguments(for: key.configuration, socketPath: path) } catch { return .failure(.invalidArguments(error)) }
         let sshEnvironment = baseEnvironment.merging(environment) { $1 }
-        // `ssh -G` resolves the same arguments against the user's config without connecting. Unreadable output isn't
-        // fatal: the launch below reports ssh's own error.
+        // `ssh -G` resolves the same arguments against the user's config without connecting; the launcher skips it when
+        // the config has no forward or a `Match exec`. Unreadable output isn't fatal: the launch below reports ssh's own error.
         if let options = await launcher.effectiveOptions(executable: SSHTunnelArguments.executable, arguments: ["-G"] + arguments, environment: sshEnvironment, timeout: connectTimeout) {
             let forwards = SSHTunnelArguments.configuredForwards(in: options, socketPath: path)
             guard forwards.isEmpty else { return .failure(.configuredForwards(forwards)) }

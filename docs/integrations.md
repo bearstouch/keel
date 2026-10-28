@@ -98,7 +98,7 @@ takes the host.
 - `/usr/bin/ssh` runs as the user with their configuration, agent, keys, known hosts, `ProxyJump` and `ProxyCommand`. Keel doesn't implement SSH and never edits SSH configuration.
 - Tunnels are `ssh -N` with a Unix-socket local forward in an owner-only runtime directory ([Architecture](architecture.md#ssh-tunnels)).
 - Each tunnel is its own foreground ssh: Keel passes `ControlMaster=no`, `ControlPath=none`, `ControlPersist=no` and `ForkAfterAuthentication=no`, which override the user's config, so a shared master or a forked ssh never holds a Keel forward that Keel can't stop.
-- A tunnel never opens a TCP port: when the user's config adds `LocalForward`, `RemoteForward` or `DynamicForward` for the destination (checked with `ssh -G` before each launch), Keel doesn't start ssh and reports `TUNNEL_FAILED` naming the forwards.
+- A tunnel never opens a TCP port: when the user's config adds `LocalForward`, `RemoteForward` or `DynamicForward` for the destination (checked with `ssh -G` before each launch; the config files are read first, so `ssh -G` only runs when one sets a forward, and never when a `Match exec` would run a command — that case is unchecked), Keel doesn't start ssh and reports `TUNNEL_FAILED` naming the forwards.
 - Saved SSH passwords: Keychain (`Keel SSH Host`), given to ssh only for its password prompt, once per tunnel, through `keel-askpass` with nonce and peer checks.
 - Every other ssh prompt is relayed verbatim to the user; Keel never answers host-key prompts and never adds trust-bypass options.
 - Discovery reads literal `Host` aliases from `~/.ssh/config` (no wildcards, no `Match`, never executes anything).

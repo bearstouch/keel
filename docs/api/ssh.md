@@ -79,15 +79,26 @@ public protocol TunnelProcess: AnyObject, Sendable {
 }
 public protocol TunnelProcessLauncher: Sendable {
     func launch(executable: String, arguments: [String], environment: [String: String]) throws(TunnelError) -> any TunnelProcess
-    /// `ssh -G …` output, or nil (default implementation: nil, no check)
+    /// `ssh -G …` output, "" when the config sets no forward, or nil (default implementation: nil, no check)
     func effectiveOptions(executable: String, arguments: [String], environment: [String: String], timeout: Duration) async -> String?
 }
-public struct SSHProcessLauncher: TunnelProcessLauncher   // posix_spawn, new session and process group, no shell
+public struct SSHProcessLauncher: TunnelProcessLauncher {  // posix_spawn, new session and process group, no shell
+    public init(scanConfig: @escaping @Sendable ([String]) -> SSHConfigScan = { SSHConfigScan.scan(arguments: $0) })
+}
+public struct SSHConfigScan: Equatable, Sendable {
+    public var forwards: Bool, matchExec: Bool, complete: Bool
+    public static func scan(arguments: [String], home: String = …, read: (String) throws -> Data? = …, glob: (String) -> [String]? = SSHConfigScan.expand) -> SSHConfigScan
+    public static func expand(_ pattern: String) -> [String]?   // glob(3); [] for no match, nil on failure
+}
 ```
 
 `SSHProcessLauncher` gives ssh no controlling terminal, `/dev/null` stdin/stdout, a stderr pipe keeping only the last
 4 KiB, and no other inherited descriptors. Its `effectiveOptions` runs `ssh -G` the same way with stdout in a pipe (at
 most 256 KiB) and answers nil when ssh fails, overflows or doesn't finish within the timeout (it is then terminated).
+Because `ssh -G` evaluates `Match exec`, it first reads the config files with `SSHConfigScan` (the `-F` file, or
+`~/.ssh/config` and `/etc/ssh/ssh_config`, following `Include` up to 16 deep and 256 files; nothing is run): with no
+forward in any file it answers "" without starting ssh, and with a `Match exec` or a file it couldn't read it answers
+nil (no check) rather than run the user's commands an extra time.
 
 | Type | Kind | Purpose |
 | --- | --- | --- |
