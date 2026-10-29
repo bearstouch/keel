@@ -17,6 +17,8 @@ final class ReleaseManifestTests: XCTestCase {
         XCTAssertEqual(manifest.bundleIdentifier, AppInstanceIdentity.production)
         XCTAssertEqual(Set(manifest.architectures), ["arm64", "x86_64"], "Universal 2")
         XCTAssertTrue(manifest.artifacts.contains("Keel.app/Contents/Helpers/keel-askpass"), "The askpass helper is bundled")
+        XCTAssertTrue(manifest.artifacts.contains("Keel.app/Contents/Resources/LICENSE.txt"), "Keel's MIT license is bundled")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("LICENSE").path))
         XCTAssertEqual(manifest.version, AppVersion.release, "SwiftPM builds report the manifest version")
     }
 

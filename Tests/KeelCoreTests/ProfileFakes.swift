@@ -84,7 +84,7 @@ struct ProfileFixture {
     }
 
     /// A store whose metadata writes go through `Persistence` with the failure hook; already loaded.
-    func store() async -> ProfileStore {
+    func store(removeTLSIdentity: @escaping @Sendable (Data) -> Void = { _ in }) async -> ProfileStore {
         let failWrites = failWrites, events = events
         let persistence = Persistence<ConnectionsDocument>(
             directory: directory,
@@ -92,7 +92,7 @@ struct ProfileFixture {
                 if failWrites.isOn { throw POSIXError(.EIO) }
                 events.append("metadata.write")
             })
-        let store = ProfileStore(persistence: persistence, secrets: secrets)
+        let store = ProfileStore(persistence: persistence, secrets: secrets, removeTLSIdentity: removeTLSIdentity)
         _ = await store.load()
         return store
     }
@@ -100,6 +100,13 @@ struct ProfileFixture {
     var fileURL: URL { directory.appendingPathComponent("connections.json") }
 
     func remove() { try? FileManager.default.removeItem(at: root) }
+}
+
+extension ImportedTLSIdentity {
+    /// An identity as `TLSIdentityImporter` returns it; the reference names no real Keychain item.
+    static func fake(_ name: String = "keel-client", isNew: Bool = true, passphrase: String? = nil) -> ImportedTLSIdentity {
+        ImportedTLSIdentity(reference: Data("ref-\(name)".utf8), summary: name, isNew: isNew, passphrase: passphrase)
+    }
 }
 
 extension ConnectionSettings {

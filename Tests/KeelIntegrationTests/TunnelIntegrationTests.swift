@@ -33,6 +33,10 @@ final class TunnelIntegrationTests: XCTestCase {
             lock.withLock { launched.append(process) }
             return process
         }
+        // The same `ssh -G` check as the app, against the fixture's config.
+        func effectiveOptions(executable: String, arguments: [String], environment: [String: String], timeout: Duration) async -> String? {
+            await SSHProcessLauncher().effectiveOptions(executable: executable, arguments: ["-F", config] + arguments, environment: environment, timeout: timeout)
+        }
         var processes: [any TunnelProcess] { lock.withLock { launched } }
     }
 

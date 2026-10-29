@@ -26,6 +26,28 @@ final class SessionConnectorReviewTests: XCTestCase {
         XCTAssertTrue(server.opened.allSatisfy(\.isClosed))
     }
 
+    /// The tab closed while connecting (its task cancelled mid-connect): the connect fails and nothing stays open.
+    func testCancelledConnectLeavesNothingOpen() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("keel-connector-review-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let store = ProfileStore(directory: directory, secrets: FakeSecretStore())
+        _ = await store.load()
+        let profile = try await store.create(ConnectionSettings(name: "cache"))
+        let server = ConnectorServer()
+        // Cancels the connecting task as its first connection opens, like Close Tab during the handshake.
+        let connector = ProfileSessionConnector(
+            profiles: store,
+            makeConnection: { endpoint, tls, options in
+                withUnsafeCurrentTask { $0?.cancel() }
+                return server.makeConnection(endpoint, tls, options)
+            })
+        let result = await Task { await connector.connect(profileID: profile.id, database: 0) }.value
+        guard case .failure = result else { return XCTFail("A cancelled connect must not hand out a session") }
+        XCTAssertFalse(server.opened.isEmpty)
+        XCTAssertTrue(server.opened.allSatisfy(\.isClosed), "nothing stays open after a cancelled connect")
+    }
+
     func testRepeatedWindowIDsRestoreOnce() {
         let profile = UUID()
         let window = SavedWindow(tabs: [SavedTab(profileID: profile, database: 0)])

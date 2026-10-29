@@ -24,6 +24,10 @@ final class TunnelMatrixTests: XCTestCase {
         func launch(executable: String, arguments: [String], environment: [String: String]) throws(TunnelError) -> any TunnelProcess {
             try SSHProcessLauncher().launch(executable: executable, arguments: ["-F", config] + arguments, environment: environment)
         }
+        // The same `ssh -G` check as the app, against the fixture's config.
+        func effectiveOptions(executable: String, arguments: [String], environment: [String: String], timeout: Duration) async -> String? {
+            await SSHProcessLauncher().effectiveOptions(executable: executable, arguments: ["-F", config] + arguments, environment: environment, timeout: timeout)
+        }
     }
 
     func testBrowseThroughSSH() async throws {

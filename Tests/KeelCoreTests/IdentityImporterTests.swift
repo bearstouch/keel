@@ -50,6 +50,12 @@ final class FakeTLSKeychain: TLSIdentityKeychain, @unchecked Sendable {
     var removed: [Data] { lock.withLock { removedReferences } }
     func storedSecret(_ account: String) -> Data? { lock.withLock { secrets["Keel TLS/\(account)"] } }
 
+    /// What `ProfileStore` writes for `identity`, so `clientIdentity(profileID:)` finds it.
+    func save(_ identity: ImportedTLSIdentity, profileID: UUID) throws {
+        let secret = TLSIdentitySecret(identity: identity.reference, passphrase: identity.passphrase, addedByKeel: identity.isNew)
+        try setSecret(try JSONEncoder().encode(secret), service: TLSIdentityImporter.service, account: profileID.uuidString)
+    }
+
     func importPKCS12(_ data: Data, passphrase: String, certificate: SecCertificate?) throws(TLSIdentityImportError) -> KeychainIdentity {
         guard #available(macOS 15, *) else { throw .keychain(errSecUnimplemented) }
         var items: CFArray?
@@ -97,11 +103,14 @@ final class IdentityImporterTests: XCTestCase {
         let keychain = FakeTLSKeychain()
         let importer = TLSIdentityImporter(keychain: keychain)
 
-        let p12 = try importer.importPKCS12(try F.data("client.p12"), passphrase: F.passphrase, profileID: profile)
+        let p12 = try importer.importPKCS12(try F.data("client.p12"), passphrase: F.passphrase)
         XCTAssertEqual(p12.summary, "keel-client")
+        XCTAssertEqual(p12.passphrase, F.passphrase)
+        XCTAssertTrue(p12.isNew)
+        XCTAssertEqual(keychain.secretCount, 0, "the importer never writes Keel TLS: ProfileStore does")
+        try keychain.save(p12, profileID: profile)
         XCTAssertEqual(leafSubject(try importer.clientIdentity(profileID: profile)?.identity), "keel-client")
-        let secret = try XCTUnwrap(keychain.storedSecret(profile.uuidString))
-        XCTAssertEqual(try JSONDecoder().decode(TLSIdentitySecret.self, from: secret), TLSIdentitySecret(identity: p12.reference, passphrase: F.passphrase))
+        XCTAssertEqual(importer.subject(profileID: profile), "keel-client")
         XCTAssertEqual(try importer.passphrase(profileID: profile), F.passphrase)
 
         // PEM certificate + every supported key shape; each lands as an identity whose certificate is the input.
@@ -113,35 +122,37 @@ final class IdentityImporterTests: XCTestCase {
         ]
         for (index, pair) in pairs.enumerated() {
             let id = UUID()
-            let imported = try importer.importPEM(certificate: try F.data(pair.certificate), privateKey: try F.data(pair.key), passphrase: pair.passphrase, profileID: id)
+            let imported = try importer.importPEM(certificate: try F.data(pair.certificate), privateKey: try F.data(pair.key), passphrase: pair.passphrase)
             XCTAssertEqual(imported.summary, pair.subject, pair.key)
+            try keychain.save(imported, profileID: id)
             XCTAssertEqual(leafSubject(try importer.clientIdentity(profileID: id)?.identity), pair.subject, pair.key)
             XCTAssertEqual(keychain.importCount, index + 2)
             XCTAssertEqual(try importer.passphrase(profileID: id), pair.passphrase, "only the user's passphrase is saved, never the one-time one")
         }
         XCTAssertNil(try importer.clientIdentity(profileID: UUID()))
+        XCTAssertNil(importer.subject(profileID: UUID()))
     }
 
     func testWrongPassphraseFailsWithoutPartialImport() throws {
         let keychain = FakeTLSKeychain()
         let importer = TLSIdentityImporter(keychain: keychain)
 
-        XCTAssertThrowsError(try importer.importPKCS12(try F.data("client.p12"), passphrase: "wrong", profileID: profile)) {
+        XCTAssertThrowsError(try importer.importPKCS12(try F.data("client.p12"), passphrase: "wrong")) {
             XCTAssertEqual($0 as? TLSIdentityImportError, .wrongPassphrase)
         }
-        XCTAssertThrowsError(try importer.importPEM(certificate: try F.data("client.pem"), privateKey: try F.data("client-encrypted.key"), passphrase: "wrong", profileID: profile)) {
+        XCTAssertThrowsError(try importer.importPEM(certificate: try F.data("client.pem"), privateKey: try F.data("client-encrypted.key"), passphrase: "wrong")) {
             XCTAssertEqual($0 as? TLSIdentityImportError, .wrongPassphrase)
         }
-        XCTAssertThrowsError(try importer.importPEM(certificate: try F.data("client.pem"), privateKey: try F.data("client-encrypted.key"), passphrase: nil, profileID: profile)) {
+        XCTAssertThrowsError(try importer.importPEM(certificate: try F.data("client.pem"), privateKey: try F.data("client-encrypted.key"), passphrase: nil)) {
             XCTAssertEqual($0 as? TLSIdentityImportError, .passphraseRequired)
         }
-        XCTAssertThrowsError(try importer.importPEM(certificate: try F.data("client.pem"), privateKey: try F.data("server.key"), passphrase: nil, profileID: profile)) {
+        XCTAssertThrowsError(try importer.importPEM(certificate: try F.data("client.pem"), privateKey: try F.data("server.key"), passphrase: nil)) {
             XCTAssertEqual($0 as? TLSIdentityImportError, .keyDoesNotMatchCertificate)
         }
-        XCTAssertThrowsError(try importer.importPEM(certificate: try F.data("client.key"), privateKey: try F.data("client.key"), passphrase: nil, profileID: profile)) {
+        XCTAssertThrowsError(try importer.importPEM(certificate: try F.data("client.key"), privateKey: try F.data("client.key"), passphrase: nil)) {
             XCTAssertEqual($0 as? TLSIdentityImportError, .unreadableCertificate)
         }
-        XCTAssertThrowsError(try importer.importPEM(certificate: try F.data("client.pem"), privateKey: try F.data("client.pem"), passphrase: nil, profileID: profile)) {
+        XCTAssertThrowsError(try importer.importPEM(certificate: try F.data("client.pem"), privateKey: try F.data("client.pem"), passphrase: nil)) {
             XCTAssertEqual($0 as? TLSIdentityImportError, .unreadableKey)
         }
         XCTAssertEqual(keychain.importCount, 0)
@@ -151,27 +162,27 @@ final class IdentityImporterTests: XCTestCase {
 
     // MARK: - Rollback and formats
 
-    func testFailedSecretWriteRemovesOnlyANewIdentity() throws {
+    func testDiscardRemovesOnlyANewIdentity() throws {
         let keychain = FakeTLSKeychain()
-        keychain.failSecretWrites = true
         let importer = TLSIdentityImporter(keychain: keychain)
-        XCTAssertThrowsError(try importer.importPKCS12(try F.data("client.p12"), passphrase: F.passphrase, profileID: profile)) {
-            XCTAssertEqual($0 as? TLSIdentityImportError, .keychain(errSecIO))
-        }
+        let imported = try importer.importPKCS12(try F.data("client.p12"), passphrase: F.passphrase)
+        importer.discard(imported)
         XCTAssertEqual(keychain.importCount, 0)
-        XCTAssertEqual(keychain.removed.count, 1)
+        XCTAssertEqual(keychain.removed, [imported.reference])
 
-        // An identity the user already had stays, even when the import fails.
+        // An identity the user already had stays when its import is discarded.
         let existing = FakeTLSKeychain()
-        existing.failSecretWrites = true; existing.preexisting = true
-        XCTAssertThrowsError(try TLSIdentityImporter(keychain: existing).importPKCS12(try F.data("client.p12"), passphrase: F.passphrase, profileID: profile))
+        existing.preexisting = true
+        let kept = try TLSIdentityImporter(keychain: existing).importPKCS12(try F.data("client.p12"), passphrase: F.passphrase)
+        XCTAssertFalse(kept.isNew)
+        TLSIdentityImporter(keychain: existing).discard(kept)
         XCTAssertEqual(existing.importCount, 1)
         XCTAssertTrue(existing.removed.isEmpty)
     }
 
     func testLegacyEncryptedPEMAsksForConversion() throws {
         let legacy = "-----BEGIN RSA PRIVATE KEY-----\nProc-Type: 4,ENCRYPTED\nDEK-Info: AES-128-CBC,0011\n\nAAAA\n-----END RSA PRIVATE KEY-----\n"
-        XCTAssertThrowsError(try TLSIdentityImporter(keychain: FakeTLSKeychain()).importPEM(certificate: try F.data("client.pem"), privateKey: Data(legacy.utf8), passphrase: "x", profileID: profile)) {
+        XCTAssertThrowsError(try TLSIdentityImporter(keychain: FakeTLSKeychain()).importPEM(certificate: try F.data("client.pem"), privateKey: Data(legacy.utf8), passphrase: "x")) {
             guard case .unsupportedKey(let text)? = $0 as? TLSIdentityImportError else { return XCTFail("\($0)") }
             XCTAssertTrue(text.contains("openssl pkcs8 -topk8"), text)
         }
@@ -213,9 +224,12 @@ final class SystemTLSIdentityKeychainTests: XCTestCase {
         let profile = UUID()
 
         let imported = try importer.importPEM(
-            certificate: try TLSFixturePaths.data("client-ec.pem"), privateKey: try TLSFixturePaths.data("client-ec.key"), passphrase: nil, profileID: profile)
+            certificate: try TLSFixturePaths.data("client-ec.pem"), privateKey: try TLSFixturePaths.data("client-ec.key"), passphrase: nil)
         XCTAssertEqual(imported.summary, "keel-client-ec")
+        let secret = try JSONEncoder().encode(TLSIdentitySecret(identity: imported.reference, passphrase: nil, addedByKeel: imported.isNew))
+        try system.setSecret(secret, service: TLSIdentityImporter.service, account: profile.uuidString)
         let identity = try XCTUnwrap(try importer.clientIdentity(profileID: profile)?.identity)
+        XCTAssertEqual(importer.subject(profileID: profile), "keel-client-ec")
         var key: SecKey?
         XCTAssertEqual(SecIdentityCopyPrivateKey(identity, &key), errSecSuccess, "the private key is in the keychain")
 

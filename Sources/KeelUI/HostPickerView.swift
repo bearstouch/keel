@@ -133,6 +133,10 @@ struct HostEditorSheet: View {
             if model.hasSavedPassword {
                 Toggle("Remove saved password", isOn: $model.removePassword).font(Tokens.interface(12)).toggleStyle(.checkbox)
             }
+            if model.connectionChanged {
+                Text("This host now connects elsewhere, so its saved password and those of the connections using it will be removed.")
+                    .font(Tokens.interface(12)).foregroundStyle(Tokens.warning).fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 

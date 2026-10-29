@@ -29,6 +29,52 @@ final class SidebarModelReviewTests: XCTestCase {
         XCTAssertTrue(tabs.tabs.isEmpty, "The row is hidden, so Return opens nothing")
     }
 
+    /// FR-CN01 + MAC-06: the delete confirmation lists the tabs that will close, and a tab with unsaved edits is asked
+    /// about first; until the user discards them nothing is removed.
+    @MainActor func testDeletingAProfileListsItsTabsAndAsksAboutUnsavedEdits() async throws {
+        let store = ProfileStore(directory: directory, secrets: MemorySecretStore())
+        _ = await store.load()
+        let gone = try await store.create(ConnectionSettings(name: "gone"))
+        let kept = try await store.create(ConnectionSettings(name: "kept"))
+        let connector = FakeConnector()
+        let app = AppModel(profiles: store, connector: connector, persistence: nil)
+        await app.restore()
+        let first = app.windows.first ?? app.newWindow()
+        let second = app.newWindow()
+        let model = SidebarModel(store: store, tabs: first, copy: { _ in })
+        await model.reload()
+        let plain = first.open(profileID: gone.id, database: 0)
+        first.open(profileID: kept.id, database: 0)
+        let edited = second.open(profileID: gone.id, database: 3)
+        for _ in 0..<200 where app.session(edited.id)?.status != .connected || app.session(plain.id)?.status != .connected { try await Task.sleep(for: .milliseconds(5)) }
+
+        XCTAssertEqual(model.deleteConfirmation(gone.id).openTabs, ["db0 in window 1", "db3 in window 2"])
+        XCTAssertEqual(
+            model.deleteConfirmation(gone.id).message, "Its 2 open tabs close: db0 in window 1, db3 in window 2. Its saved password is removed from the Keychain.")
+        XCTAssertEqual(model.deleteConfirmation(UUID()).message, "Its saved password is removed from the Keychain.")
+
+        app.session(edited.id)?.hasUnsavedEdits = true
+        XCTAssertEqual(model.deleteConfirmation(gone.id), .init(openTabs: ["db0 in window 1", "db3 in window 2 (unsaved changes)"], unsavedTabs: 1))
+        // Cancel at the unsaved-changes question: nothing removed, every tab and session stays.
+        let asked = await model.delete(gone.id)
+        XCTAssertEqual(asked, .needsDiscardConfirmation(unsavedTabs: 1))
+        let stillThere = await store.profile(gone.id)
+        XCTAssertNotNil(stillThere)
+        XCTAssertEqual(first.tabs.map(\.profileID), [gone.id, kept.id])
+        XCTAssertEqual(second.tabs.map(\.id), [edited.id])
+        XCTAssertEqual(app.session(edited.id)?.hasUnsavedEdits, true)
+        XCTAssertEqual(connector.closed, 0)
+
+        // Discarding deletes the profile and closes its tabs in every window.
+        let deleted = await model.delete(gone.id, discardingEdits: true)
+        XCTAssertEqual(deleted, .deleted)
+        let removed = await store.profile(gone.id)
+        XCTAssertNil(removed)
+        XCTAssertEqual(first.tabs.map(\.profileID), [kept.id])
+        XCTAssertTrue(second.tabs.isEmpty)
+        XCTAssertNil(app.session(edited.id))
+    }
+
     @MainActor func testSameGroupDropPositions() async throws {
         let store = ProfileStore(directory: directory, secrets: MemorySecretStore())
         _ = await store.load()

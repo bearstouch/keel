@@ -112,8 +112,9 @@ public struct InfoOverview: Sendable, Equatable {
         var exponent = 0, scaled = Double(max(reference, 0))
         while scaled >= 1024, exponent < units.count - 1 { scaled /= 1024; exponent += 1 }
         let amount = Double(value) / pow(1024, Double(exponent))
-        // One decimal, dropped when it is zero ("4 GB", "1.2 GB"); bytes are whole.
-        let text = exponent == 0 || amount == amount.rounded() ? String(Int64(amount.rounded())) : String(format: "%.1f", amount)
+        // One decimal, dropped when it is zero ("4 GB", "1.2 GB"); bytes are whole. No `Int64(Double)`: a hostile
+        // `used_memory` near Int64.max rounds to 2^63 as a double, which would trap.
+        let text = exponent == 0 ? String(value) : amount == amount.rounded() ? String(format: "%.0f", amount) : String(format: "%.1f", amount)
         return (text.hasSuffix(".0") ? String(text.dropLast(2)) : text, units[exponent])
     }
 
@@ -193,7 +194,9 @@ public struct InfoOverview: Sendable, Equatable {
 
     /// `keyspace_hits / (hits + misses)` with one decimal ("97.8%"); "No reads yet" before any key lookup.
     static func hitRatio(_ report: InfoReport) -> String {
-        guard let hits = report["keyspace_hits"].flatMap(Double.init), let misses = report["keyspace_misses"].flatMap(Double.init), hits >= 0, misses >= 0 else {
+        guard let hits = report["keyspace_hits"].flatMap(Double.init), let misses = report["keyspace_misses"].flatMap(Double.init), hits >= 0, misses >= 0,
+            (hits + misses).isFinite
+        else {
             return unavailable
         }
         guard hits + misses > 0 else { return "No reads yet" }

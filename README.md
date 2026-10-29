@@ -45,4 +45,5 @@ Releasing (signing, notarization, Sparkle keys, the appcast) is described in [re
 
 ## License
 
-Not yet chosen; all rights reserved until a license file is added.
+Keel is released under the [MIT License](LICENSE). Bundled third-party components keep their own licenses: Sparkle
+(MIT) and the Inter and JetBrains Mono fonts (SIL Open Font License 1.1).

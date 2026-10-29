@@ -172,6 +172,17 @@ public final class EditorSession: ObservableObject {
         syncViewer()
     }
 
+    /// The viewer's edit of one row's value (every keystroke lands here): as `update`, but only that row's change mark is
+    /// re-derived; the other rows' values, and so their marks, are as they were.
+    private func updateValue(of id: Data, to value: Data) {
+        guard !isReadOnly, let loaded, loaded.partial == nil, phase != .saving else { return }
+        var rows = draft
+        for position in rows.indices where rows[position].id == id { rows[position].value = value }
+        draft = rows
+        if loaded.rows.first(where: { $0.id == id })?.value == value { changedRows.remove(id) } else { changedRows.insert(id) }
+        syncViewer()
+    }
+
     /// ⌘Z before saving: back to the loaded value.
     public func revert() {
         guard let loaded, phase != .saving else { return }
@@ -349,7 +360,7 @@ public final class EditorSession: ObservableObject {
         // A read-only viewer (a set member) saves nothing from its view, so invalid JSON shown there can't block the draft.
         saveBlock = binding?.editsValues == false ? nil : state.saveBlock
         guard binding?.editsValues != false, let row = viewedRow, row.id == viewedRowID, row.value != state.bytes else { return }
-        update(draft.map { $0.id == row.id ? EditorRow(id: row.id, value: state.bytes) : $0 })
+        updateValue(of: row.id, to: state.bytes)
         // Refused (typing while a save runs): the viewer shows the draft again, so what's on screen is what saves.
         if viewedRow?.value != state.bytes { syncViewer() }
     }

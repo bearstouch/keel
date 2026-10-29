@@ -52,6 +52,18 @@ public enum TunnelSettings: Codable, Hashable, Sendable {
     case inline(destination: String, user: String?, port: Int?, identityFile: String?)
 }
 
+/// What a saved SSH host connects to: the fields `SavedHost.sameConnection(as:)` compares. A profile tunneled through
+/// a saved host records the binding its password was saved for, because re-pointing the host (in the host editor or by
+/// an import) reaches another machine without changing the profile's own settings.
+public struct SavedHostBinding: Codable, Hashable, Sendable {
+    public var destination: String
+    public var user: String?
+    public var port: Int?
+    public var identityFile: String?
+
+    public init(_ host: SavedHost) { destination = host.destination; user = host.user; port = host.port; identityFile = host.identityFile }
+}
+
 /// Everything the profile editor edits (FR-CN01). Optional fields fall back to the app's settings (FR-AP09).
 public struct ConnectionSettings: Codable, Equatable, Sendable {
     public var name: String
@@ -183,10 +195,22 @@ public struct ConnectionProfile: Codable, Equatable, Identifiable, Sendable {
     public var connectionRevision: UInt64
     public var hasPassword: Bool
     public var hasTLSSecret: Bool
+    /// The export-file ID this profile was imported under (FR-CN14). Imports get a fresh `id`, because the Keychain
+    /// items keyed by it are shared by every Keel copy; this keeps a re-import of the same file recognising it.
+    /// Optional, so older files load.
+    public var importedFrom: UUID?
+    /// The saved SSH host the password was saved through (`settings.tunnel` is `.savedHost`); a password lookup
+    /// refuses it once the host connects elsewhere. nil without a password, without a saved-host tunnel, and in files
+    /// written before Keel recorded it (the first lookup then records the host as it is).
+    public var savedHostBinding: SavedHostBinding?
 
-    public init(id: UUID, settings: ConnectionSettings, folderID: UUID? = nil, revision: UInt64, connectionRevision: UInt64? = nil, hasPassword: Bool = false, hasTLSSecret: Bool = false) {
+    public init(
+        id: UUID, settings: ConnectionSettings, folderID: UUID? = nil, revision: UInt64, connectionRevision: UInt64? = nil, hasPassword: Bool = false, hasTLSSecret: Bool = false,
+        importedFrom: UUID? = nil, savedHostBinding: SavedHostBinding? = nil
+    ) {
         self.id = id; self.settings = settings; self.folderID = folderID; self.revision = revision
-        self.connectionRevision = connectionRevision ?? revision; self.hasPassword = hasPassword; self.hasTLSSecret = hasTLSSecret
+        self.connectionRevision = connectionRevision ?? revision; self.hasPassword = hasPassword; self.hasTLSSecret = hasTLSSecret; self.importedFrom = importedFrom
+        self.savedHostBinding = savedHostBinding
     }
 }
 

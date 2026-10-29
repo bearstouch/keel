@@ -25,7 +25,17 @@ public struct DataRemovalPlan: Equatable, Sendable {
         public init(service: String, account: String) { self.service = service; self.account = account }
     }
 
+    /// What a plan may reach.
+    public enum Scope: Equatable, Sendable {
+        /// The state folder, Keel's Keychain items and its preference keys.
+        case everything
+        /// The state folder alone (`--fixture`): the run kept its secrets in memory, and the Keychain items and
+        /// preferences it could see belong to the other copies of Keel on this Mac.
+        case stateFolderOnly
+    }
+
     public var stateDirectory: URL
+    public var scope: Scope
     /// Names of Keel's files directly in the state folder, sorted.
     public var files: [String] = []
     /// Other entries found there: left in place, so the folder itself stays.
@@ -39,7 +49,7 @@ public struct DataRemovalPlan: Equatable, Sendable {
     /// False when the folder is missing: there is nothing to remove there.
     public var directoryExists = false
 
-    public init(stateDirectory: URL) { self.stateDirectory = stateDirectory }
+    public init(stateDirectory: URL, scope: Scope = .everything) { self.stateDirectory = stateDirectory; self.scope = scope }
 
     /// The folder goes too only when nothing but Keel's files is in it; `rmdir` refuses anything else anyway.
     public var removesDirectory: Bool { directoryExists && refusal == nil && keptEntries.isEmpty }
@@ -81,12 +91,14 @@ public enum DataRemovalPlanner {
     public static let preferenceKeys = ["keyboardShortcuts"] + UpdatePolicy.sparklePreferenceKeys
     /// The stems of Keel's state files (`PersistedFile`, `hosts.json`); checked against KeelCore by the tests.
     public static let stateFileStems = ["connections", "hosts", "windows", "settings", "known-ca"]
+    /// The single-instance lock (`InstanceLock.fileName`, MAC-17); checked against KeelCore by the tests.
+    public static let instanceLockFile = "instance.lock"
 
     /// Whether `name` is a file Keel writes in its state folder: `<stem>.json`, `<stem>.backup.json`, a recovery copy
     /// (`<stem>.corrupt.<UUID>.json`, `<stem>.unreadable.<UUID>.json`) or an atomic-write leftover (`.<stem>.<UUID>.tmp`).
-    /// Finder's `.DS_Store` counts too, so a folder the user once opened can still go.
+    /// The instance lock and Finder's `.DS_Store` count too, so a folder the user once opened can still go.
     public static func isKeelFile(_ name: String) -> Bool {
-        if name == ".DS_Store" { return true }
+        if name == ".DS_Store" || name == instanceLockFile { return true }
         for stem in stateFileStems {
             if name == "\(stem).json" || name == "\(stem).backup.json" { return true }
             for marker in ["corrupt", "unreadable"] where isUUID(name, between: "\(stem).\(marker).", and: ".json") { return true }
@@ -113,11 +125,13 @@ public enum DataRemovalPlanner {
     }
 
     /// Lists what a removal would take. Reads only: the folder's direct entries (never following links) and the
-    /// accounts of Keel's Keychain services. `storedPreferenceKeys` are the keys the defaults hold now.
+    /// accounts of Keel's Keychain services. `storedPreferenceKeys` are the keys the defaults hold now. A
+    /// `.stateFolderOnly` plan never lists the Keychain and plans no preference key.
     public static func plan(
-        stateDirectory: URL, home: URL, keychain: any KeychainInventory, storedPreferenceKeys: Set<String>, fileManager: FileManager = .default
+        stateDirectory: URL, home: URL, keychain: any KeychainInventory, storedPreferenceKeys: Set<String>, scope: DataRemovalPlan.Scope = .everything,
+        fileManager: FileManager = .default
     ) -> DataRemovalPlan {
-        var plan = DataRemovalPlan(stateDirectory: stateDirectory)
+        var plan = DataRemovalPlan(stateDirectory: stateDirectory, scope: scope)
         var info = stat()
         if lstat(stateDirectory.path, &info) == 0 {
             plan.directoryExists = true
@@ -136,6 +150,7 @@ public enum DataRemovalPlanner {
                 }
             }
         }
+        guard scope == .everything else { return plan }
         for service in keychainServices {
             do throws(DataRemovalError) {
                 plan.keychainItems += try keychain.accounts(service: service).sorted().map { DataRemovalPlan.KeychainItem(service: service, account: $0) }
@@ -160,7 +175,7 @@ public enum DataRemovalPlanner {
                 result.failures.append("The state folder \(plan.stateDirectory.path) stays: \(String(cString: strerror(errno)))")
             }
         }
-        for item in plan.keychainItems {
+        for item in plan.keychainItems where plan.scope == .everything {
             do throws(DataRemovalError) { try keychain.remove(service: item.service, account: item.account) } catch {
                 if case .keychain(let status) = error { result.failures.append("Keychain item in “\(item.service)”: error \(status)") }
             }

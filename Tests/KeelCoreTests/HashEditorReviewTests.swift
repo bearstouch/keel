@@ -71,6 +71,16 @@ final class HashEditorReviewTests: XCTestCase {
         } catch { XCTAssertEqual(error.code, "INVALID_PARAMS") }
     }
 
+    /// A large hash deleted between `HLEN` and the first `HSCAN` (which answers a missing key with an empty, complete
+    /// scan) fails the load instead of opening an empty hash whose "+ Add field" would recreate the key.
+    func testLargeHashDeletedBeforeFirstScanFailsLoad() async {
+        let server = RecordingServer { arguments in arguments.first?.uppercased() == "HLEN" ? ":2000\r\n" : "*2\r\n$1\r\n0\r\n*0\r\n" }
+        do {
+            _ = try await HashEditor.load(key: key, service: DataCommandService(session: server.session()), context: DataContext(profile: SafetyProfile(name: "local", readOnly: false)))
+            XCTFail("expected the key to be gone")
+        } catch { XCTAssertEqual(error, EditorReads.gone) }
+    }
+
     /// After a save only the touched fields are re-read; the pages loaded and the cursor stay.
     func testRereadKeepsPages() async throws {
         let server = RecordingServer { arguments in

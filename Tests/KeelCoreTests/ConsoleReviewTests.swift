@@ -45,4 +45,31 @@ final class ConsoleReviewTests: XCTestCase {
         let line = "CONFIG SET tls-key-file-pass k1 tls-client-key-file-pass k2"
         XCTAssertEqual(ConsoleMasking.display(line, arguments: try ConsoleTokenizer.arguments(line)), "CONFIG SET tls-key-file-pass •••••• tls-client-key-file-pass ••••••")
     }
+
+    func testUnparsedLineWithQuotedCredentialNameHidesTheRest() {
+        // FR-CO10: the name is read like the tokenizer reads it, so quoting it doesn't leak the secret.
+        XCTAssertEqual(ConsoleMasking.displayUnparsed("\"AUTH\" \"s3cret"), "AUTH ••••••")
+        XCTAssertEqual(ConsoleMasking.displayUnparsed("  'auth' default 's3cret"), "auth ••••••")
+        XCTAssertEqual(ConsoleMasking.displayUnparsed("\"AUTH s3cret"), "AUTH ••••••")
+        XCTAssertEqual(ConsoleMasking.displayUnparsed("A\"UTH\" s3cret \""), "AUTH ••••••")
+        XCTAssertEqual(ConsoleMasking.displayUnparsed("\"\\x41UTH\" s3cret \""), "AUTH ••••••")
+        XCTAssertEqual(ConsoleMasking.displayUnparsed("'Config' SET requirepass 'pw"), "Config ••••••")
+        XCTAssertEqual(ConsoleMasking.displayUnparsed("\"hello\" 3 AUTH u \"pw"), "hello ••••••")
+        // Other unparseable lines still echo as typed.
+        XCTAssertEqual(ConsoleMasking.displayUnparsed("\"GET\" \"k"), "\"GET\" \"k")
+        XCTAssertEqual(ConsoleMasking.displayUnparsed("AUTH \"secret"), "AUTH ••••••")
+    }
+
+    func testHelloMasksThePasswordOfTheAuthOption() throws {
+        func display(_ line: String) throws -> String { ConsoleMasking.display(line, arguments: try ConsoleTokenizer.arguments(line)) }
+        // A SETNAME value spelled `auth` isn't the AUTH option.
+        XCTAssertEqual(try display("HELLO 3 SETNAME auth AUTH user secret"), "HELLO 3 SETNAME auth AUTH user ••••••")
+        XCTAssertEqual(try display("HELLO 3 SETNAME auth"), "HELLO 3 SETNAME auth")
+        XCTAssertEqual(try display("hello 3 auth alice pw setname keel"), "hello 3 auth alice •••••• setname keel")
+        XCTAssertEqual(try display("HELLO 3"), "HELLO 3")
+        // Unsure: a short AUTH, a missing protover or an unknown option hides everything from there on.
+        XCTAssertEqual(try display("HELLO 3 AUTH secret"), "HELLO 3 AUTH ••••••")
+        XCTAssertEqual(try display("HELLO AUTH alice pw"), "HELLO AUTH alice ••••••")
+        XCTAssertEqual(try display("HELLO 3 SETNAMEX auth alice pw"), "HELLO 3 •••••• •••••• •••••• ••••••")
+    }
 }

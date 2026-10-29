@@ -28,11 +28,12 @@ public final class SSHPromptCenter: ObservableObject {
         }
     }
 
-    /// Answers the prompt on screen. A prompt already withdrawn (timed out, tunnel gone) is ignored by the relay.
-    public func respond(_ response: SSHPromptResponse) {
-        guard let prompt = queue.first else { return }
-        queue.removeFirst()
-        Task { [relay] in await relay.respond(to: prompt.id, with: response) }
+    /// Answers the prompt the user saw, by its ID. An answer for a prompt no longer queued (timed out, tunnel gone) is
+    /// dropped: it must never answer the prompt queued behind it, which the user hasn't seen.
+    public func respond(to id: UUID, with response: SSHPromptResponse) {
+        guard let index = queue.firstIndex(where: { $0.id == id }) else { return }
+        queue.remove(at: index)
+        Task { [relay] in await relay.respond(to: id, with: response) }
     }
 }
 
@@ -49,7 +50,7 @@ public struct SSHPromptSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(Self.title(prompt.kind)).font(Tokens.interface(13, weight: .semibold))
-                Text("ssh to \(prompt.destination)").font(Tokens.interface(12)).foregroundStyle(Tokens.muted)
+                Text(Self.subtitle(prompt)).font(Tokens.interface(12)).foregroundStyle(Tokens.muted)
             }
             ScrollView {
                 Text(prompt.text)
@@ -58,7 +59,7 @@ public struct SSHPromptSheet: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxHeight: 220)
-            .accessibilityLabel("ssh says: \(prompt.text)")
+            .accessibilityLabel("\(prompt.fromServer ? "The SSH server says" : "ssh says"): \(prompt.text)")
             if Self.takesText(prompt.kind) { field }
             HStack {
                 Spacer()
@@ -111,6 +112,11 @@ public struct SSHPromptSheet: View {
         }
     }
 
+    /// A keyboard-interactive question is the server's own text; the sheet says so instead of presenting it as ssh's.
+    static func subtitle(_ prompt: SSHPrompt) -> String {
+        prompt.fromServer ? "Asked by the SSH server \(prompt.destination)" : "ssh to \(prompt.destination)"
+    }
+
     static func takesText(_ kind: SSHPrompt.Kind) -> Bool { [.password, .passphrase, .code].contains(kind) }
 
     static func fieldLabel(_ kind: SSHPrompt.Kind) -> String {
@@ -144,7 +150,7 @@ private struct SSHPromptPresenter: ViewModifier {
             // The setter is a no-op: SwiftUI may write nil while swapping to the next queued prompt, which must not
             // answer it. Every sheet has a cancel-action button, and the sheet can't be dismissed any other way.
             content.sheet(item: Binding(get: { active ? center.current : nil }, set: { _ in })) { prompt in
-                SSHPromptSheet(prompt: prompt) { center.respond($0) }.id(prompt.id).interactiveDismissDisabled()
+                SSHPromptSheet(prompt: prompt) { center.respond(to: prompt.id, with: $0) }.id(prompt.id).interactiveDismissDisabled()
             }
         }
     }

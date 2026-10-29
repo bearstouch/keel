@@ -17,6 +17,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     /// Every SSH tunnel of this run; sessions take it from here. Creates nothing until the first tunnel opens.
     let tunnels: TunnelManager
     private var prompts: SSHPromptCenter?
+    /// The Keychain, or memory for a `--fixture` run.
+    private let secrets: LaunchSecrets
     /// The single owner of `connections.json` and the profiles' Keychain items.
     let profiles: ProfileStore
     /// The single owner of `hosts.json` and the `Keel SSH Host` Keychain items (FR-CN06).
@@ -62,8 +64,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         let relay = promptRelay
         askpass = Bundle.main.executableURL.flatMap { AskpassHelperLocation.find(executable: $0) }.map { AskpassBroker(helperPath: $0, relay: relay) }
         tunnels = TunnelManager(askpass: askpass)
-        profiles = ProfileStore(directory: stateDirectory)
-        sshHosts = HostLibrary(storage: HostFileStorage(directory: stateDirectory), secrets: KeychainHostSecretStore())
+        // A fixture run keeps every secret in memory and never reads or writes the login Keychain.
+        let secrets = LaunchSecrets(arguments: arguments)
+        self.secrets = secrets
+        let hosts = HostLibrary(storage: HostFileStorage(directory: stateDirectory), secrets: secrets.hosts)
+        sshHosts = hosts
+        // A password saved through a saved SSH host binds to where that host connects (FR-CN21).
+        let identities = secrets.identities
+        profiles = ProfileStore(
+            directory: stateDirectory, secrets: secrets.profiles, resolveSavedHost: { id in await hosts.hosts.first { $0.id == id } },
+            removeTLSIdentity: { identities.removeIdentity(reference: $0) })
         knownCA = KnownCAStore(directory: stateDirectory)
         settings = SettingsModel(persistence: Persistence(directory: stateDirectory))
     }
@@ -97,11 +107,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         let savedHostPassword: ConnectionTester.SavedHostPassword = { hosts.savedPassword(for: $0, gate: LocalAuthenticationGate()) }
         // Test and connect read the applied settings (Advanced, Console) when they start, so an Apply reaches the next one.
         let snapshot = settings.snapshot
-        let tester = ConnectionTester(tunnels: tunnels, resolveSavedHost: resolveSavedHost, savedHostPassword: savedHostPassword, advanced: { snapshot.current.advanced })
-        connections = ConnectionSheetPresenter(store: profiles, tester: tester, hostLibrary: sshHosts)
+        let clientIdentity = secrets.clientIdentity
+        let tester = ConnectionTester(
+            tunnels: tunnels, resolveSavedHost: resolveSavedHost, savedHostPassword: savedHostPassword, clientIdentity: clientIdentity, advanced: { snapshot.current.advanced })
+        connections = ConnectionSheetPresenter(store: profiles, tester: tester, hostLibrary: sshHosts, identities: secrets.identities)
         transfer = ProfileTransferModel(store: profiles)
         let connector = ProfileSessionConnector(
-            profiles: profiles, knownCA: knownCA, tunnels: tunnels, resolveSavedHost: resolveSavedHost, savedHostPassword: savedHostPassword,
+            profiles: profiles, knownCA: knownCA, tunnels: tunnels, resolveSavedHost: resolveSavedHost, savedHostPassword: savedHostPassword, clientIdentity: clientIdentity,
             confirmCAChange: { change in await MainActor.run { Self.confirm(change) } }, settings: { snapshot.current })
         let app = AppModel(profiles: profiles, connector: connector, persistence: Persistence(directory: stateDirectory), settings: snapshot)
         app.presentWindow = { [weak self] in self?.show($0, frame: nil) }
@@ -163,7 +175,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             askpass?.stop()
             // After the flushes, planned again: a file the last saves created (a first backup) goes too. The allow-list
             // and the refusals are the same as for the confirmation.
-            if let pendingRemoval { Self.remove(Self.removalPlan(pendingRemoval.stateDirectory)) }
+            if let pendingRemoval { Self.remove(Self.removalPlan(pendingRemoval.stateDirectory, scope: pendingRemoval.scope)) }
             NSApp.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater
@@ -535,15 +547,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     // MARK: - Data removal
 
     /// Help → Remove Keel Data… (MAC-22): lists what would go, asks, then quits and removes it on the way out. Only the
-    /// state folder's own files, Keel's three Keychain services and its preference keys are in the plan.
+    /// state folder's own files, Keel's three Keychain services and its preference keys are in the plan; a `--fixture`
+    /// run plans its state folder alone, since the Keychain items and preferences it could see belong to other runs.
     @objc private func removeKeelData(_ sender: Any?) {
-        let plan = Self.removalPlan(stateDirectory)
+        let plan = Self.removalPlan(stateDirectory, scope: removalScope)
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = plan.isEmpty ? "Keel has no data to remove." : "Remove Keel's data and quit?"
         let untouched = "SSH keys, SSH configuration, known-hosts files and Redis servers are not touched. Client certificates you imported stay in your login keychain."
-        let shared = plan.keychainItems.isEmpty ? "" : "\n\nKeychain items are shared by every copy of Keel on this Mac."
-        alert.informativeText = (plan.summary.map { "• \($0)" } + ["", untouched]).joined(separator: "\n") + shared
+        let scope: String
+        switch plan.scope {
+        case .stateFolderOnly: scope = "\n\nThis --fixture run kept its passwords in memory: no Keychain item or preference is removed."
+        case .everything:
+            // `--state-directory` separates the files only: the Keychain services are the same for every run.
+            scope = plan.keychainItems.isEmpty ? "" : "\n\nKeychain items are shared by every copy of Keel on this Mac, whatever its state folder: their saved passwords go too."
+        }
+        alert.informativeText = (plan.summary.map { "• \($0)" } + ["", untouched]).joined(separator: "\n") + scope
         if plan.isEmpty {
             alert.addButton(withTitle: "OK")
             alert.runModal()
@@ -557,10 +576,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         NSApp.terminate(sender)
     }
 
-    private static func removalPlan(_ stateDirectory: URL) -> DataRemovalPlan {
+    private var removalScope: DataRemovalPlan.Scope { secrets.usesKeychain ? .everything : .stateFolderOnly }
+
+    private static func removalPlan(_ stateDirectory: URL, scope: DataRemovalPlan.Scope) -> DataRemovalPlan {
         DataRemovalPlanner.plan(
             stateDirectory: stateDirectory, home: FileManager.default.homeDirectoryForCurrentUser, keychain: SystemKeychainInventory(),
-            storedPreferenceKeys: Set(UserDefaults.standard.dictionaryRepresentation().keys))
+            storedPreferenceKeys: Set(UserDefaults.standard.dictionaryRepresentation().keys), scope: scope)
     }
 
     /// Runs the confirmed plan; whatever couldn't be removed is listed before the app quits.
@@ -627,12 +648,28 @@ struct KeelMain {
             temporary: FileManager.default.temporaryDirectory)
         // EX_CANTCREAT (73): without a usable state folder nothing can be saved, so refuse to launch.
         do { try StateLocation.prepare(directory) } catch { fail(error, status: 73) }
+        // MAC-17: one instance per state folder, locked before any state is read, so two processes never overwrite
+        // each other's files. A second launch brings the running one forward and exits with EX_TEMPFAIL (75).
+        let lock: InstanceLock
+        do { lock = try InstanceLock(directory: directory) } catch {
+            if case .held(_, let owner) = error { bringForward(owner); fail(error, status: 75) }
+            fail(error, status: 73)
+        }
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
         let delegate = AppDelegate(arguments: arguments, stateDirectory: directory)
         app.delegate = delegate
         // `NSApplication.delegate` is weak; keep the delegate alive for the whole run loop.
-        withExtendedLifetime(delegate) { app.run() }
+        withExtendedLifetime((delegate, lock)) { app.run() }
+    }
+
+    /// Activates the process that holds the lock, only when it is this same app (a recorded PID may have been reused).
+    @MainActor private static func bringForward(_ owner: pid_t?) {
+        guard let owner, let running = NSRunningApplication(processIdentifier: owner) else { return }
+        let sameBundle = running.bundleIdentifier != nil && running.bundleIdentifier == Bundle.main.bundleIdentifier
+        let sameExecutable = running.executableURL?.resolvingSymlinksInPath() == Bundle.main.executableURL?.resolvingSymlinksInPath()
+        guard sameBundle || sameExecutable else { return }
+        running.activate(options: [.activateAllWindows])
     }
 
     /// Startup failures go to stderr with a sysexits status so scripts and CI can tell them apart.

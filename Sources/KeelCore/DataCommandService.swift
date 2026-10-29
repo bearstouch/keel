@@ -333,10 +333,10 @@ public actor DataCommandService {
         let arguments = command.arguments
         guard !arguments.isEmpty else { throw .invalidRequest("A command needs at least its name.") }
         let info = catalog.resolve(arguments)
-        let verdict = SafetyPolicy.evaluate(
-            arguments, command: info, origin: origin, profile: effective(context.profile), database: context.database, confirmation: context.confirmation)
+        let verdict = await evaluate(arguments, info, origin: origin, context: context)
         guard case .allow(let safetyClass) = verdict else { throw .refused(verdict) }
         let role = try Self.role(for: origin, safetyClass, context)
+        let step: TransactionStep? = if case .console = role { Self.transactionStep(info, safetyClass) } else { nil }
         let writes = Self.changesData(safetyClass)
         if writes { writeObserver?(.sent) }
         // A console's blocking command (`BLPOP k 0`) may wait for good; its Stop closes the connection (FR-CO07).
@@ -346,18 +346,39 @@ public actor DataCommandService {
             // Connection-state commands, pub/sub and MONITOR don't touch a database's data (EXEC runs what was checked
             // when queued), so they also run while a console's database is unknown.
             bindsDatabase: ![.session, .streaming].contains(safetyClass), selecting: Self.selecting(arguments, info, role),
-            timeout: blocking ? RedisConnection.noTimeout : nil)
+            timeout: blocking ? RedisConnection.noTimeout : nil, transaction: step)
         if writes, ServerReadOnly.refusesWrites(reply, of: safetyClass) { writeObserver?(.serverRefused) }
         return DataCommandResult(reply: reply, safetyClass: safetyClass, role: role)
     }
 
     /// What the policy says about `command` now, sending nothing: the console asks first, so it can measure (FR-SF08) and
     /// confirm before the command runs. `execute` evaluates again, so a verdict here never lets anything through.
-    public func verdict(_ command: DataCommand, origin: CommandOrigin, context: DataContext) -> SafetyVerdict {
+    public func verdict(_ command: DataCommand, origin: CommandOrigin, context: DataContext) async -> SafetyVerdict {
         let arguments = command.arguments
-        return SafetyPolicy.evaluate(
-            arguments, command: catalog.resolve(arguments), origin: origin, profile: effective(context.profile), database: context.database,
-            confirmation: context.confirmation)
+        return await evaluate(arguments, catalog.resolve(arguments), origin: origin, context: context)
+    }
+
+    /// The policy's verdict, plus the one rule it can't see: `EXEC` runs what was checked when it was queued, so a
+    /// transaction that queued a write before the profile became read-only must not run under it (FR-SF01).
+    private func evaluate(_ arguments: [Data], _ info: CommandInfo?, origin: CommandOrigin, context: DataContext) async -> SafetyVerdict {
+        let profile = effective(context.profile)
+        let verdict = SafetyPolicy.evaluate(arguments, command: info, origin: origin, profile: profile, database: context.database, confirmation: context.confirmation)
+        guard profile.readOnly, origin == .console, info?.name == "exec", verdict.isAllowed, let console = context.consoleID,
+            await session.openTransaction(.console(console))?.queuedWrite == true
+        else { return verdict }
+        return .readOnly(message: "This transaction queued writes before \(profile.name) became read-only; DISCARD ends it.")
+    }
+
+    /// Whether the console's connection has a `MULTI` open: anything sent on it now is queued, not run.
+    public func inTransaction(console: UUID) async -> Bool { await session.openTransaction(.console(console)) != nil }
+
+    /// What a console command does to its connection's `MULTI`.
+    static func transactionStep(_ info: CommandInfo?, _ safetyClass: SafetyClass) -> TransactionStep {
+        switch info?.name {
+        case "multi": return .begin
+        case "exec", "discard", "reset", "quit": return .end
+        default: return .queue(mayWrite: SafetyPolicy.readOnlyRefused.contains(safetyClass))
+        }
     }
 
     /// A console's streaming command (`MONITOR`, `SUBSCRIBE`, … FR-CO07) on that console's `stream` connection: the
@@ -366,7 +387,7 @@ public actor DataCommandService {
     public func stream(_ command: DataCommand, context: DataContext) async throws(DataCommandError) -> AsyncStream<RESPValue> {
         let arguments = command.arguments
         guard !arguments.isEmpty else { throw .invalidRequest("A command needs at least its name.") }
-        let verdict = verdict(command, origin: .console, context: context)
+        let verdict = await verdict(command, origin: .console, context: context)
         guard case .allow(let safetyClass) = verdict else { throw .refused(verdict) }
         guard safetyClass == .streaming else { throw .invalidRequest("Only MONITOR and the SUBSCRIBE commands stream.") }
         guard let console = context.consoleID else { throw .invalidRequest("A console command needs its console.") }

@@ -10,6 +10,8 @@ public struct SidebarView: View {
     @State private var prompt: Prompt?
     @State private var promptText = ""
     @State private var deleting: SidebarModel.Row?
+    /// A confirmed delete waiting on the unsaved-changes question for its open tabs (MAC-06).
+    @State private var discarding: (row: SidebarModel.Row, unsavedTabs: Int)?
 
     public static let width: CGFloat = 232
 
@@ -81,13 +83,32 @@ public struct SidebarView: View {
                 "Delete “\(deleting?.name ?? "")”?", isPresented: isPresented($deleting), presenting: deleting
             ) { row in
                 Button("Cancel", role: .cancel) {}
-                Button("Delete", role: .destructive) { Task { await model.delete(row.id) } }
+                Button("Delete", role: .destructive) {
+                    Task {
+                        if case .needsDiscardConfirmation(let unsaved) = await model.delete(row.id) { discarding = (row, unsaved) }
+                    }
+                }
+            } message: { row in
+                Text(model.deleteConfirmation(row.id).message)
+            }
+            .alert(
+                discardTitle, isPresented: isPresented($discarding), presenting: discarding
+            ) { pending in
+                Button("Cancel", role: .cancel) {}
+                Button("Delete", role: .destructive) { Task { await model.delete(pending.row.id, discardingEdits: true) } }
             } message: { _ in
-                Text("Its saved password is removed from the Keychain.")
+                Text("The unsaved changes will be lost.")
             }
             .alert(model.message ?? "", isPresented: isPresented($model.message)) {
                 Button("OK", role: .cancel) {}
             }
+    }
+
+    /// Worded like closing a window with unsaved edits (MAC-06).
+    private var discardTitle: String {
+        guard let discarding else { return "" }
+        let name = "Delete “\(discarding.row.name)”"
+        return discarding.unsavedTabs == 1 ? "\(name) with unsaved changes?" : "\(name) with unsaved changes in \(discarding.unsavedTabs) tabs?"
     }
 
     /// Shown while `value` is set; dismissing clears it.

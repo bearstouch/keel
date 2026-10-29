@@ -39,6 +39,9 @@ public final class TabSession: ObservableObject, Identifiable {
     private var connected: ConnectedServer?
     /// Bumped by every connect and disconnect, so a connect that lands after a newer one (or a disconnect) is closed.
     private var attempt = 0
+    /// The connect under way; Disconnect and closing the tab cancel it, which stops its SSH tunnel start and withdraws
+    /// the tunnel's prompts when no other tab shares it.
+    private var connecting: Task<Result<ConnectedServer, ConnectionFailure>, Never>?
     private var databaseChanges: AnyCancellable?
     private var editChanges: AnyCancellable?
     /// Status and database changes, for the window that holds the tab.
@@ -62,7 +65,15 @@ public final class TabSession: ObservableObject, Identifiable {
         attempt += 1
         let mine = attempt
         set(.connecting); failure = nil
-        let result = await connector.connect(profileID: profileID, database: database)
+        let connector = connector, profileID = profileID
+        let task = Task { await connector.connect(profileID: profileID, database: database) }
+        connecting = task
+        let result = await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+        if mine == attempt { connecting = nil }
         guard mine == attempt else {
             // Disconnected (or closed) while connecting: the late connection must not stay open behind the tab.
             if case .success(let server) = result { await server.close() }
@@ -102,13 +113,13 @@ public final class TabSession: ObservableObject, Identifiable {
     /// While still connecting, the key waits for the browser.
     public func reveal(_ key: Data, database: Int) async {
         guard let browser, status == .connected else { pendingReveal = key; return }
-        if browser.database != database { await browser.selectDatabase(database) }
-        await browser.reveal(key)
+        await browser.reveal(key, database: database)
     }
 
     /// Disconnect (⇧⌘D): closes every connection of the tab and its tunnel lease. The browser goes with it.
     public func disconnect() async {
         attempt += 1
+        connecting?.cancel(); connecting = nil
         let server = connected, console = console
         info?.shutdown()
         connected = nil; browser = nil; pendingReveal = nil; self.console = nil; info = nil; self.server = nil; databaseChanges = nil; editChanges = nil; hasUnsavedEdits = false; failure = nil

@@ -93,6 +93,13 @@ public final class KeyListDataSource: NSObject, ObservableObject {
     private var pendingSelection: Data?
     /// True while the model itself changes the views' selection, so the delegate doesn't echo it back.
     private var applyingSelection = false
+    /// Asked before a click or arrow key moves the selection: true holds the move (the open editor has unsaved
+    /// changes, FR-ED16) and `onHeldSelection` asks the user; `applyHeldSelection()` then makes it.
+    var holdsSelectionChange: (() -> Bool)?
+    var onHeldSelection: (() -> Void)?
+    /// The rows the held move proposed, as keys and folders: rows can shift (a page loads) while the user answers.
+    private var heldSelection: (children: [NamespaceChild], generation: Int)?
+    private var releasingHeldSelection = false
     /// The index generation `selectedKeys` was taken at: their indices name other keys after a restart or removal.
     private var selectedKeysGeneration = 0
     /// The local filter's text as typed; empty when it's off (FR-KB05).
@@ -275,6 +282,12 @@ public final class KeyListDataSource: NSObject, ObservableObject {
             applySelection()
         }
     }
+
+    /// The index's paging mode and phase at the last reload, for the ⋯ menu's Auto-page and Pause items.
+    public var pagingStatus: KeyIndexStatus { status }
+
+    /// The key waiting for a page to load it before it is selected; nil when none.
+    var pendingKey: Data? { pendingSelection }
 
     /// The selected key's bytes, read from the index; nil when nothing or a folder is selected.
     public func selectedKeyName() async -> Data? {
@@ -487,6 +500,37 @@ public final class KeyListDataSource: NSObject, ObservableObject {
         let previous = applyingSelection
         applyingSelection = true; body(); applyingSelection = previous
     }
+
+    /// A move the user proposes goes through now, or is held while the browser asks about unsaved changes.
+    func proposedSelection(_ proposed: IndexSet, in view: NSTableView) -> IndexSet {
+        guard !applyingSelection, !releasingHeldSelection, view === activeView, proposed != view.selectedRowIndexes, holdsSelectionChange?() == true else {
+            return proposed
+        }
+        heldSelection = (proposed.compactMap(child(atRow:)), indexGeneration)
+        onHeldSelection?()
+        return view.selectedRowIndexes
+    }
+
+    /// The user saved or discarded: the held move is made, unless the list restarted since (its rows name other keys).
+    func applyHeldSelection() {
+        guard let held = heldSelection else { return }
+        heldSelection = nil
+        guard held.generation == indexGeneration else { return }
+        var rows = IndexSet()
+        for child in held.children {
+            switch (child, shownMode) {
+            case (.key(let key), .flat): if let row = flatRow(ofKey: key), row < tableView.numberOfRows { rows.insert(row) }
+            case (_, .tree): if let row = treeItem(for: child).map(outlineView.row(forItem:)), row >= 0 { rows.insert(row) }
+            case (.folder, .flat): break
+            }
+        }
+        releasingHeldSelection = true
+        activeView.selectRowIndexes(rows, byExtendingSelection: false)
+        releasingHeldSelection = false
+    }
+
+    /// Cancel: the selection stays where it was.
+    func dropHeldSelection() { heldSelection = nil }
 
     /// The user moved the selection with the mouse or keyboard.
     private func selectionChanged(in view: NSTableView) {
@@ -802,6 +846,10 @@ extension KeyListDataSource: NSOutlineViewDataSource, NSOutlineViewDelegate {
 
     public func outlineView(_ outlineView: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? { KeyListRowView() }
 
+    public func outlineView(_ outlineView: NSOutlineView, selectionIndexesForProposedSelection proposedSelectionIndexes: IndexSet) -> IndexSet {
+        proposedSelection(proposedSelectionIndexes, in: outlineView)
+    }
+
     public func outlineViewSelectionDidChange(_ notification: Notification) { (notification.object as? NSTableView).map(selectionChanged) }
 }
 
@@ -819,6 +867,10 @@ extension KeyListDataSource: NSTableViewDataSource, NSTableViewDelegate {
     }
 
     public func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? { KeyListRowView() }
+
+    public func tableView(_ tableView: NSTableView, selectionIndexesForProposedSelection proposedSelectionIndexes: IndexSet) -> IndexSet {
+        proposedSelection(proposedSelectionIndexes, in: tableView)
+    }
 
     public func tableViewSelectionDidChange(_ notification: Notification) { (notification.object as? NSTableView).map(selectionChanged) }
 }

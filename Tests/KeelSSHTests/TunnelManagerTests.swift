@@ -99,7 +99,18 @@ final class FakeLauncher: TunnelProcessLauncher, @unchecked Sendable {
         return process
     }
 
+    /// `ssh -G` output, built from the socket path in the arguments; nil answers like an unreadable config.
+    var options: (@Sendable (_ socketPath: String) -> String?)?
+    private var optionQueries: [[String]] = []
+
+    func effectiveOptions(executable: String, arguments: [String], environment: [String: String], timeout: Duration) async -> String? {
+        lock.withLock { optionQueries.append([executable] + arguments) }
+        let forward = arguments.firstIndex(of: "-L").map { arguments[$0 + 1] } ?? ""
+        return options?(String(forward.prefix { $0 != ":" }))
+    }
+
     var processes: [FakeProcess] { lock.withLock { launched } }
+    var queries: [[String]] { lock.withLock { optionQueries } }
 }
 
 final class TunnelManagerTests: XCTestCase {
@@ -256,6 +267,33 @@ final class TunnelManagerTests: XCTestCase {
         XCTAssertEqual(launcher.processes.count, 0)
     }
 
+    /// INT-06: forwards from the user's ssh_config would open TCP ports and break a second profile through the same host.
+    func testRefusesToLaunchWhenConfigAddsForwards() async throws {
+        launcher.options = { "user deploy\nlocalforward \($0) [127.0.0.1]:6379\nlocalforward 6380 [localhost]:6379\n" }
+        let manager = manager()
+        do {
+            _ = try await manager.acquire(profileID: profile, configuration: configuration, connectTimeout: .seconds(10))
+            XCTFail("Expected a refusal")
+        } catch {
+            XCTAssertEqual(error, .configuredForwards(["LocalForward 6380 [localhost]:6379"]))
+        }
+        XCTAssertEqual(launcher.processes.count, 0, "Nothing is launched")
+        let query = try XCTUnwrap(launcher.queries.first)
+        XCTAssertEqual(Array(query.prefix(2)), ["/usr/bin/ssh", "-G"])
+        let tunnelArguments = try SSHTunnelArguments.arguments(for: configuration, socketPath: "/s.sock")
+        XCTAssertEqual(query.count, tunnelArguments.count + 2, "-G checks exactly the arguments the launch uses")
+        XCTAssertEqual(query.last, "ops")
+        let users = await manager.userCount(profileID: profile)
+        XCTAssertEqual(users, 0)
+
+        launcher.options = { "user deploy\nlocalforward \($0) [127.0.0.1]:6379\n" }
+        _ = try await manager.acquire(profileID: profile, configuration: configuration, connectTimeout: .seconds(10))
+        XCTAssertEqual(launcher.processes.count, 1, "Only Keel's own forward: ssh starts")
+        launcher.options = { _ in nil }
+        _ = try await manager.acquire(profileID: UUID(), configuration: configuration, connectTimeout: .seconds(10))
+        XCTAssertEqual(launcher.processes.count, 2, "Unreadable ssh -G output doesn't block the launch; ssh reports its own errors")
+    }
+
     func testConcurrentAcquiresShareOneStart() async throws {
         let ready = Flag()
         let manager = manager(probe: { _ in ready.value })
@@ -317,6 +355,73 @@ final class TunnelManagerTests: XCTestCase {
         await manager.shutdown()
         if case .failure(let error) = await start.result { XCTAssertEqual(error as? TunnelError, .shutDown) } else { XCTFail("Expected shutDown") }
         XCTAssertEqual(launcher.processes.first?.sentSignals, [SIGTERM])
+    }
+
+    /// A tab closed while its tunnel starts: the caller's cancellation stops the ssh nobody waits for any more.
+    func testCancelledSoleAcquirerStopsTheStartingSSH() async throws {
+        let manager = manager(probe: { _ in false })
+        let start = Task { [profile, configuration] in try await manager.acquire(profileID: profile, configuration: configuration, connectTimeout: .seconds(30)) }
+        await eventually("ssh launched") { !launcher.processes.isEmpty }
+        start.cancel()
+        if case .failure(let error) = await start.result { XCTAssertEqual(error as? TunnelError, .cancelled) } else { XCTFail("Expected cancelled") }
+        XCTAssertEqual(launcher.processes.first?.sentSignals, [SIGTERM])
+        let users = await manager.userCount(profileID: profile)
+        XCTAssertEqual(users, 0)
+        // Nothing is left behind: the next connect starts a fresh ssh.
+        let ready = self.manager(probe: { _ in true })
+        _ = try await ready.acquire(profileID: profile, configuration: configuration, connectTimeout: .seconds(1))
+        XCTAssertEqual(launcher.processes.count, 2)
+        await ready.shutdown()
+    }
+
+    /// A tab that joins while the cancelled start is still stopping its ssh (SIGTERM sent, not yet exited) didn't
+    /// cancel: it gets a tunnel of its own, never the other tab's cancellation.
+    func testJoinerOfAStoppingCancelledStartStartsItsOwnTunnel() async throws {
+        launcher.exitOnTerm = false
+        let launcher = launcher, unblock = Flag(), runtime = runtime!
+        let manager = TunnelManager(
+            launcher: launcher, makeRuntime: { runtime }, probe: { _ in launcher.processes.count >= 2 },
+            sleep: { _ in
+                // Holds the stop's SIGTERM wait open until the second caller has joined.
+                while launcher.processes.first?.sentSignals == [SIGTERM], !unblock.value { try await Task.sleep(for: .milliseconds(1)) }
+                try await Task.sleep(for: .milliseconds(1))
+            })
+        let first = Task { [profile, configuration] in try await manager.acquire(profileID: profile, configuration: configuration, connectTimeout: .seconds(30)) }
+        await eventually("ssh launched") { !launcher.processes.isEmpty }
+        first.cancel()
+        await eventually("stopping the abandoned ssh") { launcher.processes.first?.sentSignals == [SIGTERM] }
+        let second = Task { [profile, configuration] in try await manager.acquire(profileID: profile, configuration: configuration, connectTimeout: .seconds(30)) }
+        await eventually("second caller joined the stopping start") { await manager.userCount(profileID: profile) == 1 }
+        unblock.value = true
+        let lease = try await second.value
+        if case .failure(let error) = await first.result { XCTAssertEqual(error as? TunnelError, .cancelled) } else { XCTFail("Expected cancelled") }
+        XCTAssertEqual(launcher.processes.count, 2, "The second caller started a fresh ssh")
+        XCTAssertEqual(launcher.processes.first?.sentSignals, [SIGTERM, SIGKILL])
+        await manager.release(lease)
+        await manager.shutdown()
+    }
+
+    /// A cancelled caller leaves a tunnel another tab still waits for: that ssh keeps starting and serves the other tab.
+    func testCancelledAcquirerKeepsASharedStartingTunnel() async throws {
+        let ready = Flag()
+        let manager = manager(probe: { _ in ready.value })
+        let first = Task { [profile, configuration] in try await manager.acquire(profileID: profile, configuration: configuration, connectTimeout: .seconds(30)) }
+        await eventually("ssh launched") { !launcher.processes.isEmpty }
+        let second = Task { [profile, configuration] in try await manager.acquire(profileID: profile, configuration: configuration, connectTimeout: .seconds(30)) }
+        await eventually("second caller joined") { await manager.userCount(profileID: profile) == 2 }
+        first.cancel()
+        await eventually("cancelled caller left") { await manager.userCount(profileID: profile) == 1 }
+        ready.value = true
+        let lease = try await second.value
+        if case .failure(let error) = await first.result { XCTAssertEqual(error as? TunnelError, .cancelled) } else { XCTFail("Expected cancelled") }
+        XCTAssertEqual(launcher.processes.count, 1)
+        XCTAssertEqual(launcher.processes.first?.sentSignals, [], "The shared ssh isn't stopped")
+        let users = await manager.userCount(profileID: profile)
+        XCTAssertEqual(users, 1)
+        await manager.release(lease)
+        await eventually("grace period scheduled") { clock.pendingCount > 0 }
+        clock.fire()
+        await eventually("closed after the grace period") { launcher.processes.first?.exit != nil }
     }
 }
 

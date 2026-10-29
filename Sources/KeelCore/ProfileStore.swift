@@ -1,4 +1,5 @@
 import Foundation
+import KeelSSH
 
 public enum ProfileStoreError: Error, Equatable, Sendable {
     case invalid(ProfileField)
@@ -23,6 +24,14 @@ public enum PasswordChange: Equatable, Sendable {
     case remove
 }
 
+/// What to do with a profile's client identity (`Keel TLS`) in `update` (FR-CN03).
+public enum TLSIdentityChange: Equatable, Sendable {
+    case keep
+    /// Saves an import from `TLSIdentityImporter`, replacing the profile's previous identity.
+    case set(ImportedTLSIdentity)
+    case remove
+}
+
 /// The single owner of `connections.json` and of the profiles' Keychain items (FR-CN01, FR-CN02, FR-CN09).
 ///
 /// Every mutation validates first, then writes the Keychain, then the metadata; a failed metadata write restores
@@ -30,7 +39,9 @@ public enum PasswordChange: Equatable, Sendable {
 /// the `Persistence` suspension, and a record only changes in memory once it is on disk. Each change stamps the
 /// record with the next store revision; editors pass the revision they started from and get `.conflict` when stale.
 /// A change to host, port, username, TLS server name or tunnel advances the connection revision and removes the
-/// saved password, so it is never offered to a different server.
+/// saved password, so it is never offered to a different server. A profile tunneled through a saved SSH host also
+/// binds its password to what that host connects to (`SavedHostBinding`): re-pointing the host refuses and removes it.
+/// A client identity Keel's import added to the Keychain is removed once the last profile using it lets it go.
 public actor ProfileStore {
     public private(set) var document = ConnectionsDocument() {
         didSet { for observer in observers.values { observer.yield(document) } }
@@ -41,6 +52,10 @@ public actor ProfileStore {
     private let persistence: Persistence<ConnectionsDocument>
     private let secrets: any SecretStore
     private let makeID: @Sendable () -> UUID
+    /// The saved SSH host a `.savedHost` tunnel names, as `HostLibrary` holds it now; nil when it is gone.
+    private let resolveSavedHost: @Sendable (UUID) async -> SavedHost?
+    /// Removes a client identity (certificate and key) from the Keychain: `TLSIdentityImporter.removeIdentity`.
+    private let removeTLSIdentity: @Sendable (Data) -> Void
     /// The backup offered by the last `.recovery` load; for a newer file it can only be used in memory.
     private var recoveryBackup: ConnectionsDocument?
     private var busy = false
@@ -50,11 +65,20 @@ public actor ProfileStore {
 
     public static let passwordByteLimit = 4096
 
-    public init(persistence: Persistence<ConnectionsDocument>, secrets: any SecretStore, makeID: @escaping @Sendable () -> UUID = { UUID() }) {
-        self.persistence = persistence; self.secrets = secrets; self.makeID = makeID
+    public init(
+        persistence: Persistence<ConnectionsDocument>, secrets: any SecretStore, makeID: @escaping @Sendable () -> UUID = { UUID() },
+        resolveSavedHost: @escaping @Sendable (UUID) async -> SavedHost? = { _ in nil }, removeTLSIdentity: @escaping @Sendable (Data) -> Void = { _ in }
+    ) {
+        self.persistence = persistence; self.secrets = secrets; self.makeID = makeID; self.resolveSavedHost = resolveSavedHost
+        self.removeTLSIdentity = removeTLSIdentity
     }
 
-    public init(directory: URL, secrets: any SecretStore = KeychainSecretStore()) { self.init(persistence: Persistence(directory: directory), secrets: secrets) }
+    public init(
+        directory: URL, secrets: any SecretStore = KeychainSecretStore(), resolveSavedHost: @escaping @Sendable (UUID) async -> SavedHost? = { _ in nil },
+        removeTLSIdentity: @escaping @Sendable (Data) -> Void = { _ in }
+    ) {
+        self.init(persistence: Persistence(directory: directory), secrets: secrets, resolveSavedHost: resolveSavedHost, removeTLSIdentity: removeTLSIdentity)
+    }
 
     public enum LoadOutcome: Equatable, Sendable {
         case ready
@@ -73,9 +97,21 @@ public actor ProfileStore {
     /// The saved password for a connect, bound to the connection revision the caller resolved the profile at: nil
     /// when the profile is gone, has no password or its connection changed since. It waits for an in-flight mutation:
     /// those write the Keychain before the metadata, so a new connection's password must not reach the old one.
+    /// Through a saved SSH host it is also nil when the host is gone or now connects elsewhere than the password was
+    /// saved for; the stale password is then removed, so the editor stops offering it.
     public func password(profileID: UUID, connectionRevision: UInt64) async throws(ProfileStoreError) -> Data? {
         await acquire(); defer { release() }
         guard let profile = profile(profileID), profile.connectionRevision == connectionRevision, profile.hasPassword else { return nil }
+        if case .savedHost(let hostID) = profile.settings.tunnel {
+            guard let host = await resolveSavedHost(hostID) else { return nil }
+            let binding = SavedHostBinding(host)
+            if let bound = profile.savedHostBinding {
+                guard bound == binding else { await rebind(profileID, nil); return nil }
+            } else {
+                // Written before Keel recorded the binding: trust the host as it is now, and bind to it from here on.
+                await rebind(profileID, binding)
+            }
+        }
         do { return try secrets.read(.password, profileID: profileID) } catch { throw .secretStore(error) }
     }
 
@@ -122,25 +158,33 @@ public actor ProfileStore {
 
     // MARK: Profiles
 
-    /// Adds a profile at the end of `folderID` (or the top level). The password goes to the Keychain first.
-    public func create(_ settings: ConnectionSettings, folderID: UUID? = nil, password: Data? = nil) async throws(ProfileStoreError) -> ConnectionProfile {
+    /// Adds a profile at the end of `folderID` (or the top level). The password and client identity go to the
+    /// Keychain first.
+    public func create(_ settings: ConnectionSettings, folderID: UUID? = nil, password: Data? = nil, identity: ImportedTLSIdentity? = nil) async throws(ProfileStoreError)
+        -> ConnectionProfile
+    {
         await acquire(); defer { release() }
         let valid = try settings.validated()
         try requireFolder(folderID)
         if let password { try Self.validate(password) }
+        let binding = password == nil ? nil : try await savedHostBinding(valid)
         var next = try nextDocument()
-        let profile = ConnectionProfile(id: makeID(), settings: valid, folderID: folderID, revision: next.revision, hasPassword: password != nil)
-        next.profiles.insert(profile, at: Self.insertionIndex(in: next.profiles, folderID: folderID, position: nil))
+        var profile = ConnectionProfile(id: makeID(), settings: valid, folderID: folderID, revision: next.revision, hasPassword: password != nil, savedHostBinding: binding)
         var undo = Undo()
         if let password { try stage(.password, password, profileID: profile.id, existed: false, undo: &undo) }
+        if let identity { _ = try stageIdentity(.set(identity), on: &profile, previous: nil, undo: &undo) }
+        next.profiles.insert(profile, at: Self.insertionIndex(in: next.profiles, folderID: folderID, position: nil))
         try await commit(next, undo: undo)
         return profile
     }
 
     /// Saves the editor's settings. Renaming or relabeling keeps the connection revision and the password; a new
     /// connection advances the revision and removes the password unless `password` sets a new one. An unchanged
-    /// save keeps the revision, so it doesn't remove the saved password.
-    public func update(_ id: UUID, _ settings: ConnectionSettings, password: PasswordChange = .keep, expectedRevision: UInt64) async throws(ProfileStoreError) -> ConnectionProfile {
+    /// save keeps the revision, so it doesn't remove the saved password. `identity` sets or removes the client identity;
+    /// the one it replaces leaves the Keychain once saved, if Keel's import added it and no other profile uses it.
+    public func update(
+        _ id: UUID, _ settings: ConnectionSettings, password: PasswordChange = .keep, identity: TLSIdentityChange = .keep, expectedRevision: UInt64
+    ) async throws(ProfileStoreError) -> ConnectionProfile {
         await acquire(); defer { release() }
         let (index, current) = try locate(id, expectedRevision: expectedRevision)
         let valid = try settings.validated()
@@ -153,32 +197,32 @@ public actor ProfileStore {
         case .remove: secretChange = current.hasPassword ? .some(nil) : nil
         case .keep: secretChange = connectionChanged && current.hasPassword ? .some(nil) : nil
         }
-        guard valid != current.settings || secretChange != nil else { return current }
+        let identityChanges = identity != .keep && (identity != .remove || current.hasTLSSecret)
+        guard valid != current.settings || secretChange != nil || identityChanges else { return current }
+        // A new password binds to the saved host as it is now; a kept one keeps the binding it was saved with.
+        let binding: SavedHostBinding?
+        switch secretChange {
+        case .some(.some): binding = try await savedHostBinding(valid)
+        case .some(.none): binding = nil
+        case .none: binding = current.savedHostBinding
+        }
         var next = try nextDocument()
         var profile = current
         profile.settings = valid; profile.revision = next.revision
         if connectionChanged { profile.connectionRevision = next.revision }
         if let secretChange { profile.hasPassword = secretChange != nil }
-        next.profiles[index] = profile
+        profile.savedHostBinding = binding
         var undo = Undo()
         if let secretChange { try stage(.password, secretChange, profileID: id, existed: current.hasPassword, undo: &undo) }
-        try await commit(next, undo: undo)
-        return profile
-    }
-
-    /// Sets or removes (nil) the profile's `Keel TLS` item, Keychain first with rollback. Doesn't change the
-    /// connection revision.
-    public func setTLSSecret(_ id: UUID, _ value: Data?, expectedRevision: UInt64) async throws(ProfileStoreError) -> ConnectionProfile {
-        await acquire(); defer { release() }
-        let (index, current) = try locate(id, expectedRevision: expectedRevision)
-        guard value != nil || current.hasTLSSecret else { return current }
-        var next = try nextDocument()
-        var profile = current
-        profile.hasTLSSecret = value != nil; profile.revision = next.revision
+        var released: TLSIdentitySecret?
+        if identityChanges {
+            let previous: TLSIdentitySecret?
+            do { previous = try identitySecret(current) } catch { undo.run(); throw error }
+            released = try stageIdentity(identity, on: &profile, previous: previous, undo: &undo)
+        }
         next.profiles[index] = profile
-        var undo = Undo()
-        try stage(.tls, value, profileID: id, existed: current.hasTLSSecret, undo: &undo)
         try await commit(next, undo: undo)
+        release(released)
         return profile
     }
 
@@ -191,7 +235,8 @@ public actor ProfileStore {
         settings.name = String((source.settings.name + " copy").prefix(ConnectionSettings.nameLimit))
         var next = try nextDocument()
         let copy = ConnectionProfile(
-            id: makeID(), settings: settings, folderID: source.folderID, revision: next.revision, hasPassword: source.hasPassword, hasTLSSecret: source.hasTLSSecret)
+            id: makeID(), settings: settings, folderID: source.folderID, revision: next.revision, hasPassword: source.hasPassword, hasTLSSecret: source.hasTLSSecret,
+            savedHostBinding: source.savedHostBinding)
         next.profiles.insert(copy, at: index + 1)
         var undo = Undo()
         for (secret, flag) in [(ProfileSecret.password, \ConnectionProfile.hasPassword), (.tls, \.hasTLSSecret)] where source[keyPath: flag] {
@@ -200,7 +245,11 @@ public actor ProfileStore {
                 undo.run(); throw .secretStore(error)
             }
             // The flag said the item exists but it's gone: the copy simply has none.
-            guard let value else { next.profiles[index + 1][keyPath: flag] = false; continue }
+            guard let value else {
+                next.profiles[index + 1][keyPath: flag] = false
+                if secret == .password { next.profiles[index + 1].savedHostBinding = nil }
+                continue
+            }
             try stage(secret, value, profileID: copy.id, existed: false, undo: &undo)
         }
         try await commit(next, undo: undo)
@@ -208,18 +257,20 @@ public actor ProfileStore {
     }
 
     /// Removes the profile and its `Keel Connection` and `Keel TLS` items. The Keychain items go first and come back
-    /// if the metadata can't be written. The client identity itself (certificate and key) stays: other profiles or
-    /// apps may use it.
+    /// if the metadata can't be written. The client identity itself (certificate and key) then leaves the Keychain
+    /// only if Keel's import added it and no other profile uses it.
     public func delete(_ id: UUID, expectedRevision: UInt64? = nil) async throws(ProfileStoreError) {
         await acquire(); defer { release() }
         guard let current = profile(id) else { throw .notFound }
         if let expectedRevision, current.revision != expectedRevision { throw .conflict(expected: expectedRevision, actual: current.revision) }
         var next = try nextDocument()
         next.profiles.removeAll { $0.id == id }
+        let previous = try identitySecret(current)
         var undo = Undo()
         // Always cleared, even without a flag, so no orphaned item outlives its profile.
         for secret in ProfileSecret.allCases { try stage(secret, nil, profileID: id, existed: true, undo: &undo) }
         try await commit(next, undo: undo)
+        release(previous)
     }
 
     /// Moves a profile to `folderID` (nil: top level) at `position` among that folder's profiles (nil: the end).
@@ -296,7 +347,9 @@ public actor ProfileStore {
     // MARK: Import (FR-CN14)
 
     /// Applies an export in one commit, so a failure anywhere leaves every profile, folder and Keychain item as it
-    /// was. Records are matched by ID; `policy` decides what a match does. New folders go after the saved ones and
+    /// was. Records are matched by ID (a profile also by the ID it was imported under); `policy` decides what a match
+    /// does. An added profile always gets a new ID: the file's ID may be a profile of another Keel copy (installed,
+    /// development, another state folder), and the Keychain items keyed by it are shared by all of them. New folders go after the saved ones and
     /// new profiles at the end of their folder, in file order. An import that changes nothing writes nothing.
     public func importProfiles(_ export: ProfileExport, policy: ProfileImportPolicy) async throws(ProfileStoreError) -> ProfileImportResult {
         await acquire(); defer { release() }
@@ -314,8 +367,9 @@ public actor ProfileStore {
             if policy == .replace, next.folders[index].name != folder.name { next.folders[index].name = folder.name; next.folders[index].revision = next.revision; result.foldersRenamed += 1 }
         }
         for imported in export.profiles {
-            guard let index = next.profiles.firstIndex(where: { $0.id == imported.id }) else {
-                place(ConnectionProfile(id: imported.id, settings: imported.settings, folderID: imported.folderID, revision: next.revision)); result.added += 1; continue
+            guard let index = ProfileExport.match(imported.id, in: next.profiles) else {
+                place(ConnectionProfile(id: makeID(), settings: imported.settings, folderID: imported.folderID, revision: next.revision, importedFrom: imported.id))
+                result.added += 1; continue
             }
             switch policy {
             case .skip: result.skipped += 1
@@ -333,6 +387,7 @@ public actor ProfileStore {
                 if imported.settings.connectionKey != current.settings.connectionKey || imported.settings.weakensTransport(from: current.settings) {
                     profile.connectionRevision = next.revision
                     if current.hasPassword { try stage(.password, nil, profileID: current.id, existed: true, undo: &undo); profile.hasPassword = false }
+                    profile.savedHostBinding = nil
                 }
                 if profile.folderID == imported.folderID {
                     next.profiles[index] = profile
@@ -376,6 +431,74 @@ public actor ProfileStore {
         } catch {
             undo.run(); throw .secretStore(error)
         }
+    }
+
+    /// The binding a password saved now gets: the saved host as `HostLibrary` holds it, nil without a saved-host
+    /// tunnel. A host that is gone can't take a password (`.invalid(.tunnel)`).
+    private func savedHostBinding(_ settings: ConnectionSettings) async throws(ProfileStoreError) -> SavedHostBinding? {
+        guard case .savedHost(let id) = settings.tunnel else { return nil }
+        guard let host = await resolveSavedHost(id) else { throw .invalid(.tunnel) }
+        return SavedHostBinding(host)
+    }
+
+    /// The profile's `Keel TLS` item, decoded; nil without one or in a format this Keel doesn't know.
+    private func identitySecret(_ profile: ConnectionProfile) throws(ProfileStoreError) -> TLSIdentitySecret? {
+        guard profile.hasTLSSecret else { return nil }
+        let data: Data?
+        do { data = try secrets.read(.tls, profileID: profile.id) } catch { throw .secretStore(error) }
+        return data.flatMap { try? JSONDecoder().decode(TLSIdentitySecret.self, from: $0) }
+    }
+
+    /// Writes (or removes) the `Keel TLS` item for `change` and sets the flag on `profile`. Returns the identity the
+    /// change lets go, for `release` once the metadata is saved. Re-importing the identity the profile already has
+    /// keeps Keel's ownership of it.
+    private func stageIdentity(_ change: TLSIdentityChange, on profile: inout ConnectionProfile, previous: TLSIdentitySecret?, undo: inout Undo) throws(ProfileStoreError)
+        -> TLSIdentitySecret?
+    {
+        switch change {
+        case .keep: return nil
+        case .remove:
+            try stage(.tls, nil, profileID: profile.id, existed: profile.hasTLSSecret, undo: &undo)
+            profile.hasTLSSecret = false
+            return previous
+        case .set(let identity):
+            let same = previous?.identity == identity.reference
+            let secret = TLSIdentitySecret(identity: identity.reference, passphrase: identity.passphrase, addedByKeel: identity.isNew || (same && previous?.addedByKeel == true))
+            let data: Data
+            do { data = try JSONEncoder().encode(secret) } catch { undo.run(); throw .secretStore(.keychain(-50)) }
+            try stage(.tls, data, profileID: profile.id, existed: profile.hasTLSSecret, undo: &undo)
+            profile.hasTLSSecret = true
+            return same ? nil : previous
+        }
+    }
+
+    /// Removes an identity Keel's import added once no saved profile's `Keel TLS` item refers to it (duplicates share
+    /// one). Runs after the commit and is best effort: a private key can't be put back, so it only goes once the
+    /// metadata no longer needs it, and an item that can't be read counts as still using it.
+    private func release(_ previous: TLSIdentitySecret?) {
+        guard let previous, previous.addedByKeel == true else { return }
+        for other in document.profiles where other.hasTLSSecret {
+            let data: Data?
+            do { data = try secrets.read(.tls, profileID: other.id) } catch { return }
+            guard let data else { continue }
+            // An item in a format this Keel doesn't know might still refer to it.
+            guard let secret = try? JSONDecoder().decode(TLSIdentitySecret.self, from: data), secret.identity != previous.identity else { return }
+        }
+        removeTLSIdentity(previous.identity)
+    }
+
+    /// Records `binding` for the profile's password, or (nil) removes the password, Keychain first. Best effort and
+    /// called with the lock held: the lookup it serves fails closed either way. The record revision stays, since no
+    /// editor-visible field changes and an open editor (or its own Test Connection) must not get `CONFLICT`.
+    private func rebind(_ id: UUID, _ binding: SavedHostBinding?) async {
+        guard let index = document.profiles.firstIndex(where: { $0.id == id }), var next = try? nextDocument() else { return }
+        var undo = Undo()
+        if binding == nil {
+            do throws(ProfileStoreError) { try stage(.password, nil, profileID: id, existed: true, undo: &undo) } catch { return }
+            next.profiles[index].hasPassword = false
+        }
+        next.profiles[index].savedHostBinding = binding
+        try? await commit(next, undo: undo)
     }
 
     /// Publishes `next`; on failure the staged Keychain changes are undone and the in-memory document is unchanged.

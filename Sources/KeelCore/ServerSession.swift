@@ -23,6 +23,22 @@ public enum ConnectionRole: Sendable, Hashable, CustomStringConvertible {
     }
 }
 
+/// What a console command does to its connection's `MULTI` (02 Architecture → Transactions).
+public enum TransactionStep: Sendable, Equatable {
+    /// `MULTI`: opens a transaction when the server answers `OK`.
+    case begin
+    /// `EXEC`, `DISCARD`, `RESET`, `QUIT`: whatever the reply, no transaction is left open.
+    case end
+    /// Any other command: inside an open transaction a `QUEUED` reply adds it; `mayWrite` marks one read-only refuses.
+    case queue(mayWrite: Bool)
+}
+
+/// A console connection's open `MULTI`, as far as the replies so far tell.
+public struct OpenTransaction: Sendable, Equatable {
+    /// A command read-only refuses (write, script, admin, unknown) was queued.
+    public var queuedWrite: Bool
+}
+
 /// The connections of one server session, by role. Each is opened on first use; one that failed or closed is
 /// replaced on the next use, and nothing that was in flight on it is ever re-sent (NFR-RL03).
 public actor ServerSession {
@@ -36,6 +52,8 @@ public actor ServerSession {
     /// The database each registered connection is on. Missing while a console's `SELECT` / `RESET` is in flight or
     /// queued in `MULTI`, so nothing but another `SELECT` runs until the console has chosen one again.
     private var databases: [ConnectionRole: Int] = [:]
+    /// Open transactions by role, with the connection they live on: a replaced or closed connection takes its `MULTI`.
+    private var transactions: [ConnectionRole: (connection: RedisConnection, queuedWrite: Bool)] = [:]
 
     public init(open: @escaping Open) { self.open = open }
 
@@ -81,8 +99,10 @@ public actor ServerSession {
     /// connection is on `database` (a console's own `SELECT`, or a job id reused with another database, would otherwise
     /// aim it elsewhere); `selecting` marks a console `SELECT` / `RESET` that moves it there when the server says so.
     /// `timeout` overrides the connection's command timeout (`RedisConnection.noTimeout` for a console's blocking command).
+    /// `transaction` is what a console command does to its connection's `MULTI`, followed from the server's reply.
     public func send(
-        _ arguments: [Data], mayWrite: Bool, role: ConnectionRole, database: Int, bindsDatabase: Bool = true, selecting: Int? = nil, timeout: Duration? = nil
+        _ arguments: [Data], mayWrite: Bool, role: ConnectionRole, database: Int, bindsDatabase: Bool = true, selecting: Int? = nil, timeout: Duration? = nil,
+        transaction: TransactionStep? = nil
     ) async throws(DataCommandError) -> RESPValue {
         let connection: RedisConnection
         do throws(ConnectionFailure) { connection = try await self.connection(for: role, database: database) } catch { throw .connection(error) }
@@ -94,6 +114,7 @@ public actor ServerSession {
             let reply: RESPValue
             do throws(RedisError) { reply = try await connection.send(arguments, mayWrite: mayWrite, timeout: timeout) } catch { throw .command(error) }
             guard connections[role] === connection else { return reply }
+            follow(transaction, reply, role: role, connection: connection)
             switch reply {
             case .simpleString(let text) where text == Data("OK".utf8) || text == Data("RESET".utf8): databases[role] = selecting
             case .error: databases[role] = previous
@@ -102,7 +123,29 @@ public actor ServerSession {
             return reply
         }
         if bindsDatabase, previous != database { throw .invalidRequest("This connection is on another database; run SELECT \(database) first.") }
-        do throws(RedisError) { return try await connection.send(arguments, mayWrite: mayWrite, timeout: timeout) } catch { throw .command(error) }
+        let reply: RESPValue
+        do throws(RedisError) { reply = try await connection.send(arguments, mayWrite: mayWrite, timeout: timeout) } catch { throw .command(error) }
+        if connections[role] === connection { follow(transaction, reply, role: role, connection: connection) }
+        return reply
+    }
+
+    /// `role`'s open `MULTI`; nil when there is none or the connection it was opened on is gone.
+    public func openTransaction(_ role: ConnectionRole) async -> OpenTransaction? {
+        guard let open = transactions[role], connections[role] === open.connection, await open.connection.state == .ready else { return nil }
+        return OpenTransaction(queuedWrite: open.queuedWrite)
+    }
+
+    private func follow(_ step: TransactionStep?, _ reply: RESPValue, role: ConnectionRole, connection: RedisConnection) {
+        switch step {
+        case nil: return
+        case .begin:
+            // A nested MULTI is an error that leaves the open transaction as it was.
+            if case .simpleString(let text) = reply, text == Data("OK".utf8) { transactions[role] = (connection, false) }
+        case .end: transactions[role] = nil
+        case .queue(let mayWrite):
+            guard mayWrite, transactions[role]?.connection === connection, case .simpleString(let text) = reply, text == Data("QUEUED".utf8) else { return }
+            transactions[role]?.queuedWrite = true
+        }
     }
 
     /// Starts a streaming command on `role`'s connection, opening it first if needed (`RedisConnection.stream`). The
@@ -126,7 +169,7 @@ public actor ServerSession {
 
     /// Closes `role`'s connection (Stop on a stream, a finished job, a closed console).
     public func close(_ role: ConnectionRole) async {
-        opening[role]?.cancel(); opening[role] = nil; databases[role] = nil
+        opening[role]?.cancel(); opening[role] = nil; databases[role] = nil; transactions[role] = nil
         await connections.removeValue(forKey: role)?.close()
     }
 

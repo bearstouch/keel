@@ -67,4 +67,19 @@ final class InfoOverviewTests: XCTestCase {
             "2 replicas, 1 in sync")
         XCTAssertEqual(InfoOverview.lastSave(InfoReport(text: "rdb_last_save_time:1729672640\r\nrdb_last_bgsave_status:err\r\n"), now: now), "Failed · 6 minutes ago")
     }
+
+    /// Hostile INFO: memory at Int64.max (a double rounds it to 2^63, past Int64) and against a tiny limit, and
+    /// infinite hit counts, render text instead of trapping.
+    func testHostileNumbersNeverTrap() {
+        let huge = InfoOverview.memory(InfoReport(text: "used_memory:9223372036854775807\r\n"))
+        XCTAssertEqual(huge.value, "8192"); XCTAssertEqual(huge.unit, "PB")
+        let tinyLimit = InfoOverview.memory(InfoReport(text: "used_memory:9223372036854775807\r\nmaxmemory:1\r\n"))
+        XCTAssertEqual(tinyLimit.value, "9223372036854775807"); XCTAssertEqual(tinyLimit.unit, "of 1 B"); XCTAssertEqual(tinyLimit.fraction, 1)
+        let kilobytes = InfoOverview.memory(InfoReport(text: "used_memory:9223372036854775807\r\nmaxmemory:1024\r\n"))
+        XCTAssertEqual(kilobytes.value, "9007199254740992"); XCTAssertEqual(kilobytes.unit, "of 1 KB")
+        XCTAssertEqual(InfoOverview.bytes(.max, unitOf: .max).value, "8192")
+        XCTAssertEqual(InfoOverview.hitRatio(InfoReport(text: "keyspace_hits:inf\r\nkeyspace_misses:1\r\n")), InfoOverview.unavailable)
+        XCTAssertEqual(InfoOverview.hitRatio(InfoReport(text: "keyspace_hits:1e308\r\nkeyspace_misses:1e308\r\n")), InfoOverview.unavailable)
+        _ = InfoOverview(report: InfoReport(text: "used_memory:9223372036854775807\r\nmaxmemory:9223372036854775807\r\nuptime_in_seconds:9223372036854775807\r\nrdb_last_save_time:9223372036854775807\r\n"), now: now)
+    }
 }

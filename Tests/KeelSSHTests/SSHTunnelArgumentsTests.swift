@@ -10,6 +10,7 @@ final class SSHTunnelArgumentsTests: XCTestCase {
             try SSHTunnelArguments.arguments(for: configuration, socketPath: socket),
             [
                 "-N", "-T", "-o", "ExitOnForwardFailure=yes", "-o", "ServerAliveInterval=30", "-o", "StreamLocalBindUnlink=yes",
+                "-o", "ControlMaster=no", "-o", "ControlPath=none", "-o", "ControlPersist=no", "-o", "ForkAfterAuthentication=no",
                 "-L", "\(socket):127.0.0.1:6379", "-p", "2222", "-l", "deploy", "-i", "/Users/me/.ssh/id ed25519", "--", "ops"
             ], "One argv element per value: the space in the identity path is never split by a shell")
         XCTAssertEqual(SSHTunnelArguments.executable, "/usr/bin/ssh")
@@ -61,7 +62,63 @@ final class SSHTunnelArgumentsTests: XCTestCase {
         for option in SSHTunnelArguments.forbiddenOptions {
             XCTAssertFalse(arguments.contains { $0.localizedCaseInsensitiveContains(option) }, option)
         }
-        XCTAssertEqual(arguments.enumerated().filter { $0.element == "-o" }.map { arguments[$0.offset + 1] }, ["ExitOnForwardFailure=yes", "ServerAliveInterval=30", "StreamLocalBindUnlink=yes"])
+        XCTAssertEqual(
+            arguments.enumerated().filter { $0.element == "-o" }.map { arguments[$0.offset + 1] },
+            [
+                "ExitOnForwardFailure=yes", "ServerAliveInterval=30", "StreamLocalBindUnlink=yes", "ControlMaster=no", "ControlPath=none", "ControlPersist=no",
+                "ForkAfterAuthentication=no"
+            ])
+    }
+
+    func testOverridesConfigOptionsThatBackgroundSSH() throws {
+        // ssh takes the first value it sees for these and reads the command line before ssh_config, so a `Host *` with
+        // ControlMaster auto + ControlPersist or ForkAfterAuthentication yes can't move the forward to a process Keel
+        // doesn't own (the spawned ssh would exit 0 while a daemon keeps the socket).
+        let arguments = try SSHTunnelArguments.arguments(for: SSHTunnelConfiguration(destination: "ops", redisHost: "127.0.0.1", redisPort: 6379), socketPath: socket)
+        let options = arguments.enumerated().filter { $0.element == "-o" }.map { arguments[$0.offset + 1] }
+        for option in ["ControlMaster=no", "ControlPath=none", "ControlPersist=no", "ForkAfterAuthentication=no"] { XCTAssertTrue(options.contains(option), option) }
+        XCTAssertFalse(arguments.contains("-f") || arguments.contains("-M") || arguments.contains("-S"))
+        XCTAssertLessThan(try XCTUnwrap(arguments.firstIndex(of: "ForkAfterAuthentication=no")), try XCTUnwrap(arguments.firstIndex(of: "--")))
+    }
+
+    func testFindsForwardsTheConfigAdds() {
+        let output = """
+            user deploy
+            exitonforwardfailure yes
+            localforward \(socket) [127.0.0.1]:6379
+            localforward 6380 [localhost]:6379
+            remoteforward 9000 [localhost]:22
+            dynamicforward 1080
+            forwardagent no
+            """
+        XCTAssertEqual(
+            SSHTunnelArguments.configuredForwards(in: output, socketPath: socket), ["LocalForward 6380 [localhost]:6379", "RemoteForward 9000 [localhost]:22", "DynamicForward 1080"])
+        XCTAssertEqual(SSHTunnelArguments.configuredForwards(in: "user deploy\nlocalforward \(socket) [127.0.0.1]:6379\nforwardx11 no\n", socketPath: socket), [], "Keel's own -L is not a config forward")
+        let many = (1...5).map { "dynamicforward \(1_080 + $0)\u{1B}[31m" }.joined(separator: "\n")
+        XCTAssertEqual(SSHTunnelArguments.configuredForwards(in: many, socketPath: socket), ["DynamicForward 1081[31m", "DynamicForward 1082[31m", "DynamicForward 1083[31m"])
+    }
+
+    /// Runs the real `/usr/bin/ssh -G` (it connects nowhere) with a private config, as the tunnel manager does.
+    func testRealSSHReportsConfigForwards() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("keel-ssh-g-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let config = folder.appendingPathComponent("config")
+        try "Host ops\n  LocalForward 6380 localhost:6379\n  ControlMaster auto\n  ControlPersist 10m\n  ForkAfterAuthentication yes\nHost plain\n  User deploy\n".write(
+            to: config, atomically: true, encoding: .utf8)
+        func options(_ destination: String) async throws -> String {
+            let arguments = try SSHTunnelArguments.arguments(for: SSHTunnelConfiguration(destination: destination, redisHost: "127.0.0.1", redisPort: 6379), socketPath: socket)
+            let output = await SSHProcessLauncher().effectiveOptions(
+                executable: SSHTunnelArguments.executable, arguments: ["-G", "-F", config.path] + arguments, environment: ["HOME": folder.path], timeout: .seconds(10))
+            return try XCTUnwrap(output, destination)
+        }
+        let ops = try await options("ops")
+        XCTAssertEqual(SSHTunnelArguments.configuredForwards(in: ops, socketPath: socket), ["LocalForward 6380 [localhost]:6379"])
+        XCTAssertTrue(ops.contains("controlmaster false") && ops.contains("forkafterauthentication no") && ops.contains("controlpersist no"), "Keel's -o options win over the config")
+        let plain = try await options("plain")
+        XCTAssertEqual(SSHTunnelArguments.configuredForwards(in: plain, socketPath: socket), [])
+        let broken = await SSHProcessLauncher().effectiveOptions(executable: SSHTunnelArguments.executable, arguments: ["-G", "-F", folder.path + "/missing"], environment: [:], timeout: .seconds(10))
+        XCTAssertNil(broken, "A failing ssh -G is no answer, never an empty one")
     }
 
     func testSavedHostFieldsCarryOver() throws {

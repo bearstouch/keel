@@ -25,17 +25,33 @@ public struct SSHPrompt: Identifiable, Equatable, Sendable {
     public let kind: Kind
     /// Whether typed text may be shown while typing (ssh asked with echo on).
     public let echo: Bool
+    /// A keyboard-interactive question: its text was written by the SSH server, not by ssh.
+    public let fromServer: Bool
     /// The tunnel launch that asked; its prompts are withdrawn together when it ends.
     let owner: UUID
 
     init(id: UUID = UUID(), owner: UUID, destination: String, text: String, askpass: AskpassPrompt) {
         self.id = id; self.owner = owner; self.destination = destination
         self.text = Self.displayText(text)
+        fromServer = Self.isServerText(self.text)
         (kind, echo) = Self.classify(self.text, askpass: askpass)
     }
 
-    /// Host key first: its text also says "fingerprint" and ends in a question, and must never be mistaken for a
-    /// password. `askpass` is the helper's classification, which already decided password vs everything else.
+    /// ssh's host-key questions, as the last line of its prompt (OpenSSH `sshconnect.c` `confirm()` and its retries,
+    /// `clientloop.c` for UpdateHostKeys=ask). ssh asks them with echo and no `SSH_ASKPASS_PROMPT`, exactly like a
+    /// keyboard-interactive question, so the text is the only signal.
+    static let hostKeyQuestions: Set<String> = [
+        "Are you sure you want to continue connecting (yes/no/[fingerprint])?", "Are you sure you want to continue connecting (yes/no)?",
+        "Please type 'yes', 'no' or the fingerprint:", "Please type 'yes' or 'no':", "Accept updated hostkeys? (yes/no):"
+    ]
+
+    /// ssh (8.7 and later; macOS 14 ships 9.x) starts every keyboard-interactive prompt with `(user@host) ` and never
+    /// starts its own prompts with a parenthesis, so a server can't make its text look like ssh's own.
+    static func isServerText(_ text: String) -> Bool { text.hasPrefix("(") }
+
+    /// Host key first: it must never be mistaken for a password. Only ssh's own host-key question counts: a server's
+    /// keyboard-interactive text saying "yes/no" or "host key" is a typed answer to that server, never Accept/Reject.
+    /// `askpass` is the helper's classification, which already decided password vs everything else.
     static func classify(_ text: String, askpass: AskpassPrompt) -> (Kind, Bool) {
         let lower = text.lowercased()
         switch askpass {
@@ -43,8 +59,10 @@ public struct SSHPrompt: Identifiable, Equatable, Sendable {
         case .notice: return (.notice, false)
         case .password: return (.password, false)
         case .typed(let echo):
-            if lower.contains("yes/no") || lower.contains("authenticity of host") || lower.contains("host key") { return (.hostKey, true) }
-            if lower.contains("passphrase") { return (.passphrase, false) }
+            let question = text.split(separator: "\n").last.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
+            if !isServerText(text), hostKeyQuestions.contains(question) { return (.hostKey, true) }
+            // A key passphrase is asked by ssh itself; a server can't ask for one.
+            if !isServerText(text), lower.contains("passphrase") { return (.passphrase, false) }
             if lower.contains("password") { return (.password, false) }
             return (.code, echo)
         }

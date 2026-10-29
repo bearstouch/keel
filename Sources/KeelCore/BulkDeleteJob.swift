@@ -45,10 +45,12 @@ public actor BulkDeleteJob {
         public var matched = 0
         /// What the `UNLINK` replies counted.
         public var deleted = 0
+        /// Keys SCAN returned that Keel's own check of the pattern didn't match: never sent, so never deleted.
+        public var skipped = 0
         public var elapsed: Duration = .zero
 
-        public init(scans: Int = 0, matched: Int = 0, deleted: Int = 0, elapsed: Duration = .zero) {
-            self.scans = scans; self.matched = matched; self.deleted = deleted; self.elapsed = elapsed
+        public init(scans: Int = 0, matched: Int = 0, deleted: Int = 0, skipped: Int = 0, elapsed: Duration = .zero) {
+            self.scans = scans; self.matched = matched; self.deleted = deleted; self.skipped = skipped; self.elapsed = elapsed
         }
 
         /// Keys deleted per second so far; nil before any time has passed.
@@ -80,7 +82,8 @@ public actor BulkDeleteJob {
         public var progress: Progress
         public var failure: Failure?
 
-        public var isComplete: Bool { failure == nil }
+        /// Ran to the end and left no key the server matched.
+        public var isComplete: Bool { failure == nil && progress.skipped == 0 }
         public var deleted: Int { progress.deleted }
 
         /// SCAN only guarantees keys that existed for the whole run (AC4).
@@ -99,12 +102,21 @@ public actor BulkDeleteJob {
                 stop = ". The connection was lost during a batch, so whether its keys were deleted is unknown."
             case .command(let error)?: stop = ". It stopped: \(KeyIndex.describe(error, command: "the bulk delete"))"
             }
-            return done + stop + " " + Self.caveat
+            return done + stop + skippedNote + " " + Self.caveat
+        }
+
+        /// Keys the server matched but Keel didn't delete are named in the summary, never left out silently.
+        private var skippedNote: String {
+            guard progress.skipped > 0 else { return "" }
+            let count = KeyIndexFooter.grouped(progress.skipped)
+            let what = progress.skipped == 1 ? "key the server matched was" : "keys the server matched were"
+            return " \(count) \(what) left: Keel's own check of the pattern didn't match them."
         }
 
         /// "Scanned 2,100 pages · matched 1,221,000 · 12,000 keys/s".
         public var details: String {
             var parts = ["Scanned \(KeyIndexFooter.grouped(progress.scans)) \(progress.scans == 1 ? "page" : "pages")", "matched \(KeyIndexFooter.grouped(progress.matched))"]
+            if progress.skipped > 0 { parts.append("left \(KeyIndexFooter.grouped(progress.skipped))") }
             if let rate = progress.rate { parts.append("\(KeyIndexFooter.grouped(Int(rate.rounded()))) keys/s") }
             return parts.joined(separator: " · ")
         }
@@ -162,10 +174,13 @@ public actor BulkDeleteJob {
 
     static func clamped(_ throttle: Int?) -> Int? { throttle.map { min(max($0, throttleRange.lowerBound), throttleRange.upperBound) } }
 
-    /// Why the job can't run with this pattern and type; nil when it can. `*` (or `**`) is every key: that is FLUSHDB.
+    /// Why the job can't run with this pattern and type; nil when it can. A pattern every key matches (`*`, `?*`, `[^]*`)
+    /// is FLUSHDB, which has its own confirmation.
     public static func refusal(pattern: Data, type: KeyTypeFilter?) -> String? {
         if pattern.isEmpty { return "Enter a pattern to delete the keys that match it." }
-        if GlobPattern.matchesEverything(pattern) { return "The pattern * matches every key; use FLUSHDB to empty the database." }
+        if GlobPattern.matchesEverything(pattern) {
+            return "The pattern \(KeyDisplay.redisCliArgument(pattern)) matches every key; use FLUSHDB to empty the database."
+        }
         // SCAN can't select module types; checking each key's TYPE first is not offered for deletes.
         if type == .other { return "Bulk delete can filter by the six core types only." }
         return nil
@@ -252,9 +267,11 @@ public actor BulkDeleteJob {
             case .success(let page):
                 report.progress.scans += 1; cursor = page.cursor
                 // SCAN already matched; checked again so a single-key batch (a plain write the policy doesn't tie to
-                // the pattern) can never name another key. A key repeated within the pending batch is sent once.
-                for key in page.keys where GlobPattern.matches(pattern, key) && pendingSet.insert(key).inserted {
-                    pending.append(key); report.progress.matched += 1
+                // the pattern) can never name another key. A key repeated within the pending batch is sent once; one the
+                // check rejects is counted, so the report never says complete when it left keys behind.
+                for key in page.keys {
+                    guard GlobPattern.matches(pattern, key) else { report.progress.skipped += 1; continue }
+                    if pendingSet.insert(key).inserted { pending.append(key); report.progress.matched += 1 }
                 }
             }
             let finished = cursor == Self.startCursor
@@ -275,7 +292,7 @@ public actor BulkDeleteJob {
         report.progress.elapsed = clock.now() - started
         // Counts and the stop code only: never the pattern or a key (NFR-PV02).
         let stop: LogField = .code(report.failure.map(\.code) ?? "COMPLETED")
-        Self.log.log(.info, "bulk_delete.finished", .count("scans", report.progress.scans), .count("matched", report.progress.matched), .count("deleted", report.deleted), stop)
+        Self.log.log(.info, "bulk_delete.finished", .count("scans", report.progress.scans), .count("matched", report.progress.matched), .count("deleted", report.deleted), .count("skipped", report.progress.skipped), stop)
         await close()
         return report
     }
@@ -354,8 +371,3 @@ private final class CancelFlag: @unchecked Sendable {
 
 /// Lets the job's steps return `Result<_, Failure>` without a wrapper type.
 extension MultiKeyDelete.Failure: Error {}
-
-extension GlobPattern {
-    /// Only `*`s: a pattern every key matches (FR-SF05 refuses it).
-    public static func matchesEverything(_ pattern: Data) -> Bool { !pattern.isEmpty && pattern.allSatisfy { $0 == UInt8(ascii: "*") } }
-}

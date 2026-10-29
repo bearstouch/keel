@@ -99,7 +99,8 @@ public enum DataRemovalPlanner {
     public static func isKeelFile(_ name: String) -> Bool
     public static func protectedReason(_ directory: URL, home: URL) -> String?
     public static func plan(stateDirectory: URL, home: URL, keychain: any KeychainInventory,
-                            storedPreferenceKeys: Set<String>, fileManager: FileManager = .default) -> DataRemovalPlan
+                            storedPreferenceKeys: Set<String>, scope: DataRemovalPlan.Scope = .everything,
+                            fileManager: FileManager = .default) -> DataRemovalPlan
     public static func execute(_ plan: DataRemovalPlan, keychain: any KeychainInventory,
                                removePreference: (String) -> Void) -> DataRemovalResult
 }
@@ -107,7 +108,7 @@ public enum DataRemovalPlanner {
 
 | Type | Kind | Purpose |
 | --- | --- | --- |
-| `DataRemovalPlan` | struct, Sendable | `files`, `keptEntries` (unknown entries are never deleted), `keychainItems`, `preferenceKeys`, `refusal` (symlinked or protected folder), `unreadableServices`; `removesDirectory`, `isEmpty`, `summary`. |
+| `DataRemovalPlan` | struct, Sendable | `scope` (`.everything`, or `.stateFolderOnly` for a `--fixture` run: the Keychain is never listed, no preference key is planned and `execute` removes no Keychain item), `files`, `keptEntries` (unknown entries are never deleted), `keychainItems`, `preferenceKeys`, `refusal` (symlinked or protected folder), `unreadableServices`; `removesDirectory`, `isEmpty`, `summary`. |
 | `DataRemovalResult` | struct | `failures: [String]`. |
 | `KeychainInventory` | protocol, Sendable | `accounts(service:)`, `remove(service:account:)`; both `throws(DataRemovalError)`. |
 | `SystemKeychainInventory` | struct | Real Keychain implementation. |
@@ -125,13 +126,18 @@ in `release/manifest.json` and in `scripts/package-release.sh`.
 2. `AppInstanceIdentity(bundleIdentifier:)` picks `com.bearstouch.keel` or `com.bearstouch.keel.dev`.
 3. `StateLocation.resolve(...)` then `StateLocation.prepare(_:)`; an unusable folder (file, symlink, other owner) exits
    **73** (`EX_CANTCREAT`).
-4. Creates `AppDelegate(arguments:stateDirectory:)`, keeps it alive with `withExtendedLifetime`, runs `NSApplication`.
+4. `InstanceLock(directory:)` (MAC-17) before any state is read, held for the whole run. A lock held by another
+   process activates that instance (same bundle ID or executable) and exits **75** (`EX_TEMPFAIL`); an unusable lock
+   file exits **73**.
+5. Creates `AppDelegate(arguments:stateDirectory:)`, keeps it alive with `withExtendedLifetime`, runs `NSApplication`.
 
 | Flag | Effect |
 | --- | --- |
-| `--fixture` | Fresh temporary state folder; Sparkle is never started. |
+| `--fixture` | Fresh temporary state folder; Sparkle is never started; secrets stay in memory (`LaunchSecrets`), never in the login Keychain. |
 | `--state-directory <abs path>` | Separate state directory. |
 | anything else starting `--` | exit 64 |
+| `-fixture`, `-state-directory …` (any case, `=value` too) | exit 64 with "Did you mean --…?" (`ParseError.singleDash`) |
+| other `-Key [value]`, `-psn_…` | AppKit defaults and LaunchServices: skipped (a following Keel flag is never taken as the value) |
 
 ### `AppDelegate` (final class, @MainActor; `NSApplicationDelegate`, `NSWindowDelegate`, `NSMenuItemValidation`)
 
@@ -145,7 +151,9 @@ Menus (`buildMenus()`): Keel, File, Edit, View (tab modes, Database, Theme), Key
 to a `KeelShortcut` are tracked in `shortcutItems` and rebound by `applyShortcuts(_:)` when the shortcut map changes;
 fixed chords come from `KeelShortcut.fixed`. Most key, editor and console actions post a notification
 (`KeyListCommands`, `EditorCommands`, `ConsoleCommands`) scoped to the key window. Help holds Export Diagnostics and
-Remove Keel Data (plan, confirm "Remove and Quit", execute with `SystemKeychainInventory`).
+Remove Keel Data (plan, confirm "Remove and Quit", execute with `SystemKeychainInventory`; a `--fixture` run plans
+with `.stateFolderOnly`). `LaunchSecrets(arguments:)` gives the profile store, the SSH host library and the
+connector/tester their secret stores and client-identity lookup.
 
 ### Sparkle wiring
 

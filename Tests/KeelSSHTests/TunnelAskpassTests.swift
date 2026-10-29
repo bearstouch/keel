@@ -90,6 +90,37 @@ final class TunnelAskpassTests: XCTestCase {
         await manager.shutdown()
     }
 
+    /// Closing the tab while ssh's host-key question is on screen stops ssh and takes the sheet away; nobody can
+    /// accept a key for a tab that is gone.
+    func testCancelledConnectWithdrawsThePendingHostKeyPrompt() async throws {
+        let relay = PromptRelay()
+        let screen = PromptScreen()
+        await screen.attach(to: relay)
+        let broker = broker(relay)
+        defer { broker.stop() }
+        let answers = LockedList()
+        launcher.onLaunch = { process in Thread.detachNewThread { answers.append(Self.ask(process, PromptRelayTests.hostKeyText, kind: .typed(echo: true))) } }
+        let manager = manager(broker, probe: { _ in false })
+        let configuration = configuration, profile = UUID()
+        let acquiring = Task { try await manager.acquire(profileID: profile, configuration: configuration, connectTimeout: .seconds(5)) }
+        while screen.shown.isEmpty { try await Task.sleep(for: .milliseconds(5)) }
+        acquiring.cancel()
+        if case .failure(let error) = await acquiring.result { XCTAssertEqual(error as? TunnelError, .cancelled) } else { XCTFail("Expected cancelled") }
+        XCTAssertEqual(launcher.processes.first?.sentSignals, [SIGTERM])
+        XCTAssertEqual(broker.registeredCount, 0, "The launch's nonce ends with it")
+        let prompt = try XCTUnwrap(screen.shown.first)
+        for _ in 0..<200 where !screen.events.contains(.withdraw(prompt.id)) { try await Task.sleep(for: .milliseconds(5)) }
+        XCTAssertTrue(screen.events.contains(.withdraw(prompt.id)), "The sheet goes away")
+        let pending = await relay.pendingCount
+        XCTAssertEqual(pending, 0)
+        // A late click can't answer it any more: the helper never hears an accept.
+        await relay.respond(to: prompt.id, with: .accept)
+        for _ in 0..<200 where answers.values.isEmpty { try await Task.sleep(for: .milliseconds(5)) }
+        XCTAssertNotEqual(answers.values.first ?? nil, Data([AskpassProtocol.password]) + Data("yes".utf8))
+        let users = await manager.userCount(profileID: profile)
+        XCTAssertEqual(users, 0)
+    }
+
     func testSavedPasswordIsReadOncePerLaunch() async throws {
         let relay = PromptRelay()
         let screen = PromptScreen { _ in .decline }

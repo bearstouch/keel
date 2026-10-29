@@ -44,12 +44,45 @@ needs a person, hardware or an environment that wasn't available.
 
 - Malformed connection URLs show an inline error and change nothing.
 - Closing a tab with unsaved edits asks first.
+- Switching between two connected tabs in Console mode, and moving one to another window, keeps keyboard focus in
+  the selected tab's console and its typed-confirmation sheets bound to that tab (the view swap is tested in
+  `TabContentIdentityReviewTests`).
+- The key list's ⋯ menu shows Auto-page (checked while on) and Pause / Resume Scanning, readable by VoiceOver, and the
+  footer counts up while auto-paging (FR-KB02; the model is tested in `BrowserPagingTests`, the menu itself is not).
+- With unsaved edits, clicking or arrowing to another key, switching database, applying a filter or opening a recent
+  key from the palette shows the Save / Don’t Save / Cancel alert, and Cancel leaves the list selection as it was
+  (FR-ED16; the model and the list's held click are tested in `BrowserUnsavedChangesReviewTests`, the alert itself and
+  AppKit's proposed-selection call for real clicks and arrow keys are not).
 - A key such as `\xff\x00a` displays escaped and can be opened, renamed and deleted.
 - Capability probe results are cached per session and drive editor fallbacks (for example `ZRANGEBYSCORE` on 6.0).
 - The CA-change prompt shows both fingerprints on screen (the core flow is tested in `KnownCATests`).
 - A saved profile through an SSH bastion browses end to end; closing the last tab ends ssh within 11 s and quitting
   leaves no `ssh -N` child (checked with `ps`). The tunnel core is tested in `TunnelIntegrationTests`.
+- With `ControlMaster auto` + `ControlPersist` and `ForkAfterAuthentication yes` under `Host *` in `~/.ssh/config`, a
+  tunnel still runs as Keel's own foreground ssh and ends with its last tab; with a `LocalForward` for the bastion,
+  connecting shows the `TUNNEL_FAILED` config-forwards message (the `ssh -G` check is tested against the real
+  `/usr/bin/ssh` in `SSHTunnelArgumentsTests`, the refusal in `TunnelManagerTests`).
+- Client certificate import (FR-CN03): a real `.p12` and a PEM pair imported from the TLS row land in the login
+  Keychain, the subject shows, a client-cert-required server accepts the saved profile, and re-import or Remove
+  deletes the old identity (seen in Keychain Access). The store and sheet flows are tested with fakes
+  (`TLSIdentityStoreTests`, `ClientIdentityImportTests`); the TLS row's look is part of the New Connection review.
+- Re-pointing a saved SSH host (FR-CN21) shows the warning in Edit SSH Host, and the next connect of a profile using it
+  sends no `AUTH` with the old password (seen on the server's `MONITOR` or ACL log). The binding is tested in
+  `SavedHostBindingTests`.
+- A real sshd keyboard-interactive (PAM) prompt shows "Asked by the SSH server" with a text field, and one that says
+  "yes/no" is never shown as a host key (classification is unit-tested in `AskpassReviewTests`).
+- Deleting a profile from the sidebar with its tabs open in two windows shows them in the confirmation, and with an
+  unsaved edit asks the second question (model flow tested in `SidebarModelReviewTests`; the alerts' look is pending).
+- Closing a tab while a real bastion's host-key sheet is up closes the sheet, ends that ssh and adds nothing to
+  `known_hosts` (the cancellation is tested with fakes in `TunnelAskpassTests` and `WindowModelTests`).
 - Keel and Trellis run at the same time without sharing state.
+- MAC-17: a second `swift run Keel` (or `open -n` of the built app) brings the running instance's windows forward and
+  exits 75, while the installed and development builds still run side by side. The lock itself is tested in
+  `InstanceLockTests`; the activation needs a logged-in session.
+- In a `--fixture` run, a saved connection or SSH host password leaves no item in Keychain Access, importing a client
+  certificate shows the "--fixture run never uses the Keychain" message, and Help → Remove Keel Data… lists no
+  Keychain items and leaves the installed app's items in place (the plan and the store choice are tested in
+  `DataRemovalPlannerTests` and `LaunchSecretsTests`).
 - The built app shows the icon in the Dock, Finder and ⌘-Tab, and dark and tinted appearances follow the system
   setting.
 
@@ -79,8 +112,17 @@ needs a person, hardware or an environment that wasn't available.
 
 ## Known gaps
 
+- **Config forwards with `Match exec`.** The INT-06 forward check is skipped when the user's ssh_config (or an
+  `Include`) has a `Match exec`, or a file Keel can't read, because `ssh -G` would run that command an extra time; such a
+  tunnel still gets any `LocalForward`/`RemoteForward`/`DynamicForward` the config adds.
+
+- **Test Connection and a new client certificate.** Test uses the profile's saved identity; one just imported (or
+  removed) in the sheet applies from Save on.
 - **Large node expansion.** `NSOutlineView.expandItem` takes about 0.3 s for a node with 500,000 children (its own
   per-child bookkeeping; Keel's callbacks take about 40 ms), so FR-KB04's 200 ms expand check is not met yet.
+- **Typing in a large value.** Each keystroke in the viewer still copies the whole text, converts it back to bytes and,
+  in JSON view, validates it on the main actor (O(value size); unmeasured). The hash and set tables no longer sort
+  again and the change marks are no longer recomputed over every row per keystroke (`EditorTypingReviewTests`).
 - **Xcode 26.3 and later aren't used.** Test runs built by Xcode 26.3 (Swift 6.2.4) and 26.6 (Swift 6.3.3) abort on
   GitHub's `macos-26` runners with "freed pointer was not the last allocation" in a `Persistence` debounce task whose
   `Task.sleep` ends without suspending (a zero debounce, or a task cancelled before it sleeps). The same suite, with

@@ -86,11 +86,12 @@ public actor DataCommandService {
     public init(session: ServerSession, catalog: CommandCatalog = .bundled)
 
     public func execute(_ command: DataCommand, origin: CommandOrigin, context: DataContext) async throws(DataCommandError) -> DataCommandResult
-    public func verdict(_ command: DataCommand, origin: CommandOrigin, context: DataContext) -> SafetyVerdict   // sends nothing
+    public func verdict(_ command: DataCommand, origin: CommandOrigin, context: DataContext) async -> SafetyVerdict   // sends nothing
     public func executeTransaction(_ writes: [DataOperation], unchanged watch: WatchGuard?, context: DataContext) async throws(DataCommandError) -> DataCommandResult
     public func stream(_ command: DataCommand, context: DataContext) async throws(DataCommandError) -> AsyncStream<RESPValue>
     public func stopStream(console: UUID) async
     public func closeConsole(_ console: UUID) async
+    public func inTransaction(console: UUID) async -> Bool   // a MULTI is open on the console's connection (FR-SF08 measures nothing then)
     public func supports(_ capability: ServerCapability, context: DataContext) async -> Bool
     public func refreshCatalog(context: DataContext) async throws(DataCommandError)
     public func lockReadOnly()
@@ -103,7 +104,9 @@ public actor DataCommandService {
   is opened. Console commands flagged `blocking` run with no command timeout (Stop closes the connection). Refusals log
   at info, failures at error, code only.
 - `verdict`: what the policy says now, without sending. The console uses it to measure and confirm first; `execute`
-  evaluates again, so a verdict never lets anything through on its own.
+  evaluates again, so a verdict never lets anything through on its own. Both add one rule the pure policy can't see: on
+  a read-only (or locked) profile a console's `EXEC` is `READ_ONLY` while its open `MULTI` has queued a command
+  read-only refuses (`SafetyPolicy.readOnlyRefused`), so writes queued before the lock never run; `DISCARD` ends it.
 - `executeTransaction`: an editor save. Every write and every guard read passes the policy (origin `.editor`) before the
   first byte; guard reads must be non-writing. With a `WatchGuard` it sends `WATCH key`, repeats the reads and compares
   (RESP2/RESP3 null and score spellings are equal), then pipelines `MULTI … EXEC` on the pinned browser connection.
@@ -155,8 +158,9 @@ public enum SafetyPolicy {
     public static func evaluate(_ arguments: [Data], command: CommandInfo?, origin: CommandOrigin,
                                 profile: SafetyProfile, database: Int, confirmation: CommandConfirmation?) -> SafetyVerdict
 }
-public enum GlobPattern {                            // Redis stringmatchlen on bytes
+public enum GlobPattern {                            // port of Redis/Valkey stringmatchlen on bytes; exactly `*` matches every key
     public static func matches(_ pattern: Data, _ subject: Data) -> Bool
+    public static func matchesEverything(_ pattern: Data) -> Bool   // every non-empty key: `*`, `?*`, `[^]*` (FR-SF05)
 }
 ```
 
@@ -216,7 +220,7 @@ public struct CommandConfirmation: Sendable, Equatable {
 
 A `CommandConfirmation` covers only its database and scope: `.command` matches the arguments byte for byte; `.keys`
 covers multi-key `DEL`/`UNLINK` whose keys are all in the selection; `.pattern` covers `DEL`/`UNLINK` whose keys all
-match the glob, and never `*`/`**` (that is `FLUSHDB`).
+match the glob, and never a glob every key matches (`*`, `?*`, `[^]*`: that is `FLUSHDB`).
 
 ### `TypedConfirmation` (struct, Sendable)
 
@@ -248,7 +252,8 @@ public static func run(_ keys: [Data], service: DataCommandService, context: Dat
 
 The console's O(N) warning (FR-SF08) for `KEYS`, `SMEMBERS`/`HGETALL`/`LRANGE` over `threshold = 10_000` elements and
 `FLUSHALL` without `ASYNC`. Sizes are read through the data path on the console's own connection (`DBSIZE`, `SCARD`,
-`HLEN`, `LLEN`, `INFO keyspace`); an unreadable size gives no warning (the policy's confirmation still applies).
+`HLEN`, `LLEN`, `INFO keyspace`); an unreadable size gives no warning (the policy's confirmation still applies). While the console's connection has a
+`MULTI` open nothing is measured and `check` returns nil, so no size read is queued in the user's transaction.
 
 ```swift
 public static func check(_ arguments: [Data], service: DataCommandService, origin: CommandOrigin = .console, context: DataContext) async -> ComplexityWarning?
@@ -315,7 +320,9 @@ public init(open: @escaping Open)
 public func readyRoles() async -> Set<ConnectionRole>
 public func connection(for role: ConnectionRole, database: Int) async throws(ConnectionFailure) -> RedisConnection
 public func send(_ arguments: [Data], mayWrite: Bool, role: ConnectionRole, database: Int,
-                 bindsDatabase: Bool = true, selecting: Int? = nil, timeout: Duration? = nil) async throws(DataCommandError) -> RESPValue
+                 bindsDatabase: Bool = true, selecting: Int? = nil, timeout: Duration? = nil,
+                 transaction: TransactionStep? = nil) async throws(DataCommandError) -> RESPValue
+public func openTransaction(_ role: ConnectionRole) async -> OpenTransaction?
 public func stream(_ arguments: [Data], role: ConnectionRole, database: Int) async throws(DataCommandError) -> AsyncStream<RESPValue>
 public func pinnedConnection(for role: ConnectionRole, database: Int) async throws(DataCommandError) -> RedisConnection
 public func close(_ role: ConnectionRole) async
@@ -324,6 +331,9 @@ public func closeAll() async
 
 `send` tracks each connection's database: a command that binds a database runs only when the connection is known to be
 on it (`INVALID_PARAMS` otherwise); a console `SELECT`/`RESET` clears the known database until the server answers.
+It also follows a console's `MULTI` from the replies (`TransactionStep`: `begin` on `MULTI` `OK`, `end` on `EXEC` /
+`DISCARD` / `RESET` / `QUIT`, `queue(mayWrite:)` on a `QUEUED` reply); `openTransaction` answers nil once the connection
+it was opened on is closed or replaced. `OpenTransaction.queuedWrite` says whether a command read-only refuses was queued.
 `ServerSession.send` is the data path's transport, not an entry point: call `DataCommandService` instead.
 
 ### `SessionConnecting` / `ProfileSessionConnector` / `ConnectedServer`
@@ -344,7 +354,8 @@ public struct ConnectedServer: Sendable {
 identity, SSH tunnel lease from `TunnelManager` (keyed by profile, shared across tabs), then a `ServerSession` whose
 opener connects, handshakes and selects. On the first browser connection it identifies the server (refusing below the
 minimum with `UNSUPPORTED_SERVER`), loads the live catalog and asks `CONFIG GET databases` (best effort). Any failure
-closes what was opened. Settings (timeouts, client name, console RESP version) are read once per connect; only the
+closes what was opened. A cancelled calling task (the tab closed or disconnected while connecting) cancels the tunnel
+acquire, opens nothing more and fails with `ConnectionFailure.cancelled` after closing what was opened. Settings (timeouts, client name, console RESP version) are read once per connect; only the
 console connection uses the console protocol setting, every other role stays on RESP3. All collaborators are injected
 through `init` (`makeConnection`, `detector`, `settings`, `resolveSavedHost`, …).
 
@@ -360,7 +371,7 @@ Test Connection for the connection sheet: `test(_ settings:password:profileID:) 
 User-facing connect failure (FR-CN10): `category`, `message`, `suggestion`, optional `phase` (timeouts), scrubbed
 `serverError`, `tunnelExit`. Messages never contain the password; server text loses echoed arguments. Mapping
 initializers: `init(connecting: RedisError, …)`, `init(handshake: HandshakeError, …)`, `init(tunnel: TunnelError, destination:)`,
-`init(caFile: KnownCAError)`, `init(unsupported: ServerKind, version:minimum:)`. Categories are listed in the error table.
+`init(caFile: KnownCAError)`, `init(unsupported: ServerKind, version:minimum:)`; `cancelled` (`CONNECTION_FAILED`, never shown in a tab). Categories are listed in the error table.
 
 ### Server detection
 
@@ -419,7 +430,10 @@ through the data path (`Result<InfoReport, KeyIndexError>`). `InfoOverview(repor
   `ProfileStoreError.invalid(ProfileField)`; limits `nameLimit = 128`, `databaseRange = 0...65_535`,
   `timeoutRange = 100...600_000` ms. `connectionKey` (host, port, username, TLS server name, tunnel) defines "same
   server"; `weakensTransport(from:)` detects a TLS/tunnel downgrade.
-- `ConnectionProfile`: `id`, `settings`, `folderID`, `revision`, `connectionRevision`, `hasPassword`, `hasTLSSecret`.
+- `ConnectionProfile`: `id`, `settings`, `folderID`, `revision`, `connectionRevision`, `hasPassword`, `hasTLSSecret`,
+  `importedFrom` (optional: the export-file ID an imported profile was added under; collisions match it too),
+  `savedHostBinding` (`SavedHostBinding`: the saved SSH host's destination, user, port and identity file the password
+  was saved through, FR-CN21).
 - `ProfileFolder`, `ProfileLabel` (`LabelColor`, name ≤ 40, `treatAsProduction`), `ConnectionsDocument`
   (`connections.json`, `currentVersion = 1`).
 
@@ -428,18 +442,20 @@ through the data path (`Result<InfoReport, KeyIndexError>`). `InfoOverview(repor
 Single owner of `connections.json` and the profiles' Keychain items. Every mutation validates, writes the Keychain,
 then the metadata; a failed metadata write restores the previous Keychain values. Mutations are serialized; editors pass
 `expectedRevision` and get `.conflict` when stale. A change to the connection key advances `connectionRevision` and
-removes the saved password.
+removes the saved password. `resolveSavedHost` (the app passes `HostLibrary`'s hosts) binds a password saved through a
+saved SSH host to where the host connects: `password(profileID:connectionRevision:)` returns nil once the host is gone
+or re-pointed, and removes the stale password; a password set for a host that can't be resolved is `.invalid(.tunnel)`.
 
 ```swift
-public init(persistence: Persistence<ConnectionsDocument>, secrets: any SecretStore, makeID: @escaping @Sendable () -> UUID = { UUID() })
-public init(directory: URL, secrets: any SecretStore = KeychainSecretStore())
+public init(persistence: Persistence<ConnectionsDocument>, secrets: any SecretStore, makeID: @escaping @Sendable () -> UUID = { UUID() },
+            resolveSavedHost: @escaping @Sendable (UUID) async -> SavedHost? = { _ in nil })
+public init(directory: URL, secrets: any SecretStore = KeychainSecretStore(), resolveSavedHost: @escaping @Sendable (UUID) async -> SavedHost? = { _ in nil })
 public func load() async -> LoadOutcome                                   // .ready | .recovery(reason:backupAvailable:)
 public func recover(_ choice: RecoveryChoice) async throws(ProfileStoreError)
 public func changes() -> AsyncStream<ConnectionsDocument>
 public func password(profileID: UUID, connectionRevision: UInt64) async throws(ProfileStoreError) -> Data?
-public func create(_ settings: ConnectionSettings, folderID: UUID? = nil, password: Data? = nil) async throws(ProfileStoreError) -> ConnectionProfile
-public func update(_ id: UUID, _ settings: ConnectionSettings, password: PasswordChange = .keep, expectedRevision: UInt64) async throws(ProfileStoreError) -> ConnectionProfile
-public func setTLSSecret(_ id: UUID, _ value: Data?, expectedRevision: UInt64) async throws(ProfileStoreError) -> ConnectionProfile
+public func create(_ settings: ConnectionSettings, folderID: UUID? = nil, password: Data? = nil, identity: ImportedTLSIdentity? = nil) async throws(ProfileStoreError) -> ConnectionProfile
+public func update(_ id: UUID, _ settings: ConnectionSettings, password: PasswordChange = .keep, identity: TLSIdentityChange = .keep, expectedRevision: UInt64) async throws(ProfileStoreError) -> ConnectionProfile
 public func duplicate(_:) / delete(_:expectedRevision:) / move(_:toFolder:position:expectedRevision:)
 public func createFolder(named:) / renameFolder / setFolderCollapsed / moveFolder / deleteFolder
 public func renameLabel(_:to:) / setTreatAsProduction(_:_:)
@@ -448,7 +464,9 @@ public func importProfiles(_ export: ProfileExport, policy: ProfileImportPolicy)
 ```
 
 `passwordByteLimit = 4096`. `ProfileStoreError`: `invalid`, `notFound`, `conflict(expected:actual:)`, `readOnly`,
-`persistence`, `secretStore`, `invalidImport`. `PasswordChange`: `keep`, `set(Data)`, `remove`.
+`persistence`, `secretStore`, `invalidImport`. `PasswordChange`: `keep`, `set(Data)`, `remove`. `TLSIdentityChange`: `keep`,
+`set(ImportedTLSIdentity)`, `remove`; `removeTLSIdentity` (init, the app passes `TLSIdentityImporter.removeIdentity`)
+deletes a replaced identity Keel added once no profile uses it.
 
 ### `SecretStore` (protocol) / `KeychainSecretStore`
 
@@ -463,6 +481,14 @@ public protocol SecretStore: Sendable {
 
 `KeychainSecretStore` writes generic passwords, *when unlocked, this device only*. Secrets never go anywhere else. The
 `Keel SSH Host` service belongs to `KeelSSH`.
+
+`LaunchSecrets(arguments:)` picks the stores for a launch: `usesKeychain`, `profiles: any SecretStore`,
+`hosts: any HostSecretStore`, `identities: TLSIdentityImporter` and `clientIdentity: (UUID) -> TLSClientIdentity?`
+(through `identities`). Normally they are `KeychainSecretStore`, `KeychainHostSecretStore` and
+`TLSIdentityImporter()`; a `--fixture` run gets `InMemorySecretStore`, `InMemoryHostSecretStore` and
+`TLSIdentityImporter(keychain: NoTLSIdentityKeychain())`, so it never reads or writes the Keychain. A `SecIdentity`
+needs a keychain, so a fixture run's certificate import fails with `unsupportedKey(NoTLSIdentityKeychain.message)`
+after the in-memory checks, and it connects without a client identity.
 
 ### `Persistence<Document>` (actor) and `PersistenceCodec`
 
@@ -494,9 +520,10 @@ unreadable original is preserved as `<name>.corrupt.<uuid>.json` before `startEm
 
 | Type | Kind | Purpose |
 | --- | --- | --- |
+| `InstanceLock` | final class | MAC-17: `init(directory:)` takes an exclusive `flock` on `instance.lock` (0600, `O_NOFOLLOW`) and records the PID; `Failure.held(path:owner:)` when another process holds it, `.unusable(path:errno:)` for a link, folder or foreign file; `release()` or deinit drops it |
 | `StateLocation` | enum | `resolve(arguments:identity:applicationSupport:temporary:)` picks `--state-directory`, a fresh fixture folder, or `Application Support/<bundle id>`; `prepare(_:)` creates it 0700 and refuses a file, symlink or foreign-owned folder (`Failure`) |
 | `KnownCAStore` | actor | Owner of `known-ca.json` (FR-CN04): `check(profile:caFile:)` returns `CATrust.trusted(anchors:)` or `.changed(CAChange)`; only `accept(_:)` or `anchors(profile:caFile:confirm:)` turns a change into anchors; `forget(profile:)`. `CAFile.read` caps at 4 MiB. `CAFingerprint` is SHA-256 hex |
-| `TLSIdentityImporter` | struct | Imports a client identity from PKCS#12 or PEM cert + key (PKCS#8 incl. PBES2, PKCS#1, SEC1; `PrivateKeyDecoder`, `DER` internal) into the login Keychain, service `Keel TLS`; `clientIdentity(profileID:)`, `passphrase(profileID:)`. Errors: `TLSIdentityImportError` |
+| `TLSIdentityImporter` | struct | Imports a client identity from PKCS#12 or PEM cert + key (PKCS#8 incl. PBES2, PKCS#1, SEC1; `PrivateKeyDecoder`, `DER` internal) into the login Keychain: `importPKCS12(_:passphrase:)` / `importPEM(certificate:privateKey:passphrase:)` return an `ImportedTLSIdentity` (`reference`, `summary`, `isNew`) that `ProfileStore` saves; `discard(_:)`, `removeIdentity(reference:)`, `clientIdentity(profileID:)`, `passphrase(profileID:)`, `subject(profileID:)` read `Keel TLS`, which only `ProfileStore` writes. Errors: `TLSIdentityImportError` |
 | `TLSIdentityKeychain` / `SystemTLSIdentityKeychain` | protocol / struct | Keychain calls for identity import; never touches the system keychain or trust settings |
 | `ProfileExport` | struct | `keel-profiles` export format v1 (folders + settings, never secrets); `validated()`, `encoded()`, `decode(_:)`; `ProfileImportPolicy`, `ProfileImportPreview`, `ProfileImportResult`, `ProfileImportError` |
 | `RedisURL` | struct | Parses and prints `redis://` / `rediss://` URLs (`isCandidate`, `init(parsing:)`, `init(settings:)`, `string`, `applied(to:)`); unknown query parameters are reported, not applied |
@@ -524,8 +551,10 @@ public func keys(in range: Range<Int>) -> [Data]
 public func keys(at indices: [Int], generation expected: Int) -> [Data]?     // nil when indices went stale
 public func metadata(at index: Int) -> KeyMetadata
 public func loadMore() async -> KeyIndexStatus
-public func autoPage() async -> KeyIndexStatus
+public func autoPage() async -> KeyIndexStatus              // with a page in flight, keeps that run going (clears a stop or pause)
 public func pause(); public func continueScanning() async -> KeyIndexStatus
+public func stopAutoPage()                                     // ends the loop after the page in flight; mode stays auto
+public func setPagingMode(_ mode: KeyPagingMode)               // ⋯ → Auto-page off: manual (a paused scan goes idle)
 public func restart(filter: KeyFilter? = nil); public func switchDatabase(_ database: Int)
 public func databaseSize() async -> Result<Int, KeyIndexError>
 public func index(of key: Data) -> Int?; public func presence(of key: Data) async -> KeyPresence
@@ -683,7 +712,7 @@ cancellation, so an in-flight `UNLINK` finishes and its outcome stays known.
 ```swift
 public init(pattern: Data, type: KeyTypeFilter? = nil, throttle: Int? = defaultThrottle, service: DataCommandService,
             profile: SafetyProfile, database: Int, clock: Clock = .continuous)
-public static func refusal(pattern: Data, type: KeyTypeFilter?) -> String?      // empty, *, or module type filter
+public static func refusal(pattern: Data, type: KeyTypeFilter?) -> String?      // empty, a pattern every key matches, or module type filter
 public static func confirmation(for pattern: Data, database: Int) -> CommandConfirmation
 public static func request(for pattern: Data, estimate: Int?, exact: Bool = false, profile: SafetyProfile, database: Int) -> TypedConfirmation
 public func sample() async -> Sample                // up to 20 SCAN pages / 100 matches + DBSIZE, for the estimate
@@ -693,7 +722,7 @@ public nonisolated func cancel(); public nonisolated var isCancelled: Bool
 public func close() async                            // closes the job connection
 ```
 
-`Report.summary` always carries the caveat that keys created or renamed during the run may remain.
+`Report.summary` always carries the caveat that keys created or renamed during the run may remain. `Progress.skipped` counts keys SCAN returned that `GlobPattern.matches` rejected (never sent); the summary names them and `Report.isComplete` is false while it is non-zero.
 
 ## App support
 
@@ -701,7 +730,7 @@ public func close() async                            // closes the job connectio
 | --- | --- | --- |
 | `KeelLog` | struct | `os_log` wrapper by `Category` (`connection`, `data`, `jobs`, `app`). Fields are `LogField`: `.code` (non-SCREAMING_SNAKE becomes `INVALID_CODE`), `.count`, `.serverKind`, `.serverText` (private, debug builds only). Errors are recorded in `DiagnosticsRecorder`. Sink and build are injectable |
 | `DiagnosticsRecorder` / `DiagnosticsReport` | final class (lock) / Codable struct | Last 50 error codes and server kinds seen; `DiagnosticsReport.current(profileCount:)` exports `Keel Diagnostics.json` with no user data |
-| `LaunchArguments` | struct | Strict parse of `--state-directory <abs>` and `--fixture`; unknown flags throw `ParseError` (the app exits 64) |
+| `LaunchArguments` | struct | Strict parse of `--state-directory <abs>` and `--fixture`; unknown flags and single-dash spellings of Keel's flags (`-fixture`: `ParseError.singleDash`, with the suggested flag) throw `ParseError` (the app exits 64); other `-Key value` AppKit defaults are skipped |
 | `LaunchMetrics` | enum | Writes first-sidebar-render seconds to `KEEL_LAUNCH_METRICS` for benchmarks |
 | `KeelShortcut`, `KeelShortcutMap`, `KeelShortcutSettings` | enum / typealiases | Keel's menu actions over the vendored `ShortcutMap`/`KeyChord`/`ShortcutSettings` (`TrellisShared/KeyboardShortcuts.swift`) |
 | `PaletteSearch` / `PaletteItem` / `RecentKeys` | enum / structs | Command-palette ranking (`limit = 50`) and in-memory recent keys (`limit = 20`, never persisted) |

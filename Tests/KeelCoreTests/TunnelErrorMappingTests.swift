@@ -37,6 +37,14 @@ final class TunnelErrorMappingTests: XCTestCase {
         XCTAssertEqual(failure.tunnelExit, exit)
     }
 
+    func testConfiguredForwardsNameTheForwardsAndTheFix() {
+        let failure = ConnectionFailure(tunnel: .configuredForwards(["LocalForward 6380 [localhost]:6379", "DynamicForward 1080"]), destination: "ops")
+        XCTAssertEqual(failure.category, .tunnelFailed)
+        XCTAssertTrue(failure.message.contains("ops") && failure.message.contains("LocalForward 6380 [localhost]:6379; DynamicForward 1080"), failure.message)
+        XCTAssertTrue(failure.suggestion.contains("~/.ssh/config"), failure.suggestion)
+        XCTAssertNil(failure.tunnelExit, "ssh never ran")
+    }
+
     func testOtherTunnelErrors() {
         let timeout = ConnectionFailure(tunnel: .timeout(.seconds(10)), destination: "ops")
         XCTAssertEqual(timeout.category, .timeout)

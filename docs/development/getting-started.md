@@ -39,11 +39,15 @@ Trellis: 4-space indent, 220 columns, semicolons and multi-variable `let` allowe
 | Argument | Effect |
 | --- | --- |
 | *(none)* | Uses the development state folder for `com.bearstouch.keel.dev` |
-| `--fixture` | Starts with a fresh temporary state folder |
-| `--state-directory /abs/path` | Uses that folder (created owner-only, mode 0700) |
+| `--fixture` | Starts with a fresh temporary state folder. Passwords saved in the run stay in memory and end with it: the login Keychain is never read or written, importing a client certificate is refused with a message (an identity can't live outside a keychain), and Help → Remove Keel Data… removes only the run's state folder |
+| `--state-directory /abs/path` | Uses that folder (created owner-only, mode 0700). Only the files are separate: saved passwords use the same Keychain items as every other run of Keel, so Remove Keel Data… there removes them too |
 
-An unknown `--` flag exits with status 64. An unusable state folder (a file, a symlink or another user's folder) exits
-with 73. Development builds use the bundle ID `com.bearstouch.keel.dev`, and installed builds use
+An unknown `--` flag exits with status 64, and so does one of Keel's flags written with a single dash (`-fixture`,
+`-state-directory /tmp/demo`), with a "Did you mean --fixture?" message. Other single-dash arguments are AppKit
+user-default overrides added by macOS or Xcode (`-AppleLanguages (en)`, `-NSDocumentRevisionsDebugMode YES`) and are
+skipped with their value. An unusable state folder (a file, a symlink or another user's folder) exits with 73. A second
+launch with a state folder that is already in use brings the running Keel forward and exits with 75 (MAC-17).
+Development builds use the bundle ID `com.bearstouch.keel.dev`, and installed builds use
 `com.bearstouch.keel`. Each has its own state and instance lock, so both can run at once. State layout and formats are
 described in [Architecture → Persistence](../architecture.md#persistence).
 

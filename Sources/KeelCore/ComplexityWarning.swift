@@ -69,9 +69,11 @@ public struct ComplexityWarning: Sendable, Equatable {
 
     /// The warning for `arguments`, or nil when the command is cheap here, never warns, or its size couldn't be read
     /// (the policy's own confirmation for `KEYS` and `FLUSHALL` still applies). The size reads go through `service`
-    /// from `origin` with `context`, so they run on the console's own connection and database.
+    /// from `origin` with `context`, so they run on the console's own connection and database. Inside that connection's
+    /// `MULTI` nothing is measured: a size read would be queued in the user's transaction and add a reply to its `EXEC`.
     public static func check(_ arguments: [Data], service: DataCommandService, origin: CommandOrigin = .console, context: DataContext) async -> ComplexityWarning? {
         guard let measure = measure(arguments) else { return nil }
+        if origin == .console, let console = context.consoleID, await service.inTransaction(console: console) { return nil }
         func size(_ operation: DataOperation) async -> Int? {
             guard case .integer(let value)? = try? await service.execute(.operation(operation), origin: origin, context: context).reply else { return nil }
             return Int(value)

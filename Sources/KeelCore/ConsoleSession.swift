@@ -146,7 +146,12 @@ public actor ConsoleSession {
             if result.isUnknownCommand { lines.insert(ConsoleLine("Keel doesn't know this command; it was sent as typed.", kind: .notice, reply: reply), at: 0) }
             return .printed(lines)
         } catch {
-            return .printed([ConsoleLine(Self.errorText(error), kind: .error, reply: reply)])
+            var lines = [ConsoleLine(Self.errorText(error), kind: .error, reply: reply)]
+            // A refused EXEC leaves the transaction open on the server; the user has to know how to end it.
+            if case .refused(.readOnly(let message)) = error, String(decoding: arguments[0], as: UTF8.self).lowercased() == "exec" {
+                lines.append(ConsoleLine(message, kind: .notice, reply: reply))
+            }
+            return .printed(lines)
         }
     }
 

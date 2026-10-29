@@ -6,6 +6,15 @@ import os
 public enum RedisEndpoint: Sendable, Equatable {
     case tcp(host: String, port: UInt16)
     case unixSocket(path: String)
+
+    /// `host` without the brackets of a bracketed IPv6 literal (`[::1]` → `::1`); anything else unchanged. Profiles
+    /// keep the host as typed, but Network would look `[::1]` up as a DNS name and the certificate check would match it
+    /// as one, so the socket and the TLS name use this.
+    public static func bareHost(_ host: String) -> String {
+        guard host.hasPrefix("["), host.hasSuffix("]"), host.count > 2 else { return host }
+        let inner = String(host.dropFirst().dropLast())
+        return inner.contains(":") ? inner : host
+    }
 }
 
 /// The byte stream under a `RedisConnection`; `NetworkTransport` in the app, in-memory fakes in tests.
@@ -78,9 +87,9 @@ public final class NetworkTransport: Transport {
         return tcp
     }
 
-    private static func nwEndpoint(_ endpoint: RedisEndpoint) -> NWEndpoint {
+    static func nwEndpoint(_ endpoint: RedisEndpoint) -> NWEndpoint {
         switch endpoint {
-        case .tcp(let host, let port): return .hostPort(host: NWEndpoint.Host(host), port: NWEndpoint.Port(rawValue: port) ?? .any)
+        case .tcp(let host, let port): return .hostPort(host: NWEndpoint.Host(RedisEndpoint.bareHost(host)), port: NWEndpoint.Port(rawValue: port) ?? .any)
         case .unixSocket(let path): return .unix(path: path)
         }
     }

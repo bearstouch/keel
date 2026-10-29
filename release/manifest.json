@@ -1,7 +1,7 @@
 {
   "bundleIdentifier": "com.bearstouch.keel",
   "name": "Keel",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "minimumMacOS": "14.0",
   "architectures": ["arm64", "x86_64"],
   "packageFormat": "dmg",
@@ -13,6 +13,7 @@
     "Keel.app/Contents/Resources/AppIcon.icns",
     "Keel.app/Contents/Resources/Keel_KeelCore.bundle",
     "Keel.app/Contents/Resources/Keel_KeelUI.bundle",
+    "Keel.app/Contents/Resources/LICENSE.txt",
     "Keel.app/Contents/Resources/Sparkle-LICENSE.txt",
     "Keel.app/Contents/Frameworks/Sparkle.framework/Versions/B/Sparkle",
     "Keel.app/Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate",

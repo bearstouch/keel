@@ -16,6 +16,9 @@ public final class BrowserModel: ObservableObject {
     @Published public private(set) var missingKey: Data?
     /// The selected key, open in the editor shell (KEEL-027) once its presence check named its type.
     @Published public private(set) var editor: EditorSession?
+    /// A selection change, database switch, filter or palette key that would close the editor while it has unsaved
+    /// changes, waiting for Save, Don't Save or Cancel (FR-ED16); the pane shows it as an alert.
+    @Published public private(set) var unsavedChangesPrompt: UnsavedChangesPrompt?
     /// ⇧⌘N asked for the new-key sheet (FR-ED14).
     @Published public var showsNewKey = false
     /// The profile's read-only flag, read at `start()`; true until then, so New Key is never offered before it is known.
@@ -34,7 +37,7 @@ public final class BrowserModel: ObservableObject {
     public let serverMode: ServerMode
     /// The server's `databases` (`DatabaseList.probeCount` at session setup); nil offers db0–db15.
     public let databaseCount: Int?
-    /// Loads the first page after a restart; the tab resumes Auto-page here when that is the mode.
+    /// Loads the first page after a restart in manual mode; Auto-page (FR-KB02) runs `autoPage` instead.
     let startScan: @MainActor (KeyIndex) async -> Void
     /// The type's editor; nil shows the shell without a value editor (types whose editor isn't built yet).
     let editorBinding: @MainActor (KeyType) -> EditorBinding?
@@ -49,6 +52,8 @@ public final class BrowserModel: ObservableObject {
     /// Bumped by every selection, so only the newest presence check reports.
     private var presenceRequest = 0
     private var selection: AnyCancellable?
+    /// Auto-page scans only while the list is on screen; hiding it stops the run after the page in flight.
+    private var listShown = true
     private var observers: [NSObjectProtocol] = []
 
     public init(
@@ -68,6 +73,20 @@ public final class BrowserModel: ObservableObject {
             let request = self.presenceRequest
             Task { await self.checkSelection(key, request: request) }
         }
+        list.holdsSelectionChange = { [weak self] in self?.editor?.hasUnsavedChanges == true }
+        list.onHeldSelection = { [weak self] in
+            guard let self else { return }
+            let list = self.list
+            Task { await self.confirmingUnsavedChanges({ list.applyHeldSelection() }, cancel: { list.dropHeldSelection() }) }
+        }
+        filter?.confirmsRestart = { [weak self] action in
+            await self?.confirmingUnsavedChanges { [weak self] in
+                // The old filter's auto-page run must not page the new scan.
+                await self?.list.index.stopAutoPage()
+                await action()
+            }
+        }
+        filter?.startScan = { [weak self] _ in await self?.startScanning() }
         let center = NotificationCenter.default
         observers.append(
             center.addObserver(forName: KeyListCommands.refreshNotification, object: nil, queue: .main) { [weak self] note in
@@ -142,12 +161,17 @@ public final class BrowserModel: ObservableObject {
 
     /// Restarts the scan keeping the filters and, once its key loads again, the selected key (FR-KB09); then
     /// re-reads `DBSIZE` and the switcher's counts. A key deleted meanwhile simply doesn't come back.
+    /// The open editor stays while its key waits to load again, so a draft survives; a clean one re-reads the value.
     public func refresh() async {
         let selected = await list.selectedKeyName()
         missingKey = nil
+        await list.index.stopAutoPage()
         await list.index.restart()
         if let selected { await list.select(keyBytes: selected) }
         await scan()
+        guard let editor, !editor.hasUnsavedChanges else { return }
+        // Not back on the first page (or deleted): the clean editor closes until the key loads again, as before.
+        if list.pendingKey == editor.key { self.editor = nil } else if await list.selectedKeyName() == editor.key, self.editor === editor { await editor.load() }
     }
 
     // MARK: - Database switcher
@@ -155,11 +179,18 @@ public final class BrowserModel: ObservableObject {
     /// ⌥⌘0…⌥⌘9 and the picker: shows `database` in the same tab with an empty list (FR-KB08). The filters and the
     /// paging mode stay; the selection doesn't (it named a key in another database). Databases the switcher doesn't
     /// offer (db1 on a cluster, db12 of 8) are ignored.
+    /// Unsaved changes in the open editor are asked about first.
     public func selectDatabase(_ database: Int) async {
+        guard database != self.database, databases.entry(database) != nil else { return }
+        await confirmingUnsavedChanges { [weak self] in await self?.switchDatabase(database) }
+    }
+
+    private func switchDatabase(_ database: Int) async {
         guard database != self.database, databases.entry(database) != nil else { return }
         self.database = database
         missingKey = nil
         await list.select(keyBytes: nil)
+        await list.index.stopAutoPage()
         await list.index.switchDatabase(database)
         // The old database's total must not show beside the new one's keys.
         list.setTotalKeys(nil)
@@ -173,10 +204,68 @@ public final class BrowserModel: ObservableObject {
         let request = countsRequest
         await list.reload()
         async let counts: Void = loadCounts(request)
-        await startScan(list.index)
+        await startScanning()
         await list.reload()
         await counts
     }
+
+    // MARK: - Paging (FR-KB02)
+
+    /// After a restart: the first page in manual mode; in Auto-page every page up to the limit.
+    private func startScanning() async {
+        if await list.index.status.mode == .auto { await autoPage() } else { await startScan(list.index) }
+    }
+
+    /// The footer's link. Load more is manual paging (it ends Auto-page); Retry and Continue keep the mode.
+    public func perform(_ action: KeyIndexFooter.Action) async {
+        let index = list.index
+        let auto = await index.status.mode == .auto
+        switch action {
+        case .loadMore: await index.loadMore()
+        case .retry: if auto { await autoPage() } else { await index.loadMore() }
+        case .continue: if auto { await autoPage { _ = await index.continueScanning() } } else { await index.continueScanning() }
+        }
+        await list.reload()
+    }
+
+    /// ⋯ → Auto-page, Pause Scanning, Resume Scanning.
+    public func page(_ command: KeyListPagingCommand) async {
+        let index = list.index
+        switch command {
+        case .autoPage(true), .resume: await autoPage()
+        case .autoPage(false): await index.setPagingMode(.manual)
+        // The run stops after the page in flight and the footer reads "Paused".
+        case .pause: await index.pause()
+        }
+        await list.reload()
+    }
+
+    /// The list is on screen (FR-KB02 scans only then): hiding it stops Auto-page after the page in flight; showing it
+    /// again resumes a run that wasn't paused, failed or finished.
+    public func setListShown(_ shown: Bool) async {
+        guard shown != listShown else { return }
+        listShown = shown
+        guard shown else { await list.index.stopAutoPage(); return }
+        let status = await list.index.status
+        if status.mode == .auto, status.phase == .idle || status.phase == .scanning { await autoPage() }
+    }
+
+    /// Runs `KeyIndex.autoPage` (or `body`, such as Continue, which resumes it) while the list re-reads the index a few
+    /// times a second rather than after every page, then once more at the end.
+    private func autoPage(_ body: (@Sendable () async -> Void)? = nil) async {
+        let index = list.index, list = list
+        await index.setPagingMode(.auto)
+        guard listShown else { return }
+        // Only the reload ticker is ever cancelled: cancelling the scan would fail its page in flight.
+        let ticker = Task {
+            while (try? await Task.sleep(for: Self.autoPageReload)) != nil { await list.reload() }
+        }
+        if let body { await body() } else { await index.autoPage() }
+        ticker.cancel()
+        await list.reload()
+    }
+
+    static let autoPageReload = Duration.milliseconds(250)
 
     /// `DBSIZE` for the footer and `INFO keyspace` for the picker. A failure leaves the total unknown (the footer
     /// shows the loaded count only) and keeps the counts the picker had.
@@ -196,7 +285,8 @@ public final class BrowserModel: ObservableObject {
         missingKey = nil
         // The selection's pinned bytes when known: after a removal, row numbers can name a neighbour until the reload.
         guard let key, list.selectedKey == key, let bytes = await list.selectedKeyName() else {
-            if request == presenceRequest { editor = nil }
+            // The list waits to select the open key again (⌘R restarted the scan): the editor and its draft stay.
+            if request == presenceRequest, !keepsEditorForPendingKey { editor = nil }
             return
         }
         let presence = await list.index.presence(of: bytes)
@@ -207,6 +297,8 @@ public final class BrowserModel: ObservableObject {
         // The row now reads "expired" (or shows its new type); redraw it.
         await list.refreshRows(ofKeys: [key])
     }
+
+    private var keepsEditorForPendingKey: Bool { editor.map { $0.key == list.pendingKey && $0.context.database == database } ?? false }
 
     /// Opens `key` in the editor unless it already is (a refresh re-selects it; the open editor keeps its draft).
     private func open(_ key: Data, type: KeyType, request: Int) async {
@@ -228,9 +320,17 @@ public final class BrowserModel: ObservableObject {
         await editor.load()
     }
 
-    /// The palette's recent key: selected in the list when loaded there, otherwise opened in the editor after the usual
-    /// presence check (a key gone since shows the missing-key notice).
-    public func reveal(_ key: Data) async {
+    /// The palette's recent key, in `database` (nil: the shown one): selected in the list when loaded there, otherwise
+    /// opened in the editor after the usual presence check (a key gone since shows the missing-key notice). Another key
+    /// than the open one asks about its unsaved changes first.
+    public func reveal(_ key: Data, database: Int? = nil) async {
+        let database = database ?? self.database
+        guard let editor, editor.key != key || editor.context.database != database else { await revealNow(key, database: database); return }
+        await confirmingUnsavedChanges { [weak self] in await self?.revealNow(key, database: database) }
+    }
+
+    private func revealNow(_ key: Data, database: Int) async {
+        if database != self.database { await switchDatabase(database) }
         await list.select(keyBytes: key)
         // Loaded: the selection opens it. Not loaded (another page, filtered out): the list keeps it pending.
         guard list.selectedKey == nil else { return }
@@ -243,6 +343,47 @@ public final class BrowserModel: ObservableObject {
         case .missing: missingKey = key; editor = nil
         // A failed check changes nothing: the open editor, if any, stays.
         case .failed: break
+        }
+    }
+
+    // MARK: - Unsaved changes (FR-ED16)
+
+    /// Something that would close the open editor while it has unsaved changes.
+    public struct UnsavedChangesPrompt: Identifiable {
+        public let id = UUID()
+        /// The open key's display name, for the alert's title.
+        public let keyName: String
+        let editor: EditorSession
+        let proceed: @MainActor () async -> Void
+        let cancel: @MainActor () -> Void
+    }
+
+    public enum UnsavedChangesChoice: Sendable { case save, discard, cancel }
+
+    /// Runs `action` now, or once the user saved or discarded the open editor's unsaved changes; Cancel runs `cancel`
+    /// and changes nothing. A second request while one is asked is cancelled.
+    func confirmingUnsavedChanges(_ action: @escaping @MainActor () async -> Void, cancel: @escaping @MainActor () -> Void = {}) async {
+        guard let editor, editor.hasUnsavedChanges else { await action(); return }
+        guard unsavedChangesPrompt == nil else { cancel(); return }
+        unsavedChangesPrompt = UnsavedChangesPrompt(keyName: KeyDisplay.name(editor.key), editor: editor, proceed: action, cancel: cancel)
+    }
+
+    /// The alert's answer. Taken at once (the alert's dismissal must not cancel it); the save or the move runs in the
+    /// returned task. A save that fails or hits a conflict keeps the draft, the editor says why, and nothing moves.
+    @discardableResult
+    public func answerUnsavedChanges(_ choice: UnsavedChangesChoice) -> Task<Void, Never> {
+        let prompt = unsavedChangesPrompt
+        unsavedChangesPrompt = nil
+        return Task {
+            guard let prompt else { return }
+            switch choice {
+            case .cancel: prompt.cancel()
+            case .discard: prompt.editor.revert(); await prompt.proceed()
+            case .save:
+                await prompt.editor.save()
+                guard !prompt.editor.hasUnsavedChanges else { prompt.cancel(); return }
+                await prompt.proceed()
+            }
         }
     }
 
@@ -429,21 +570,38 @@ public struct DatabasePicker: View {
 /// The key list with the "Key no longer exists" notice above its footer when the opened key is gone (FR-KB12).
 public struct BrowserPane: View {
     @ObservedObject var model: BrowserModel
-    let perform: (KeyIndexFooter.Action) async -> Void
+    /// The footer's links; nil runs them through the model (`BrowserModel.perform`), which keeps Auto-page going.
+    let perform: ((KeyIndexFooter.Action) async -> Void)?
 
-    public init(model: BrowserModel, perform: @escaping (KeyIndexFooter.Action) async -> Void) { self.model = model; self.perform = perform }
+    public init(model: BrowserModel, perform: ((KeyIndexFooter.Action) async -> Void)? = nil) { self.model = model; self.perform = perform }
 
     public var body: some View {
         VStack(spacing: 0) {
-            KeyListPane(dataSource: model.list, filter: model.filter, perform: perform)
+            KeyListPane(dataSource: model.list, filter: model.filter, perform: perform ?? { await model.perform($0) }, paging: { await model.page($0) })
             if model.missingKey != nil { MissingKeyNotice(model: model) }
         }
+        // Auto-page scans only while the list is on screen (FR-KB02).
+        .onAppear { Task { await model.setListShown(true) } }
+        .onDisappear { Task { await model.setListShown(false) } }
         .sheet(item: $model.deleteConfirmation) { confirmation in
             TypedConfirmationSheet(model: confirmation) { model.deleteConfirmation = nil }
         }
         .sheet(item: $model.bulkDelete) { bulkDelete in
             BulkDeleteSheet(model: bulkDelete) { model.bulkDelete = nil }
         }
+        .alert(unsavedTitle, isPresented: askingUnsaved, presenting: model.unsavedChangesPrompt) { _ in
+            Button("Save") { model.answerUnsavedChanges(.save) }
+            Button("Don’t Save", role: .destructive) { model.answerUnsavedChanges(.discard) }
+            Button("Cancel", role: .cancel) { model.answerUnsavedChanges(.cancel) }
+        } message: { _ in
+            Text("Your changes will be lost if you don’t save them.")
+        }
+    }
+
+    private var unsavedTitle: String { "Save changes to “\(model.unsavedChangesPrompt?.keyName ?? "this key")”?" }
+
+    private var askingUnsaved: Binding<Bool> {
+        Binding(get: { model.unsavedChangesPrompt != nil }, set: { if !$0 { model.answerUnsavedChanges(.cancel) } })
     }
 }
 

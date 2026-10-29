@@ -10,6 +10,7 @@ import UniformTypeIdentifiers
 public struct ConnectionSheet: View {
     @ObservedObject var model: ConnectionSheetModel
     @State private var picking: FilePick?
+    @State private var importingIdentity = false
     @FocusState private var formFocused: Bool
 
     private enum FilePick: Identifiable {
@@ -170,11 +171,46 @@ public struct ConnectionSheet: View {
                     SheetTextField(label: "Custom CA (PEM)", placeholder: "System trust", text: $model.tlsCAFile, mono: true)
                     Button("Choose…") { picking = .caFile }.accessibilityLabel("Choose a custom CA file")
                 }
+                if model.canImportIdentity { clientIdentityRow }
                 Toggle("Skip verification", isOn: $model.tlsSkipVerification).toggleStyle(.checkbox)
                     .accessibilityHint("Connects without checking the certificate; the connection shows TLS not verified")
             }
         }
         .font(Tokens.interface(13))
+    }
+
+    /// FR-CN03: the client certificate's subject, Import… (a `.p12`, or a PEM certificate and key) and Remove.
+    private var clientIdentityRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Client certificate").font(Tokens.interface(12)).foregroundStyle(Tokens.muted).accessibilityHidden(true)
+            HStack(spacing: 8) {
+                Text(model.clientIdentitySubject ?? "None").font(Tokens.mono(12.5)).foregroundStyle(model.hasClientIdentity ? Tokens.fg : Tokens.muted)
+                    .lineLimit(1).truncationMode(.middle)
+                    .accessibilityLabel("Client certificate: \(model.clientIdentitySubject ?? "none")")
+                Spacer(minLength: 0)
+                if model.isImportingIdentity { ProgressView().controlSize(.small).accessibilityLabel("Importing the certificate") }
+                Button("Import…") { importingIdentity = true }.disabled(model.isImportingIdentity)
+                    .accessibilityLabel("Import a client certificate from a .p12, or a PEM certificate and key")
+                if model.hasClientIdentity { Button("Remove") { model.removeIdentity() }.accessibilityLabel("Remove the client certificate") }
+            }
+            if let message = model.identityMessage, model.identityPassphrasePrompt == nil {
+                Text(message).font(Tokens.interface(12)).foregroundStyle(Tokens.danger).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .fileImporter(isPresented: $importingIdentity, allowedContentTypes: [.data], allowsMultipleSelection: true) { result in
+            if case .success(let urls) = result { Task { await model.importIdentity(from: urls) } }
+        }
+        .alert(
+            model.identityPassphrasePrompt == .pkcs12 ? "Passphrase for the .p12" : "Passphrase for the private key",
+            isPresented: Binding(get: { model.identityPassphrasePrompt != nil }, set: { _ in })
+        ) {
+            SecureField("Passphrase", text: $model.identityPassphrase)
+            Button("Cancel", role: .cancel) { model.cancelIdentityPassphrase() }
+            Button("Import") { Task { await model.submitIdentityPassphrase() } }
+        } message: {
+            Text(model.identityMessage ?? "Keel saves it in the Keychain with the certificate.")
+        }
+        .task { await model.loadIdentitySubject() }
     }
 
     private var tunnelContent: some View {

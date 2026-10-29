@@ -165,12 +165,56 @@ public final class SidebarModel: ObservableObject {
         await perform { [store] () throws(ProfileStoreError) in _ = try await store.update(profileID, settings, expectedRevision: profile.revision) }
     }
 
-    /// Deletes the profile and its Keychain items, after the view's confirmation, and closes its tabs.
-    public func delete(_ profileID: UUID) async {
-        guard let profile = profile(profileID) else { return }
-        guard await perform({ [store] () throws(ProfileStoreError) in try await store.delete(profileID, expectedRevision: profile.revision) }) != nil else { return }
+    /// What deleting a profile closes (FR-CN01): its open tabs in every window, named by database and window, and
+    /// whether any of them has unsaved edits (MAC-06).
+    public struct DeleteConfirmation: Equatable, Sendable {
+        /// "db0 in window 1", "db3 in window 2 (unsaved changes)"; only the database when there is one window.
+        public var openTabs: [String]
+        public var unsavedTabs: Int
+
+        /// The delete alert's message: what closes, then the Keychain.
+        public var message: String {
+            let keychain = "Its saved password is removed from the Keychain."
+            guard !openTabs.isEmpty else { return keychain }
+            let tabs = openTabs.count == 1 ? "Its open tab closes: \(openTabs[0])." : "Its \(openTabs.count) open tabs close: \(openTabs.joined(separator: ", "))."
+            return tabs + " " + keychain
+        }
+    }
+
+    public enum DeleteResult: Equatable, Sendable {
+        case deleted
+        /// Open tabs have unsaved edits: nothing was removed; ask, then delete again with `discardingEdits`.
+        case needsDiscardConfirmation(unsavedTabs: Int)
+        /// Refused by the store (`message` says why) or already gone.
+        case failed
+    }
+
+    public func deleteConfirmation(_ profileID: UUID) -> DeleteConfirmation {
+        let app = tabs.app
+        let open = app?.tabs(ofProfile: profileID) ?? tabs.tabs.filter { $0.profileID == profileID }.map { (1, $0) }
+        let several = (app?.windows.count ?? 1) > 1
+        var names: [String] = [], unsaved = 0
+        for (window, tab) in open {
+            // The same unsaved-edits test as closing the tab (`AppModel.requestClose`).
+            let edited = app?.hasUnsavedEdits(tab.id) == true
+            if edited { unsaved += 1 }
+            names.append("db\(tab.database)" + (several ? " in window \(window)" : "") + (edited ? " (unsaved changes)" : ""))
+        }
+        return DeleteConfirmation(openTabs: names, unsavedTabs: unsaved)
+    }
+
+    /// Deletes the profile and its Keychain items, after the view's confirmation, and closes its tabs. Tabs with unsaved
+    /// edits are asked about first, as closing them would be (`AppModel.requestClose`, MAC-06): without
+    /// `discardingEdits` nothing is removed.
+    @discardableResult
+    public func delete(_ profileID: UUID, discardingEdits: Bool = false) async -> DeleteResult {
+        guard let profile = profile(profileID) else { return .failed }
+        let unsaved = deleteConfirmation(profileID).unsavedTabs
+        if unsaved > 0, !discardingEdits { return .needsDiscardConfirmation(unsavedTabs: unsaved) }
+        guard await perform({ [store] () throws(ProfileStoreError) in try await store.delete(profileID, expectedRevision: profile.revision) }) != nil else { return .failed }
         tabs.closeAll(profileID: profileID)
         if selectedProfileID == profileID { selectedProfileID = nil }
+        return .deleted
     }
 
     /// Moves a profile into `folderID` (nil: top level) just before `beforeID`, or to the end of that group. Dropping

@@ -32,17 +32,23 @@ struct ConsolePane: View {
     }
 }
 
-/// The model's scroll view, made once and kept while the tab lives.
+/// The model's scroll view, made once and kept while the tab lives; another model swaps it in (`ModelViewContainer`).
 private struct ConsoleHost: NSViewRepresentable {
     let model: ConsoleModel
 
-    func makeNSView(context: Context) -> NSScrollView {
-        let view = model.scrollView
-        DispatchQueue.main.async { if let text = view.documentView { view.window?.makeFirstResponder(text) } }
-        return view
+    func makeNSView(context: Context) -> ModelViewContainer {
+        let container = ModelViewContainer()
+        updateNSView(container, context: context)
+        return container
     }
 
-    func updateNSView(_ view: NSScrollView, context: Context) {}
+    func updateNSView(_ container: ModelViewContainer, context: Context) {
+        let view = model.scrollView
+        guard container.show(view) else { return }
+        DispatchQueue.main.async { if let text = view.documentView, view.superview === container { view.window?.makeFirstResponder(text) } }
+    }
+
+    static func dismantleNSView(_ container: ModelViewContainer, coordinator: ()) { container.release() }
 }
 
 /// "Waiting for reply…" or "Streaming" with Stop, only while something runs (FR-CO07).

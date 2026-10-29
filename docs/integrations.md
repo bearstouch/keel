@@ -88,7 +88,7 @@ takes the host.
 **INT-05 (P0).** TLS uses Network.framework with Security.framework trust evaluation; no OpenSSL.
 
 - System trust store by default; custom CA bundle (PEM) as anchor-only trust per profile.
-- Client identities live in the login Keychain. Keel imports `.p12` files, or a PEM certificate plus PEM/PKCS#8 private key (encrypted keys prompt for a passphrase saved under `Keel TLS`), into the Keychain, and stores only the persistent reference. Supported keys: RSA and EC, as PKCS#8 (plain or PBES2-encrypted), PKCS#1 or SEC1; legacy `Proc-Type: 4,ENCRYPTED` PEM keys are refused with "convert with `openssl pkcs8 -topk8`". A wrong passphrase or a key that doesn't match the certificate imports nothing ([Architecture](architecture.md#tls)).
+- Client identities live in the login Keychain. Keel imports `.p12` files, or a PEM certificate plus PEM/PKCS#8 private key (encrypted keys prompt for a passphrase saved under `Keel TLS`), into the Keychain, and stores only the persistent reference. Supported keys: RSA and EC, as PKCS#8 (plain or PBES2-encrypted), PKCS#1 or SEC1; legacy `Proc-Type: 4,ENCRYPTED` PEM keys are refused with "convert with `openssl pkcs8 -topk8`". A wrong passphrase or a key that doesn't match the certificate imports nothing ([Architecture](architecture.md#tls)). The import is reached from the connection sheet's TLS row (FR-CN03).
 - Keel never writes to the system keychain or changes trust settings for other apps.
 
 ## SSH tunnels
@@ -97,6 +97,8 @@ takes the host.
 
 - `/usr/bin/ssh` runs as the user with their configuration, agent, keys, known hosts, `ProxyJump` and `ProxyCommand`. Keel doesn't implement SSH and never edits SSH configuration.
 - Tunnels are `ssh -N` with a Unix-socket local forward in an owner-only runtime directory ([Architecture](architecture.md#ssh-tunnels)).
+- Each tunnel is its own foreground ssh: Keel passes `ControlMaster=no`, `ControlPath=none`, `ControlPersist=no` and `ForkAfterAuthentication=no`, which override the user's config, so a shared master or a forked ssh never holds a Keel forward that Keel can't stop.
+- A tunnel never opens a TCP port: when the user's config adds `LocalForward`, `RemoteForward` or `DynamicForward` for the destination (checked with `ssh -G` before each launch; the config files are read first, so `ssh -G` only runs when one sets a forward, and never when a `Match exec` would run a command — that case is unchecked), Keel doesn't start ssh and reports `TUNNEL_FAILED` naming the forwards.
 - Saved SSH passwords: Keychain (`Keel SSH Host`), given to ssh only for its password prompt, once per tunnel, through `keel-askpass` with nonce and peer checks.
 - Every other ssh prompt is relayed verbatim to the user; Keel never answers host-key prompts and never adds trust-bypass options.
 - Discovery reads literal `Host` aliases from `~/.ssh/config` (no wildcards, no `Match`, never executes anything).
@@ -141,7 +143,7 @@ File → **Export Connections…** writes one JSON object (`Keel Connections.jso
 `format` (`"keel-profiles"`), `schemaVersion` (integer, currently 1), `folders` (`id`, `name`, in display order) and
 `profiles` (`id`, optional `folderID`, `settings` — exactly the editor's `ConnectionSettings`, in display order).
 Nothing else: no password, passphrase, client identity, `hasPassword`, `hasTLSSecret`, revisions or collapse
-state. IDs are kept, so a re-import recognises the records it already holds. A saved-SSH-host tunnel keeps the host's
+state. IDs are kept in the file, so a re-import recognises the records it already holds. A saved-SSH-host tunnel keeps the host's
 ID; on another Mac it resolves only if that host exists there. Export is refused while `connections.json` awaits
 recovery or is read-only, so an empty or backup view never overwrites a good export.
 
@@ -157,7 +159,12 @@ three named), and — only when there are collisions — the policy: **Skip exis
 record), **Replace existing** (saved settings, folder and folder name take the file's values; a changed connection or
 weakened transport removes the saved password, as an edit does; the TLS identity stays) or **Keep both** (the
 imported profile is added with a new ID as "<name> (imported)"; folders are shared, never duplicated). New folders go
-after the saved ones, new profiles at the end of their folder, in file order. Import is one store commit: Keychain
+after the saved ones, new profiles at the end of their folder, in file order. An added profile always gets a **new
+ID** and records the file's ID as `importedFrom` in `connections.json`: the `Keel Connection` / `Keel TLS` items are
+keyed by profile ID and shared by every Keel copy on the Mac (installed, development, `--state-directory`,
+`--fixture`), so keeping the file's ID would let deleting or editing the import remove or overwrite the source copy's
+secrets. A record collides with a saved profile of its ID or one imported under it, so re-importing the same file still
+matches; folders keep their IDs (no secret is keyed by them). Import is one store commit: Keychain
 removals are staged and undone if the metadata write fails, so a failure leaves every profile, folder and Keychain
 item as it was and the sheet stays open with the reason. An import that changes nothing (Skip on a re-import)
 writes nothing and keeps the store revision.

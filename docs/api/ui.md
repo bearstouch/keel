@@ -66,6 +66,8 @@ public func moveTab(_ tabID: UUID, to target: ConnectionTabs, at index: Int? = n
 public func moveTabToNewWindow(_ tabID: UUID) -> ConnectionTabs?
 public func requestClose(_ tabID: UUID, discardingEdits: Bool = false) -> CloseRequest   // .closed | .needsConfirmation
 public func session(_ tabID: UUID) -> TabSession?
+public func tabs(ofProfile profileID: UUID) -> [(window: Int, tab: ConnectionTab)]   // window: 1-based position
+public func hasUnsavedEdits(_ tabID: UUID) -> Bool
 public func connectIfNeeded(_ tabID: UUID)
 public func reconnect(_ tabID: UUID) async
 public func disconnect(profileID: UUID) async
@@ -153,7 +155,10 @@ public func newConnection(); public func pasteURL(); public func importConnectio
 `SidebarModel` (`@MainActor`) follows `ProfileStore` changes and presents profiles grouped by folder (`groups`,
 `visibleRows`), with statuses taken from the window's tabs. It handles open (optionally new tab), keyboard selection,
 rename, duplicate, delete, folder CRUD, drag-and-drop reordering (`DragItem` payloads) and Copy URL (pasteboard
-writer injected). It also derives `windowTitle` and `productionStrip` text. `SidebarView` is the SwiftUI list,
+writer injected). Delete is two-step like closing a tab: `deleteConfirmation(_:)` lists the open tabs that will close
+(`"db0 in window 1"`, marked "(unsaved changes)") for the alert's `message`; `delete(_:discardingEdits:)` returns
+`.needsDiscardConfirmation(unsavedTabs:)` and removes nothing while any of them has unsaved edits, `.deleted` or
+`.failed` otherwise. It also derives `windowTitle` and `productionStrip` text. `SidebarView` is the SwiftUI list,
 including the `KeelMark` drawn from the icon geometry.
 
 ```swift
@@ -173,7 +178,11 @@ public nonisolated static func accessibilityLabel(name: String, labelName: Strin
   KeelCore `ConnectionSettings` (throws `ProfileStoreError`); `invalidField` / `canSave` drive the Save button;
   `test()` runs a `ConnectionTesting`; turning read-only off on a production label asks first
   (`confirmingWritableProduction`). Saving goes through the `ProfileSaving` protocol (`ProfileStore` conforms);
-  connection-affecting edits flag `savedPasswordWillBeRemoved`. The finished state is `outcome`.
+  connection-affecting edits flag `savedPasswordWillBeRemoved`. The finished state is `outcome`. With a
+  `TLSIdentityImporting` (`TLSIdentityImporter` conforms) the TLS row imports a client certificate:
+  `importIdentity(from:)`, `identityPassphrasePrompt` / `submitIdentityPassphrase()` / `cancelIdentityPassphrase()`,
+  `removeIdentity()`, `clientIdentity` / `clientIdentitySubject`, `loadIdentitySubject()`; Save passes the import to
+  the store, Cancel discards it.
 - `ConnectionSheetPresenter` (`@MainActor`): builds one model at a time (`newConnection(folderID:)`,
   `newConnection(pastingURL:)`, `edit(_:)`) and exposes `model` for the `.connectionSheet(_:)` view modifier.
 - `ConnectionSheet` (`public struct View`): the sheet itself; `SheetTextField`, `FieldStyle` and `SheetButtonStyle`
@@ -184,12 +193,14 @@ public nonisolated static func accessibilityLabel(name: String, labelName: Strin
 `HostPickerModel` (`@MainActor`) lists saved SSH hosts from KeelSSH's `HostLibrary` plus aliases discovered in
 `~/.ssh/config` (injectable `Discover` closure), with notes for unfollowed `Include`s. `choose(_:)` turns a discovered
 alias into a saved host. `HostEditorModel` is the Add / Edit SSH Host sheet's form, with a write-only password and
-`requiresUserPresence`. Views: `HostPickerSection`, `HostEditorSheet`.
+`requiresUserPresence`; `connectionChanged` (edit only) is true when the typed destination, user, port or identity
+file connect elsewhere, and the sheet then warns that the saved passwords of the host and its connections go (FR-CN21). Views: `HostPickerSection`, `HostEditorSheet`.
 
 ### SSHPromptCenter / SSHPromptSheet
 
 `SSHPromptCenter` (`@MainActor`) attaches to KeelSSH's `PromptRelay` and queues every non-password ssh prompt
-(host-key confirmation and others) for the user; `respond(_:)` answers the head of the queue. `SSHPromptSheet` shows
+(host-key confirmation and others) for the user; `respond(to:with:)` answers the prompt with that ID (the one the sheet showed) and drops an answer for a prompt no
+longer queued. `SSHPromptSheet` shows
 `current`; apply with `.sshPrompts(_:)`. Nothing is auto-accepted.
 
 ### ProfileTransferModel
@@ -218,16 +229,24 @@ public init(list: KeyListDataSource, filter: KeyFilterModel? = nil, database: In
 @Published public var deleteConfirmation: TypedConfirmationModel?
 @Published public var bulkDelete: BulkDeleteModel?
 @Published public var showsNewKey: Bool
+@Published public private(set) var unsavedChangesPrompt: UnsavedChangesPrompt?   // FR-ED16: Save / Don't Save / Cancel
 public func start() async
-public func refresh() async
-public func selectDatabase(_ database: Int) async
-public func reveal(_ key: Data) async
+public func refresh() async                                   // keeps the open editor and its draft
+public func selectDatabase(_ database: Int) async             // asks first when the editor has unsaved changes
+public func reveal(_ key: Data, database: Int? = nil) async   // palette key; asks first unless it is the open key
+@discardableResult public func answerUnsavedChanges(_ choice: UnsavedChangesChoice) -> Task<Void, Never>   // .save, .discard, .cancel
+public func perform(_ action: KeyIndexFooter.Action) async    // footer link: Load more (manual), Retry, Continue (keep the mode)
+public func page(_ command: KeyListPagingCommand) async       // ⋯ → .autoPage(Bool), .pause, .resume (FR-KB02)
+public func setListShown(_ shown: Bool) async                 // Auto-page scans only while the list is on screen
 public func requestDeleteSelection() async                    // typed confirmation for multi-key delete
 public func requestBulkDelete() async
 public func createKey(_ key: Data, _ value: NewKey.Value, ttlMilliseconds: Int64?) async -> String?
 ```
 
-`BrowserPane` and `DatabasePicker` are the public views over it; `MissingKeyNotice` is internal.
+`BrowserPane` and `DatabasePicker` are the public views over it; `MissingKeyNotice` is internal. `BrowserPane` shows
+`unsavedChangesPrompt` as an alert. A click or arrow key in the list that would close an editor with unsaved changes
+is held by the list's `selectionIndexesForProposedSelection` delegate and made only after Save or Don't Save; a
+filter change waits the same way (`KeyFilterModel.confirmsRestart`).
 
 ### KeyListDataSource and the AppKit lists
 
@@ -256,7 +275,9 @@ public func setShowsSizes(_ on: Bool) async
 `KeyListOutlineView` / `KeyListTableView` override `keyDown` (⌫ deletes through the owner) and draw an inset focus
 ring (`KeyListFocus`). `KeyListCellView`, `KeyListBadge` and `KeyListRowView` are internal AppKit cells using
 `Tokens.NS`. `KeyListPane` (public SwiftUI) hosts the scroll view via `KeyListHost` (`NSViewRepresentable`) with the
-filter bar and footer.
+filter bar and footer; its optional `paging` closure adds Auto-page, Pause Scanning and Resume Scanning
+(`KeyListPagingCommand`) to the footer's ⋯ menu, which reads `KeyListDataSource.pagingStatus`. In Auto-page the browser
+reloads the list every 250 ms while the run lasts, not after every page.
 
 `KeyListCommands` and `EditorCommands` hold the notification names (`refreshNotification`, `newKeyNotification`,
 `deleteNotification`, `selectDatabaseNotification` + `databaseKey`, `focusFilterNotification`, `saveNotification`,

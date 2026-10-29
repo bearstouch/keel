@@ -98,6 +98,9 @@ public struct ConnectionFailure: Error, Equatable, Sendable, CustomStringConvert
         }
     }
 
+    /// The connect was cancelled (its tab closed or disconnected while connecting); nothing was left open. No tab shows it.
+    public static let cancelled = ConnectionFailure(category: .connectionFailed, message: "The connection was cancelled.", suggestion: "Connect again.")
+
     /// A tunnel that couldn't be opened (FR-CN05). `destination` is the SSH host as configured; no Redis connection was made.
     public init(tunnel error: TunnelError, destination: String) {
         switch error {
@@ -122,10 +125,17 @@ public struct ConnectionFailure: Error, Equatable, Sendable, CustomStringConvert
             self.init(category: .tunnelFailed, message: "Couldn't create Keel's private folder for tunnel sockets.", suggestion: "Check the permissions of your temporary folder, then try again.")
         case .shutDown:
             self.init(category: .tunnelFailed, message: "The SSH tunnel was closed because Keel is quitting.", suggestion: "Open the connection again.")
+        case .cancelled:
+            self = .cancelled
         case .hostKeyNotAccepted(let exit):
             self.init(
                 category: .tunnelFailed, message: "Host key not accepted for \(destination).",
                 suggestion: "Connect again to review the fingerprint, or check the host's entry in ~/.ssh/known_hosts.", tunnelExit: exit)
+        case .configuredForwards(let forwards):
+            self.init(
+                category: .tunnelFailed,
+                message: "Your SSH configuration adds port forwards for \(destination) (\(forwards.joined(separator: "; "))), so Keel didn't start the tunnel: they would open TCP ports beside Keel's private socket.",
+                suggestion: "Move LocalForward, RemoteForward and DynamicForward out of the Host or Match block that matches \(destination) in ~/.ssh/config (or Host *), or use an alias without them.")
         }
     }
 

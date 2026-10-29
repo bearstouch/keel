@@ -40,7 +40,9 @@ public func userCount(profileID: UUID) -> Int
 ```
 
 `savedPassword` is called at most once per launch, for ssh's first password prompt. The connect timeout restarts after
-the user answers a prompt.
+the user answers a prompt. Cancelling the calling task (a tab closed or disconnected while connecting) fails the acquire
+with `cancelled` and takes its hold off the tunnel; a tunnel still starting with no other caller is terminated, which
+withdraws its pending prompts. A tunnel other callers share keeps starting for them.
 
 | Type | Kind | Purpose |
 | --- | --- | --- |
@@ -61,6 +63,8 @@ public enum SSHTunnelArguments {
     public static let forbiddenOptions: [String]   // StrictHostKeyChecking, UserKnownHostsFile, ProxyCommand, LocalCommand, ...
     public static func arguments(for configuration: SSHTunnelConfiguration, socketPath: String)
         throws(SSHTunnelArgumentError) -> [String]
+    /// `LocalForward`/`RemoteForward`/`DynamicForward` specs in `ssh -G` output other than Keel's own socket (at most 3)
+    public static func configuredForwards(in options: String, socketPath: String) -> [String]
 }
 ```
 
@@ -77,12 +81,26 @@ public protocol TunnelProcess: AnyObject, Sendable {
 }
 public protocol TunnelProcessLauncher: Sendable {
     func launch(executable: String, arguments: [String], environment: [String: String]) throws(TunnelError) -> any TunnelProcess
+    /// `ssh -G …` output, "" when the config sets no forward, or nil (default implementation: nil, no check)
+    func effectiveOptions(executable: String, arguments: [String], environment: [String: String], timeout: Duration) async -> String?
 }
-public struct SSHProcessLauncher: TunnelProcessLauncher   // posix_spawn, new session and process group, no shell
+public struct SSHProcessLauncher: TunnelProcessLauncher {  // posix_spawn, new session and process group, no shell
+    public init(scanConfig: @escaping @Sendable ([String]) -> SSHConfigScan = { SSHConfigScan.scan(arguments: $0) })
+}
+public struct SSHConfigScan: Equatable, Sendable {
+    public var forwards: Bool, matchExec: Bool, complete: Bool
+    public static func scan(arguments: [String], home: String = …, read: (String) throws -> Data? = …, glob: (String) -> [String]? = SSHConfigScan.expand) -> SSHConfigScan
+    public static func expand(_ pattern: String) -> [String]?   // glob(3); [] for no match, nil on failure
+}
 ```
 
 `SSHProcessLauncher` gives ssh no controlling terminal, `/dev/null` stdin/stdout, a stderr pipe keeping only the last
-4 KiB, and no other inherited descriptors.
+4 KiB, and no other inherited descriptors. Its `effectiveOptions` runs `ssh -G` the same way with stdout in a pipe (at
+most 256 KiB) and answers nil when ssh fails, overflows or doesn't finish within the timeout (it is then terminated).
+Because `ssh -G` evaluates `Match exec`, it first reads the config files with `SSHConfigScan` (the `-F` file, or
+`~/.ssh/config` and `/etc/ssh/ssh_config`, following `Include` up to 16 deep and 256 files; nothing is run): with no
+forward in any file it answers "" without starting ssh, and with a `Match exec` or a file it couldn't read it answers
+nil (no check) rather than run the user's commands an extra time.
 
 | Type | Kind | Purpose |
 | --- | --- | --- |
@@ -112,7 +130,7 @@ public func respond(to id: UUID, with response: SSHPromptResponse)
 
 | Type | Values |
 | --- | --- |
-| `SSHPrompt` (struct, Identifiable) | `id`, `destination`, `text`, `kind`, `echo`; `Kind`: `hostKey`, `password`, `passphrase`, `code`, `confirm`, `notice`. |
+| `SSHPrompt` (struct, Identifiable) | `id`, `destination`, `text`, `kind`, `echo`, `fromServer` (a keyboard-interactive prompt: the server wrote the text); `Kind`: `hostKey`, `password`, `passphrase`, `code`, `confirm`, `notice`. |
 | `SSHPromptResponse` | `text(Data)`, `accept`, `decline`, `cancelled`. |
 | `SSHPromptEvent` | `show(SSHPrompt)`, `withdraw(UUID)`. |
 
@@ -164,7 +182,7 @@ Errors are typed enums; `KeelCore` maps them to the shared codes (see [Errors](.
 
 | Enum | Cases |
 | --- | --- |
-| `TunnelError` | `invalidArguments(_)`, `runtimeDirectory(_)`, `launchFailed(Int32)`, `exited(TunnelExit)`, `timeout(Duration)`, `shutDown`, `hostKeyNotAccepted(TunnelExit)` |
+| `TunnelError` | `invalidArguments(_)`, `runtimeDirectory(_)`, `launchFailed(Int32)`, `exited(TunnelExit)`, `timeout(Duration)`, `shutDown`, `hostKeyNotAccepted(TunnelExit)`, `configuredForwards([String])`, `cancelled` |
 | `SSHTunnelArgumentError` | see above |
 | `RuntimeDirectoryError` | `unsafe`, `pathTooLong`, `io(Int32)` |
 | `HostLibraryError` | `invalid(_)`, `notFound`, `conflict(expected:actual:)`, `readOnly`, `io(Int32)`, `secretStore`, `notAuthorized` |

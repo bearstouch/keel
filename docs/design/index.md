@@ -217,6 +217,8 @@ A 560 px card on `sheet`, 64 px from the window's top, with a hairline border an
 
 New Connection, typed confirmation (bulk delete, FLUSHDB, multi-key delete), bulk-delete progress. Each has a title, at most one sentence of explanation, the minimum fields, and two or three buttons with the primary on the right. The destructive button stays disabled until the typed text matches.
 
+The New Connection sheet's open TLS row lists, in order: Use TLS, Server name (SNI), Custom CA (PEM) with **Choose…**, **Client certificate**, then Skip verification. The client-certificate line is a muted 12 label over the identity's subject in JetBrains Mono (`muted` "None" without one), with **Import…** and, when there is one, **Remove** at the right; a failed import shows one `danger` line under it. A `.p12` or an encrypted key asks for its passphrase in an alert with a secure field (FR-CN03).
+
 ## App icon
 
 The icon is **concept A, Layered keel**: three rounded bars that narrow downward (data layers forming a hull) above a tapered fin with a bulb (a racing keel), in white on a Redis-red macOS squircle. Reference canvas: <https://claude.ai/artifact/XPgiQ6JeBgonxQpCzTESsa>; sources in [`design/icon/`](sources.md#app-icon-canvas) (`Icon.dc.html` holds the exact geometry, in a 1024 grid with the 824 squircle at 100,100, corner radius 186).

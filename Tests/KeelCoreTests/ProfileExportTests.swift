@@ -12,7 +12,7 @@ final class ProfileExportTests: XCTestCase {
         let folder = try await store.createFolder(named: "Payments")
         let tls = ConnectionSettings(name: "prod", label: .red, host: "redis.example.com", port: 6380, username: "app", tls: TLSSettings(serverName: "redis.example.com"))
         let prod = try await store.create(tls, folderID: folder.id, password: Data("hunter2-secret".utf8))
-        _ = try await store.setTLSSecret(prod.id, Data("p12-passphrase-secret".utf8), expectedRevision: prod.revision)
+        _ = try await store.update(prod.id, tls, identity: .set(.fake(passphrase: "p12-passphrase-secret")), expectedRevision: prod.revision)
         _ = try await store.create(ConnectionSettings(name: "bastion", tunnel: .inline(destination: "ops", user: "deploy", port: 22, identityFile: "/Users/me/.ssh/id")))
 
         let data = try await store.export().encoded()

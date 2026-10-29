@@ -64,7 +64,14 @@ Where comments cited Trellis requirement IDs they now cite Keel's (INT-08, NFR-S
   `-p`, `-l`, `-i` arguments, then the caller's options (a tunnel's `-N` and forwards), then `--` and the destination.
   `sameConnection(as:)` compares those arguments.
 
-**`HostLibrary.swift`** — comments only (`hosts.json` lives in Keel's state folder).
+**`HostLibrary.swift`**
+- Comments (`hosts.json` lives in Keel's state folder).
+- `setPassword(.save)`: a saved password that can't be read before it is replaced (Keychain locked or denied) aborts
+  with `.secretStore` before anything is written; Trellis ignored the error, so a failed commit then left the new
+  password in the Keychain under the old connection revision. The rollback of a failed commit now removes the new item
+  whenever there was no previous value, including a saved one already missing from the Keychain.
+  Tests: `HostPasswordTests.testUnreadablePreviousPasswordAbortsTheSave`,
+  `testMetadataWriteFailureWithMissingItemLeavesNoPassword`.
 
 **`SSHConfigDiscovery.swift`** — unchanged.
 

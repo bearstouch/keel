@@ -33,6 +33,16 @@ final class KeyDisplayTests: XCTestCase {
         XCTAssertEqual(KeyDisplay.name(Data("x\u{2066}y".utf8)), #"x\xe2\x81\xa6y"#)
     }
 
+    /// The bidi marks (ALM, LRM, RLM) reorder a row too, and the line and paragraph separators break it; each escapes,
+    /// and the copied argument parses back to the original bytes.
+    func testBidiMarksAndSeparatorsAreEscaped() throws {
+        for (scalar, escaped) in [(0x061C, #"\xd8\x9c"#), (0x200E, #"\xe2\x80\x8e"#), (0x200F, #"\xe2\x80\x8f"#), (0x2028, #"\xe2\x80\xa8"#), (0x2029, #"\xe2\x80\xa9"#)] {
+            let key = Data("a\(Character(Unicode.Scalar(UInt32(scalar))!))b".utf8)
+            XCTAssertEqual(KeyDisplay.name(key), "a\(escaped)b")
+            XCTAssertEqual(try ConsoleTokenizer.arguments("GET " + KeyDisplay.redisCliArgument(key)), [Data("GET".utf8), key])
+        }
+    }
+
     /// AC3: a binary key shows escaped in the tree, and opening, renaming and deleting send its original bytes.
     func testBinaryKeyActionsUseOriginalBytes() async throws {
         let binary = Data([0xFF, 0x00, 0x61])

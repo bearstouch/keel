@@ -14,10 +14,13 @@ public struct LaunchArguments: Equatable, Sendable {
         case unknownArgument(String)
         case missingValue(String)
         case relativeStateDirectory(String)
+        /// One of Keel's flags written with a single dash; `suggestion` is the flag meant.
+        case singleDash(String, suggestion: String)
 
         public var description: String {
             switch self {
             case .unknownArgument(let argument): return "Unknown argument \(argument)."
+            case .singleDash(let argument, let suggestion): return "Unknown argument \(argument). Did you mean \(suggestion)?"
             case .missingValue(let flag): return "\(flag) needs a value."
             case .relativeStateDirectory(let path): return "--state-directory must be an absolute path, got \(path)."
             }
@@ -47,11 +50,27 @@ public struct LaunchArguments: Equatable, Sendable {
                 // (with their value) instead of failing a Finder or Xcode launch. A following `--flag` is never eaten as
                 // that value, so `-Key --fixture` can't silently drop Keel's own flag.
                 if flag.hasPrefix("-psn_") { continue }
-                if flag.hasPrefix("-"), flag.count > 1 { if remaining.first?.hasPrefix("--") == false { remaining.removeFirst() }; continue }
+                // `-fixture` or `-state-directory /tmp/demo` is a typo of Keel's own flag, not a user default: skipping it
+                // would launch against the real state and swallow the path.
+                if let flag = singleDashTypo(argument) { throw ParseError.singleDash(argument, suggestion: flag) }
+                if flag.hasPrefix("-"), flag.count > 1 {
+                    if let next = remaining.first, !next.hasPrefix("--"), singleDashTypo(next) == nil { remaining.removeFirst() }
+                    continue
+                }
                 throw ParseError.unknownArgument(argument)
             }
         }
         return result
+    }
+
+    /// Keel's own flags, for spotting single-dash typos.
+    static let flags = ["--state-directory", "--fixture"]
+
+    /// The flag `argument` (`-fixture`, `-State-Directory=/x`) misspells with a single dash, or nil.
+    private static func singleDashTypo(_ argument: String) -> String? {
+        guard argument.hasPrefix("-"), !argument.hasPrefix("--") else { return nil }
+        let name = argument.dropFirst().prefix { $0 != "=" }.lowercased()
+        return flags.first { $0.dropFirst(2) == name }
     }
 
     /// Splits `--flag=value` into its parts; anything else is returned whole with no inline value.

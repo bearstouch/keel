@@ -51,7 +51,8 @@ There is no SwiftLint/SwiftFormat binary; use the toolchain's `swift format` wit
 (copied from Trellis: 4-space indent, 220 columns, semicolons and multi-variable `let` allowed).
 Always run format + lint + build + test before committing. CI (`.github/workflows/ci.yml`, `macos-26`) runs the same three steps
 and fails on any warning in `Sources/`. Unknown `--` launch flags exit with status 64; an unusable state folder
-(a file, a symlink or another user's folder) exits with 73.
+(a file, a symlink or another user's folder) exits with 73; a second launch against a state folder another instance
+holds (MAC-17 instance lock) brings that instance forward and exits with 75.
 
 ## Package layout (`Package.swift`)
 

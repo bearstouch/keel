@@ -78,7 +78,7 @@ final class ProfileImportTests: XCTestCase {
         XCTAssertEqual(after, before)
     }
 
-    func testImportIntoEmptyStoreKeepsOrderFoldersAndIDs() async throws {
+    func testImportIntoEmptyStoreKeepsOrderAndFoldersUnderNewProfileIDs() async throws {
         let (source, folder, inside, top) = try await seeded()
         let data = try await source.export().encoded()
         let other = try ProfileFixture(); defer { other.remove() }
@@ -89,11 +89,60 @@ final class ProfileImportTests: XCTestCase {
         XCTAssertEqual(result, ProfileImportResult(added: 2, foldersAdded: 1))
         let document = await target.document
         XCTAssertEqual(document.folders.map(\.id), [folder.id])
-        XCTAssertEqual(document.profiles.map(\.id), [inside.id, top.id])
+        XCTAssertEqual(document.profiles.map(\.importedFrom), [inside.id, top.id])
+        XCTAssertTrue(Set(document.profiles.map(\.id)).isDisjoint(with: [inside.id, top.id]), "the Keychain is shared by every Keel copy, so IDs never are")
         XCTAssertEqual(document.profiles.map(\.folderID), [folder.id, nil])
         XCTAssertEqual(document.profiles[0].settings, inside.settings)
         XCTAssertFalse(document.profiles[0].hasPassword, "secrets never travel; the password has to be entered again")
         XCTAssertEqual(other.secrets.itemCount, 0)
+    }
+
+    /// Export from one Keel copy, import into another: both share the login Keychain, keyed by profile ID.
+    func testImportedProfileNeverTouchesTheSourceCopysKeychainItems() async throws {
+        let (source, _, inside, top) = try await seeded()
+        let data = try await source.export().encoded()
+        let other = try ProfileFixture(); defer { other.remove() }
+        other.secrets.seed(Data("installed".utf8), .password, inside.id); other.secrets.seed(Data("tls".utf8), .tls, inside.id)
+        other.secrets.seed(Data("installed2".utf8), .password, top.id)
+        let target = await other.store()
+        _ = try await target.importProfiles(try ProfileExport.decode(data), policy: .skip)
+        let imported = await target.document.profiles
+        XCTAssertNotEqual(imported[0].id, inside.id)
+
+        _ = try await target.update(imported[1].id, imported[1].settings, password: .set(Data("dev".utf8)), expectedRevision: imported[1].revision)
+        try await target.delete(imported[0].id)
+        XCTAssertEqual(other.secrets.item(.password, inside.id), Data("installed".utf8), "deleting the import leaves the source's password")
+        XCTAssertEqual(other.secrets.item(.tls, inside.id), Data("tls".utf8))
+        XCTAssertEqual(other.secrets.item(.password, top.id), Data("installed2".utf8), "a password set on the import never overwrites the source's")
+        XCTAssertEqual(other.secrets.item(.password, imported[1].id), Data("dev".utf8))
+    }
+
+    /// A re-import of the same file still matches the profiles it added, although they were saved under new IDs.
+    func testReimportMatchesProfilesByTheirImportedID() async throws {
+        let (source, _, _, _) = try await seeded()
+        let data = try await source.export().encoded()
+        let other = try ProfileFixture(); defer { other.remove() }
+        let target = await other.store()
+        _ = try await target.importProfiles(try ProfileExport.decode(data), policy: .skip)
+        let before = await target.document
+        let preview = await target.previewImport(try ProfileExport.decode(data))
+        XCTAssertEqual(preview.conflictingProfiles, ["payments", "local"])
+        let skipped = try await target.importProfiles(try ProfileExport.decode(data), policy: .skip)
+        XCTAssertEqual(skipped, ProfileImportResult(skipped: 2))
+        let unchanged = await target.document
+        XCTAssertEqual(unchanged, before)
+
+        var renamed = try ProfileExport.decode(data); renamed.profiles[0].settings.name = "billing"
+        let result = try await target.importProfiles(renamed, policy: .replace)
+        XCTAssertEqual(result, ProfileImportResult(replaced: 1, skipped: 1))
+        let replaced = await target.document
+        XCTAssertEqual(replaced.profiles.map(\.id), before.profiles.map(\.id), "Replace updates the saved profile in place")
+        XCTAssertEqual(replaced.profiles[0].settings.name, "billing")
+
+        // The new field survives a reload of connections.json.
+        let reloaded = await other.store()
+        let reloadedProfiles = await reloaded.document.profiles
+        XCTAssertEqual(reloadedProfiles.map(\.importedFrom), before.profiles.map(\.importedFrom))
     }
 
     func testReplacePolicyOverwritesAndDropsPasswordForANewServer() async throws {

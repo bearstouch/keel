@@ -57,8 +57,10 @@ enum PrivateKeyDecoder {
         }
     }
 
-    /// Security wants EC private keys as X9.63: `04 ‖ X ‖ Y ‖ K`. The public point comes from the SEC1 structure,
-    /// or from the certificate when the key file left it out.
+    /// Security wants EC private keys as X9.63: `04 ‖ X ‖ Y ‖ K`. The public point is always derived from K:
+    /// `SecKeyCreateWithData` doesn't check that the point belongs to K and reports the point it was given, so a point
+    /// taken from the file or the certificate would let a wrong key pass the certificate match. The file's or the
+    /// certificate's point only gives the curve size.
     private static func x963(sec1: [UInt8], certificate: SecCertificate) throws(TLSIdentityImportError) -> [UInt8] {
         try decodingKey {
             let fields = try DER.parse(sec1).children()
@@ -73,7 +75,19 @@ enum PrivateKeyDecoder {
             var scalar = Array(fields[1].content.drop { $0 == 0 })
             guard scalar.count <= width else { throw TLSIdentityImportError.unreadableKey }
             scalar.insert(contentsOf: [UInt8](repeating: 0, count: width - scalar.count), at: 0)
-            return point + scalar
+            guard let derived = publicPoint(scalar: scalar) else { throw TLSIdentityImportError.unreadableKey }
+            return derived + scalar
+        }
+    }
+
+    /// `K·G` on the curve of K's width (P-256, P-384 or P-521); nil for another size or a scalar out of range.
+    static func publicPoint(scalar: [UInt8]) -> [UInt8]? {
+        let raw = Data(scalar)
+        switch scalar.count {
+        case 32: return (try? P256.Signing.PrivateKey(rawRepresentation: raw)).map { Array($0.publicKey.x963Representation) }
+        case 48: return (try? P384.Signing.PrivateKey(rawRepresentation: raw)).map { Array($0.publicKey.x963Representation) }
+        case 66: return (try? P521.Signing.PrivateKey(rawRepresentation: raw)).map { Array($0.publicKey.x963Representation) }
+        default: return nil
         }
     }
 
