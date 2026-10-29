@@ -3,7 +3,9 @@
 All notable changes to Keel are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/).
 
-## [0.9.1] - Unreleased
+## [Unreleased]
+
+## [0.9.1] - 2026-10-29
 
 ### Added
 
@@ -45,7 +47,7 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - A hash deleted just before it opens is reported as gone; sorted set scores that overflow a double are refused.
 - Key names escape bidi marks and line separators; hostile INFO memory figures no longer crash Info.
 
-## [0.9.0] - Unreleased
+## [0.9.0] - 2026-10-27
 
 First release of Keel, a native Redis client for macOS. Supports Redis 6.0+, Valkey 7.2–9.x and Dragonfly.
 
