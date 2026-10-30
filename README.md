@@ -1,6 +1,6 @@
 # Keel
 
-[![CI](https://github.com/bearstouch/keel/actions/workflows/ci.yml/badge.svg?event=pull_request)](https://github.com/bearstouch/keel/actions/workflows/ci.yml)
+[![CI](https://github.com/bearstouch/keel/actions/workflows/ci.yml/badge.svg)](https://github.com/bearstouch/keel/actions/workflows/ci.yml)
 
 A calm, native client for Redis, Valkey and Dragonfly on macOS by Bearstouch. Keel browses millions of keys with
 SCAN only, edits every core type, has a redis-cli-style console and a server overview, keeps production safe with
@@ -139,7 +139,7 @@ scripts/package-release.sh                    # Universal 2 app, DMG and release
 
 - [`ci.yml`](.github/workflows/ci.yml) runs lint, build (no warnings in `Sources/`) and the full test suite on
   `macos-26` with Xcode 26.0.1, plus the container integration matrix. It runs for every pull request to `master` or
-  `develop`, and can be started by hand.
+  `develop`, for every push to those branches, and can be started by hand.
 - [`release.yml`](.github/workflows/release.yml) runs when you push a tag `vX.Y.Z` that matches
   `release/manifest.json`. It tests, benchmarks, packages the Universal 2 DMG and Sparkle archive, and publishes a
   GitHub release whose notes come from the matching `CHANGELOG.md` section. Without signing secrets the build is ad-hoc
