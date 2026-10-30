@@ -7,3 +7,5 @@ dist/
 xcuserdata/
 __pycache__/
 /site/
+.trellis/
+.vscode/
