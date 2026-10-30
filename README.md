@@ -4,6 +4,8 @@ A calm, native client for Redis, Valkey and Dragonfly on macOS by Bearstouch. Ke
 SCAN only, edits every core type, has a redis-cli-style console and a server overview, keeps production safe with
 read-only connections and typed confirmations.
 
+![Keel browsing a Valkey server: connections in the sidebar, the key tree and a hash editor with a JSON value](docs/images/keel-browser.png)
+
 | Server | Versions | Support |
 | --- | --- | --- |
 | Redis | 6.0+ | Full |
